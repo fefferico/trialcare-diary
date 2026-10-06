@@ -141,6 +141,7 @@ export const SECTIONS: SectionDefinition[] = [
       },
       { key: 'date', label: 'Data', kind: 'date', required: true },
       { key: 'time', label: 'Ora', kind: 'time' },
+      { key: 'location', label: 'Luogo', kind: 'text', placeholder: 'Dove è avvenuto' },
       {
         key: 'severity',
         label: 'Intensità',

@@ -1,6 +1,6 @@
 # Project Health
 
-> Generato il 06/10/2026, 21:37:18.
+> Generato il 06/10/2026, 21:38:22.
 
 - Servizi Angular: 8
 - Componenti standalone: 11
@@ -22,3 +22,4 @@ Nessun commento TODO/FIXME trovato.
 - [202610060008_trialcare_calendar_events.sql](../supabase/migrations/202610060008_trialcare_calendar_events.sql)
 - [202610060009_trialcare_profile_avatars.sql](../supabase/migrations/202610060009_trialcare_profile_avatars.sql)
 - [202610060010_trialcare_child_measurements.sql](../supabase/migrations/202610060010_trialcare_child_measurements.sql)
+- [202610060011_trialcare_health_event_location.sql](../supabase/migrations/202610060011_trialcare_health_event_location.sql)
