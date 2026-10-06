@@ -59,6 +59,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .page-title { margin-top: 5px; font-size: clamp(25px,3vw,34px); font-weight: 700; letter-spacing: -.045em; line-height: 1.15; }
 .tag { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; border-radius: 9px; background: #f1f6f3; padding: 5px 9px; color: #63716b; font-size: 11px; overflow-wrap: anywhere; }
 .dark .tag { background: #1d3031; color: #b3c5be; }
+.search-result-highlight { position: relative; z-index: 1; outline: 3px solid #16a394; outline-offset: 3px; background: #e8faf5; box-shadow: 0 0 0 7px rgb(22 163 148 / 14%), 0 16px 38px rgb(22 126 114 / 18%); animation: search-result-pulse 1.15s ease-out 2; }
+.dark .search-result-highlight { background: #193b37; outline-color: #5ed5c2; box-shadow: 0 0 0 7px rgb(94 213 194 / 14%), 0 16px 38px rgb(0 0 0 / 25%); }
+@keyframes search-result-pulse { 0%,100% { transform: scale(1); } 45% { transform: scale(1.012); } }
 .tag b { color: #82918b; font-weight: 600; }
 .field-control { width: 100%; min-height: 44px; border: 1px solid #dfe7e2; border-radius: 12px; background: white; padding: 9px 12px; color: #253632; font-size: 14px; }
 .search-input-box { position: relative; display: flex; align-items: center; width: 100%; }
