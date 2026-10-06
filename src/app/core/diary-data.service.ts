@@ -7,6 +7,7 @@ const STORAGE_KEY = 'trialcare-diary-v1';
 type LocalStore = Partial<Record<SectionId, DiaryRow[]>>;
 export interface SearchableDiaryItem { section: Exclude<SectionId, 'reports'>; row: DiaryRow; }
 const SEARCHABLE_SECTIONS: Exclude<SectionId, 'reports'>[] = ['children','contacts','medications','health_events','therapies','documents','expenses'];
+export type DiaryExportData = Record<Exclude<SectionId, 'reports'>, DiaryRow[]>;
 
 @Injectable({ providedIn: 'root' })
 export class DiaryDataService {
@@ -42,6 +43,29 @@ export class DiaryDataService {
       return results.flatMap((result, index) => (result.data ?? []).map(row => ({ section: SEARCHABLE_SECTIONS[index], row: row as DiaryRow })));
     }
     return SEARCHABLE_SECTIONS.flatMap(section => (this.local[section] ?? []).map(row => ({ section, row })));
+  }
+
+  async loadAllForExport(): Promise<DiaryExportData> {
+    const client = this.supabase.client;
+    const output = Object.fromEntries(SEARCHABLE_SECTIONS.map(section => [section, []])) as unknown as DiaryExportData;
+    if (!client || !this.auth.user()) {
+      for (const section of SEARCHABLE_SECTIONS) output[section] = [...(this.local[section] ?? [])];
+      return output;
+    }
+    // Supabase caps each response page; walk every page so backups do not silently omit older rows.
+    const pageSize = 1000;
+    for (const section of SEARCHABLE_SECTIONS) {
+      let from = 0;
+      while (true) {
+        const { data, error } = await client.from(section).select('*').order('created_at', { ascending: true }).range(from, from + pageSize - 1);
+        if (error) throw new Error(`Esportazione ${section}: ${error.message}`);
+        const page = (data ?? []) as DiaryRow[];
+        output[section].push(...page);
+        if (page.length < pageSize) break;
+        from += pageSize;
+      }
+    }
+    return output;
   }
 
   async loadReport(childId?: string): Promise<void> {

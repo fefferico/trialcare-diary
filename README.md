@@ -10,6 +10,7 @@ Diario clinico digitale in Angular 21 per famiglie che accompagnano un bambino d
 - Percorsi terapeutici, documenti e ricevute in Storage privato.
 - Note spese con calcolo della quota chilometrica (`km × tariffa/km`).
 - Report PDF, accesso Supabase Auth e dati isolati da RLS.
+- Accesso biometrico locale tramite WebAuthn/passkey sui dispositivi compatibili.
 
 ## Avvio locale
 
@@ -23,6 +24,8 @@ npm start
 Per collegare il progetto Supabase `upslsnpweosagvnkuzya`, imposta una chiave **publishable** (oppure la chiave `anon` legacy) in `src/environments/environment.ts`. La chiave è pubblica e va usata solo insieme a RLS. Non inserire mai una service role key nel frontend.
 
 Il client Auth mantiene la sessione nel browser e rinnova i token; non viene configurata alcuna invalidazione delle altre sessioni. Per la modalità demo senza chiave, le voci sono conservate nel `localStorage` del browser e non vengono sincronizzate né cifrate: usa solo dati fittizi finché Supabase non è configurato.
+
+L’accesso biometrico si attiva dopo aver effettuato l’accesso da un browser/dispositivo con WebAuthn e un autenticatore di piattaforma (ad esempio Touch ID, Face ID, Windows Hello o impronta Android). La passkey verifica localmente il dispositivo e il token di rinnovo Supabase necessario a ripristinare la sessione è conservato nel `localStorage`, come il resto della sessione browser. Attivalo solo su un dispositivo personale protetto; non abilitarlo su dispositivi condivisi. Per revocarlo usa l’icona biometrica nella barra superiore o nell’area account.
 
 ## Supabase Cloud
 
