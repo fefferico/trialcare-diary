@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
+  "version": 1,
+  "newProjectRoot": "projects",
+  "projects": {
+    "trialcare-diary": {
+      "projectType": "application",
+      "root": "",
+      "sourceRoot": "src",
+      "prefix": "tc",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "browser": "src/main.ts",
+            "index": "src/index.html",
+            "tsConfig": "tsconfig.app.json",
+            "inlineStyleLanguage": "css",
+            "styles": ["src/styles.css"],
+            "assets": [{"glob":"**/*","input":"public"}],
+            "outputPath": "dist/trialcare-diary"
+          },
+          "configurations": {
+            "production": {"fileReplacements":[{"replace":"src/environments/environment.ts","with":"src/environments/environment.pages.ts"}],"budgets":[{"type":"initial","maximumWarning":"1.5mb","maximumError":"2mb"},{"type":"anyComponentStyle","maximumWarning":"10kb","maximumError":"15kb"}],"outputHashing":"all"},
+            "development": {"optimization":false,"extractLicenses":false,"sourceMap":true}
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {"builder":"@angular/build:dev-server","configurations":{"production":{"buildTarget":"trialcare-diary:build:production"},"development":{"buildTarget":"trialcare-diary:build:development"}},"defaultConfiguration":"development"}
+      }
+    }
+  }
+}
