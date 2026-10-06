@@ -13,5 +13,7 @@ export class TherapyTrackerComponent {}
 export class DocumentVaultComponent {}
 @Component({selector:'tc-expense-tracker',standalone:true,imports:[FeaturePageComponent],template:`<tc-feature-page sectionId="expenses" />`})
 export class ExpenseTrackerComponent {}
+@Component({selector:'tc-contacts',standalone:true,imports:[FeaturePageComponent],template:`<tc-feature-page sectionId="contacts" />`})
+export class ContactsComponent {}
 @Component({selector:'tc-doctor-report',standalone:true,imports:[FeaturePageComponent],template:`<tc-feature-page sectionId="reports" />`})
 export class DoctorReportComponent {}

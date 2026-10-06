@@ -17,7 +17,7 @@
             "tsConfig": "tsconfig.app.json",
             "inlineStyleLanguage": "css",
             "styles": ["src/styles.css"],
-            "assets": [{"glob":"**/*","input":"public"}],
+            "assets": [{"glob":"**/*","input":"public"},{"glob":"pdf.worker.min.mjs","input":"node_modules/pdfjs-dist/legacy/build","output":"assets/pdfjs/"}],
             "outputPath": "dist/trialcare-diary"
           },
           "configurations": {

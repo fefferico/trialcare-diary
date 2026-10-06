@@ -1,6 +1,6 @@
 # Architecture Map
 
-> Aggiornato automaticamente il 06/10/2026, 17:32:03.
+> Aggiornato automaticamente il 06/10/2026, 17:49:07.
 
 ## Struttura
 

@@ -61,6 +61,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .dark .tag { background: #1d3031; color: #b3c5be; }
 .tag b { color: #82918b; font-weight: 600; }
 .field-control { width: 100%; min-height: 44px; border: 1px solid #dfe7e2; border-radius: 12px; background: white; padding: 9px 12px; color: #253632; font-size: 14px; }
+.search-input-box { position: relative; display: flex; align-items: center; width: 100%; }
+.search-input-box .search-icon { position: absolute; left: 14px; width: 18px; height: 18px; pointer-events: none; color: #8fa099; }
+.search-input-box input.field-control { padding-left: 42px !important; }
 .field-control::placeholder { color: #a3afaa; }.field-control:focus { border-color: #58ad9f; outline: 3px solid rgb(88 173 159 / 15%); }
 .dark .field-control { border-color: #354649; background: #101c1f; color: #e7f0ec; }
 .form-field { display: flex; min-width: 0; flex-direction: column; gap: 7px; color: #596963; font-size: 12px; font-weight: 650; }

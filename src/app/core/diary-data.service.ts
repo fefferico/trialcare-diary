@@ -5,6 +5,8 @@ import { DiaryRow, SectionId } from '../models/diary.models';
 
 const STORAGE_KEY = 'trialcare-diary-v1';
 type LocalStore = Partial<Record<SectionId, DiaryRow[]>>;
+export interface SearchableDiaryItem { section: Exclude<SectionId, 'reports'>; row: DiaryRow; }
+const SEARCHABLE_SECTIONS: Exclude<SectionId, 'reports'>[] = ['children','contacts','medications','health_events','therapies','documents','expenses'];
 
 @Injectable({ providedIn: 'root' })
 export class DiaryDataService {
@@ -28,6 +30,18 @@ export class DiaryDataService {
     }
     this.rows.set([...(this.local[section] ?? [])]);
     this.syncing.set(false);
+  }
+
+  async loadAllForSearch(): Promise<SearchableDiaryItem[]> {
+    const client = this.supabase.client;
+    if (client && this.auth.user()) {
+      const results = await Promise.all(SEARCHABLE_SECTIONS.map(section => client.from(section).select('*').order('created_at', { ascending: false })));
+      const failed = results.find(result => result.error);
+      if (failed?.error) this.error.set(failed.error.message);
+      else this.error.set('');
+      return results.flatMap((result, index) => (result.data ?? []).map(row => ({ section: SEARCHABLE_SECTIONS[index], row: row as DiaryRow })));
+    }
+    return SEARCHABLE_SECTIONS.flatMap(section => (this.local[section] ?? []).map(row => ({ section, row })));
   }
 
   async loadReport(childId?: string): Promise<void> {
