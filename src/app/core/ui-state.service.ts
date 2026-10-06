@@ -6,9 +6,22 @@ export class UiStateService {
   readonly menuOpen = signal(false);
   readonly modalOpen = signal(false);
 
-  constructor() { this.applyTheme(); }
-  toggleTheme(): void { this.darkMode.update(value => !value); localStorage.setItem('trialcare-theme', this.darkMode() ? 'dark' : 'light'); this.applyTheme(); }
-  setModal(open: boolean): void { this.modalOpen.set(open); this.resetBodyScroll(); }
-  resetBodyScroll(): void { document.body.classList.toggle('overflow-hidden', this.modalOpen() || this.menuOpen()); }
-  private applyTheme(): void { document.documentElement.classList.toggle('dark', this.darkMode()); }
+  constructor() {
+    this.applyTheme();
+  }
+  toggleTheme(): void {
+    this.darkMode.update((value) => !value);
+    localStorage.setItem('trialcare-theme', this.darkMode() ? 'dark' : 'light');
+    this.applyTheme();
+  }
+  setModal(open: boolean): void {
+    this.modalOpen.set(open);
+    this.resetBodyScroll();
+  }
+  resetBodyScroll(): void {
+    document.body.classList.toggle('overflow-hidden', this.modalOpen() || this.menuOpen());
+  }
+  private applyTheme(): void {
+    document.documentElement.classList.toggle('dark', this.darkMode());
+  }
 }

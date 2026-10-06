@@ -8,9 +8,15 @@ export class SupabaseClientService {
   readonly configured: boolean;
 
   constructor() {
-    this.configured = Boolean(environment.supabaseUrl && environment.supabasePublishableKey && !environment.supabasePublishableKey.startsWith('YOUR_'));
-    this.client = this.configured ? createClient(environment.supabaseUrl, environment.supabasePublishableKey, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
-    }) : null;
+    this.configured = Boolean(
+      environment.supabaseUrl &&
+      environment.supabasePublishableKey &&
+      !environment.supabasePublishableKey.startsWith('YOUR_'),
+    );
+    this.client = this.configured
+      ? createClient(environment.supabaseUrl, environment.supabasePublishableKey, {
+          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+        })
+      : null;
   }
 }

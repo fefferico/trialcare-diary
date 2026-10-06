@@ -1,6 +1,6 @@
 # Architecture Map
 
-> Aggiornato automaticamente il 06/10/2026, 17:49:07.
+> Aggiornato automaticamente il 06/10/2026, 21:37:18.
 
 ## Struttura
 
@@ -9,7 +9,7 @@
 - `src/app/shared/`: dropdown, calendario e selettore orario accessibili.
 - `supabase/migrations/`: schema PostgreSQL, policy RLS e Storage.
 
-## Aree Angular rilevate: auth, core, dashboard, features, models, shared
+## Aree Angular rilevate: auth, calendar, core, dashboard, documents, features, models, shared
 
 ## File applicativi
 
@@ -17,13 +17,19 @@
 - [App Config](../src/app/app.config.ts)
 - [App Routes](../src/app/app.routes.ts)
 - [Login Component](../src/app/auth/login.component.ts)
+- [Calendar Preview Component](../src/app/calendar/calendar-preview.component.ts)
+- [Calendar Component](../src/app/calendar/calendar.component.ts)
+- [Auth Guard](../src/app/core/auth.guard.ts)
 - [Auth Service](../src/app/core/auth.service.ts)
+- [Biometric Auth Service](../src/app/core/biometric-auth.service.ts)
+- [Data Export Service](../src/app/core/data-export.service.ts)
 - [Diary Data Service](../src/app/core/diary-data.service.ts)
 - [Pdf Export Service](../src/app/core/pdf-export.service.ts)
 - [Storage Service](../src/app/core/storage.service.ts)
 - [Supabase Client Service](../src/app/core/supabase-client.service.ts)
 - [Ui State Service](../src/app/core/ui-state.service.ts)
 - [Dashboard Component](../src/app/dashboard/dashboard.component.ts)
+- [Pdf Redaction Component](../src/app/documents/pdf-redaction.component.ts)
 - [Feature Page Component](../src/app/features/feature-page.component.ts)
 - [Section Wrappers](../src/app/features/section-wrappers.ts)
 - [Diary Models](../src/app/models/diary.models.ts)

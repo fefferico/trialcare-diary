@@ -10,7 +10,11 @@ registerLocaleData(localeIt);
 export const appConfig: ApplicationConfig = {
   providers: [
     { provide: LOCALE_ID, useValue: 'it' },
-    provideRouter(routes, withHashLocation(), withInMemoryScrolling({scrollPositionRestoration:'enabled'})),
+    provideRouter(
+      routes,
+      withHashLocation(),
+      withInMemoryScrolling({ scrollPositionRestoration: 'enabled' }),
+    ),
     provideHttpClient(),
   ],
 };

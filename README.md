@@ -4,12 +4,16 @@ Diario clinico digitale in Angular 21 per famiglie che accompagnano un bambino d
 
 ## Funzioni
 
-- Profili per più bambini, con identificativo trial e contatti clinici.
+- Profili per più bambini, con identificativo trial, gruppo sanguigno, allergie e informazioni cliniche essenziali.
+- Storico di peso, altezza e circonferenza della testa con grafici di andamento per bambino.
 - Registro farmaci con dosaggi, formulazioni, date, pause e orari.
+- Inventario dei farmaci in casa con quantità, prezzo, dosaggio previsto e date di apertura e scadenza.
 - Diario di sintomi, traumi ed eventi avversi.
-- Percorsi terapeutici, documenti e ricevute in Storage privato.
+- Calendario mensile con appuntamenti singoli o ricorrenti (settimanali, bisettimanali e mensili), conferma degli eventi futuri e motivazione per quelli saltati; riepilogo homepage di eventi, terapie e scadenze nei successivi 30 giorni.
+- Percorsi terapeutici, documenti e ricevute in Storage privato. Per i PDF clinici è disponibile una redazione locale manuale o basata su testo selezionabile: la copia viene appiattita in immagini prima dell’upload. I risultati automatici richiedono revisione; le scansioni non vengono lette perché non è integrato OCR.
 - Note spese con calcolo della quota chilometrica (`km × tariffa/km`).
 - Report PDF, accesso Supabase Auth e dati isolati da RLS.
+- Avatar profilo personalizzabile: in Supabase l’immagine è privata e accessibile solo al proprietario; in modalità demo resta nel browser.
 - Accesso biometrico locale tramite WebAuthn/passkey sui dispositivi compatibili.
 
 ## Avvio locale
@@ -37,7 +41,9 @@ npx supabase link --project-ref upslsnpweosagvnkuzya
 npx supabase db push
 ```
 
-La prima migrazione crea `children`, `medications`, `health_events`, `therapies`, `documents`, `expenses`, indici, trigger e RLS. La seconda crea il bucket privato `clinical-documents` (massimo 20 MiB, PDF e immagini) e le policy Storage. Le righe cliniche sono accessibili solo se il bambino collegato appartiene all'utente autenticato. Le sessioni concorrenti usano il comportamento normale di Supabase Auth.
+La prima migrazione crea `children`, `medications`, `health_events`, `therapies`, `documents`, `expenses`, indici, trigger e RLS. La seconda crea il bucket privato `clinical-documents` (massimo 20 MiB, PDF e immagini) e le policy Storage. La migrazione `202610060007_trialcare_medicine_cabinet.sql` aggiunge l'inventario domestico dei farmaci, con scadenze nel calendario e avvisi in homepage. La migrazione `202610060008_trialcare_calendar_events.sql` aggiunge stato, motivazione di annullamento e collegamento delle ricorrenze agli eventi. La migrazione `202610060010_trialcare_child_measurements.sql` aggiunge informazioni cliniche al profilo e lo storico delle misure di crescita, con RLS ereditata dal proprietario del bambino. Le righe cliniche sono accessibili solo se il bambino collegato appartiene all'utente autenticato. Le sessioni concorrenti usano il comportamento normale di Supabase Auth.
+
+La redazione PDF è un’elaborazione locale nel browser; la ricerca automatica rileva solo corrispondenze testuali selezionabili e non garantisce la rimozione di ogni dato identificativo. Per i PDF scansionati serve OCR. L’app non cifra gli allegati con una chiave controllata dall’utente: aggiungere cifratura end-to-end richiederebbe definire custodia, recupero e condivisione delle chiavi, perché la perdita della chiave renderebbe i documenti irrecuperabili.
 
 Le chiavi publishable/anon possono essere esposte nel bundle browser. RLS resta il confine di sicurezza. Per la condivisione clinica, configurare l'accesso dei soli operatori autorizzati richiede un distinto modello di inviti e deleghe: per ora l'account è il solo proprietario dei propri dati.
 

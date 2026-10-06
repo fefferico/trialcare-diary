@@ -10,80 +10,1172 @@ import { PdfExportService } from '../core/pdf-export.service';
 import { DataExportService } from '../core/data-export.service';
 import { SupabaseClientService } from '../core/supabase-client.service';
 import { StorageService } from '../core/storage.service';
+import { PdfRedactionComponent } from '../documents/pdf-redaction.component';
 import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { AppDropdownComponent } from '../shared/app-dropdown.component';
 import { AppDatepickerComponent } from '../shared/app-datepicker.component';
 import { AppTimepickerComponent } from '../shared/app-timepicker.component';
-import { DiaryRow, FieldDefinition, SectionDefinition, SectionId, sectionById } from '../models/diary.models';
+import {
+  DiaryRow,
+  FieldDefinition,
+  SectionDefinition,
+  SectionId,
+  sectionById,
+} from '../models/diary.models';
 
 @Component({
-  selector: 'tc-feature-page', standalone: true, imports: [CommonModule, FormsModule, RouterLink, AppDropdownComponent, AppDatepickerComponent, AppTimepickerComponent], template: `
-  @if (section) {
-    <section class="space-y-5">
-      <header class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p class="eyebrow">IL TUO DIARIO · {{ section.label | uppercase }}</p><h1 class="page-title">{{ section.title }}</h1><p class="mt-2 max-w-2xl text-sm text-slate-500 dark:text-slate-400">{{ section.description }}</p></div>
-        <div class="flex gap-2"><button type="button" class="button-secondary" (click)="refresh()">Aggiorna</button>@if (section.id !== 'reports') {<button type="button" class="button-primary" [disabled]="section.id !== 'children' && !children.length" (click)="openForm()"><span aria-hidden="true">＋</span> Aggiungi</button>}</div>
-      </header>
-      @if (section.id === 'expenses') {<div class="grid grid-cols-2 gap-3 lg:grid-cols-3"><div class="stat-card"><span>Totale registrato</span><strong>{{ total | currency:'EUR':'symbol':'1.2-2':'it' }}</strong></div><div class="stat-card"><span>Chilometri</span><strong>{{ kilometers }} km</strong></div><div class="stat-card col-span-2 lg:col-span-1"><span>Quota chilometrica stimata</span><strong>{{ kmRefund | currency:'EUR':'symbol':'1.2-2':'it' }}</strong></div></div>}
-      @if (section.id === 'reports') {<div class="panel space-y-4"><div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 class="font-semibold">Report per il team clinico</h2><p class="mt-1 text-sm text-slate-500">Esporta le voci della sezione corrente in un PDF pronto per la visita.</p></div><button type="button" class="button-primary" (click)="exportReport()">Scarica PDF</button></div><div class="border-t border-slate-100 pt-4 dark:border-slate-800"><h3 class="font-semibold">Backup completo dei dati</h3><p class="mt-1 text-sm text-slate-500">Scarica tutte le categorie del diario, inclusi i profili dei bambini. Conserva il file in un luogo sicuro.</p><div class="mt-3 flex flex-wrap gap-2"><button type="button" class="button-secondary" [disabled]="exporting()" (click)="exportData('json')">JSON</button><button type="button" class="button-secondary" [disabled]="exporting()" (click)="exportData('markdown')">Markdown</button><button type="button" class="button-secondary" [disabled]="exporting()" (click)="exportData('doc')">Word (.doc)</button></div><p class="mt-2 text-xs text-slate-500">Gli allegati archiviati sono riportati con il loro percorso; i file stessi non sono inclusi.</p></div></div>}
-      @if (section.id === 'reports') {<div class="panel grid gap-3 sm:grid-cols-3"><label class="form-field"><span>Dal</span><app-datepicker label="Data iniziale" [value]="reportFrom()" (dateChange)="reportFrom.set($event)" /></label><label class="form-field"><span>Al</span><app-datepicker label="Data finale" [value]="reportTo()" (dateChange)="reportTo.set($event)" /></label><label class="form-field"><span>Categoria</span><app-dropdown [options]="reportCategories" [value]="reportCategory()" placeholder="Tutte le categorie" (selection)="reportCategory.set($event)" /></label></div>}
-      @if (section.id !== 'children' && children.length) {<div class="flex items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-sm dark:bg-slate-900"><span class="text-xs font-semibold uppercase tracking-wide text-slate-400">Bambino</span><app-dropdown class="w-full max-w-xs" [options]="childNames" [value]="selectedChildName()" placeholder="Scegli profilo" (selection)="selectChild($event)" /></div>}
-      @if (section.id !== 'children' && !children.length) {<div class="notice-error !border-amber-200 !bg-amber-50 !text-amber-900 dark:!border-amber-800 dark:!bg-amber-950/40 dark:!text-amber-100">Crea prima un profilo bambino per collegare in modo sicuro le registrazioni. <a routerLink="/children" class="font-bold underline">Vai ai profili</a></div>}
-      @if (data.error()) {<div class="notice-error" role="alert">{{ data.error() }}</div>}
-      @if (data.syncing()) {<div class="panel py-12 text-center text-sm text-slate-500">Aggiornamento del diario…</div>}
-      @else if (!data.rows().length && section.id !== 'reports') {<div class="panel flex flex-col items-center px-6 py-14 text-center"><div class="mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-teal-50 text-2xl text-teal-700 dark:bg-teal-900/30 dark:text-teal-200">{{ section.id === 'children' ? '♡' : '＋' }}</div><h2 class="text-lg font-semibold">Ancora nessuna voce</h2><p class="mt-2 max-w-sm text-sm text-slate-500">{{ section.id === 'children' ? 'Crea un profilo per iniziare a organizzare il diario.' : 'Aggiungi la prima voce: potrai aggiornarla e condividerla durante la visita.' }}</p><button class="button-primary mt-5" (click)="openForm()">{{ section.id === 'children' ? 'Aggiungi un bambino' : 'Aggiungi una voce' }}</button></div>}
-      @else {<div class="grid gap-3 md:grid-cols-2">@for (row of filteredRows; track row['id']) {<article class="panel group" [id]="'diary-row-' + row['id']" [class.search-result-highlight]="highlightedId() === row['id']" [attr.tabindex]="highlightedId() === row['id'] ? -1 : null"><div class="flex items-start justify-between gap-4"><div class="min-w-0"><p class="text-xs font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-300">{{ section.id === 'contacts' ? value(row,'category') : ((value(row, 'date') || value(row, 'start_date') || value(row, 'created_at')) | date:'d MMM y') }}</p><h2 class="mt-1 truncate text-base font-semibold">{{ value(row, 'title') || value(row, 'name') || value(row, 'category') || 'Voce del diario' }}</h2>@if(section.id==='contacts' && value(row,'role')){<p class="mt-1 text-sm text-slate-500">{{ value(row,'role') }}</p>}</div><div class="flex gap-3"><button type="button" class="text-sm text-teal-700 hover:underline dark:text-teal-300" (click)="edit(row)">Modifica</button><button type="button" class="text-sm text-slate-400 hover:text-rose-600" [attr.aria-label]="'Elimina '+(value(row,'title') || value(row,'name') || 'voce')" (click)="remove(row)">Elimina</button></div></div><div class="mt-3 flex flex-wrap gap-2">@for (field of visibleFields(row); track field.key) {@if (value(row, field.key)) {<span class="tag"><b>{{ field.label }}:</b> @if(section.id==='contacts' && field.key==='phone'){<a class="underline" [href]="'tel:'+value(row,field.key)">{{ value(row,field.key) }}</a>}@else if(section.id==='contacts' && field.key==='email'){<a class="underline" [href]="'mailto:'+value(row,field.key)">{{ value(row,field.key) }}</a>}@else { {{ value(row, field.key) }} }</span>}}</div>@if(value(row,'voice_note_data')){<audio controls preload="none" class="mt-3 h-10 w-full max-w-sm" [src]="value(row,'voice_note_data')" aria-label="Nota vocale"></audio>}@if(value(row,'voice_note_path')){<button type="button" class="mt-3 text-sm font-semibold text-teal-700 hover:underline dark:text-teal-300" (click)="openVoice(row)">▶ Ascolta nota vocale</button>}@if(section.id==='contacts'){<div class="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">@if(value(row,'phone')){<a class="button-primary" [href]="'tel:'+value(row,'phone')">☎ Chiama</a>}@if(value(row,'email')){<a class="button-secondary" [href]="'mailto:'+value(row,'email')">✉ Email</a>}<button type="button" class="button-secondary" (click)="shareContact(row)">↗ Condividi</button></div>@if(shareNoticeId()===row.id){<p class="mt-2 text-xs text-teal-700 dark:text-teal-300" role="status">{{shareNotice()}}</p>}}@if((section.id==='documents' && value(row,'storage_path')) || (section.id==='expenses' && value(row,'receipt_path'))){<button type="button" class="mt-3 text-sm font-semibold text-teal-700 hover:underline dark:text-teal-300" (click)="openDocument(row)">Apri allegato →</button>}</article>}</div>}
-    </section>
-    @if (isFormOpen()) {<div class="modal-backdrop" (click)="closeForm()"><section role="dialog" aria-modal="true" aria-labelledby="dialog-title" class="modal-panel" (click)="$event.stopPropagation()"><header class="flex items-start justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800"><div><p class="eyebrow">NUOVA REGISTRAZIONE</p><h2 id="dialog-title" class="text-xl font-semibold">{{ section.id === 'children' ? 'Profilo bambino' : 'Aggiungi una voce' }}</h2></div><button type="button" class="icon-button" aria-label="Chiudi" (click)="closeForm()">×</button></header>
-        <form class="space-y-4 overflow-y-auto px-5 py-5" (ngSubmit)="save()"><div class="grid gap-4 sm:grid-cols-2">@for (field of section.fields; track field.key) {<label class="form-field" [class.full-span]="field.kind === 'textarea' || field.kind === 'file'"><span>{{ field.label }}@if(field.required){<i class="text-rose-500"> *</i>}</span>
-          @switch(field.kind) {
-            @case('select') {<app-dropdown [options]="field.options ?? []" [value]="form[field.key]" [placeholder]="field.placeholder ?? 'Seleziona'" (selection)="setField(field,$event)" />}
-            @case('date') {<app-datepicker [label]="field.label" [value]="form[field.key]" (dateChange)="setField(field,$event)" />}
-            @case('time') {<app-timepicker [label]="field.label" [value]="form[field.key]" (timeChange)="setField(field,$event)" />}
-            @case('textarea') {<textarea class="field-control min-h-24 resize-y" [name]="field.key" [(ngModel)]="form[field.key]" [required]="field.required ?? false" rows="3"></textarea>}
-            @case('file') {<input class="field-control file:mr-3 file:rounded-lg file:border-0 file:bg-teal-50 file:px-3 file:py-2 file:font-medium file:text-teal-800" type="file" [required]="field.required ?? false" accept=".pdf,image/jpeg,image/png,image/webp,image/heic" (change)="setFile(field,$event)"><small class="text-xs text-slate-400">I file vengono caricati nel bucket privato quando Supabase è configurato. Dai PDF con testo selezionabile viene estratto anche il testo per la ricerca.</small>}
-            @default {<input class="field-control" [type]="field.kind === 'number' ? 'number' : 'text'" [name]="field.key" [(ngModel)]="form[field.key]" [required]="field.required ?? false" [placeholder]="field.placeholder ?? ''" [step]="field.kind === 'number' ? 'any' : null">}
-          }
-        </label>}</div>
-          <div class="form-field full-span"><span>Nota vocale</span><div class="flex items-center gap-2"><button type="button" class="button-secondary" [disabled]="!recordingSupported" (click)="toggleRecording()">{{ recording() ? '■ Ferma registrazione' : '🎙 Registra una nota' }}</button>@if(recordedVoice){<button type="button" class="text-sm text-slate-500 underline" (click)="clearVoice()">Rimuovi</button>}</div><p class="text-xs text-slate-500">Registra un promemoria da riordinare in seguito.</p>@if(recordedVoice){<audio controls class="h-10 max-w-sm" [src]="recordedVoiceUrl" aria-label="Anteprima nota vocale"></audio>}</div>
-          @if(section.id === 'children' && !form['user_id']) {<p class="text-xs text-slate-500">I dati restano privati e sono associati al tuo account.</p>}
-          <footer class="flex justify-end gap-2 border-t border-slate-100 pt-4 dark:border-slate-800"><button type="button" class="button-secondary" (click)="closeForm()">Annulla</button><button class="button-primary" type="submit" [disabled]="saving()">{{ extracting() ? 'Estrazione testo…' : saving() ? 'Salvataggio…' : 'Salva nel diario' }}</button></footer>
-        </form></section></div>}
-  }
-  ` })
+  selector: 'tc-feature-page',
+  standalone: true,
+  imports: [
+    CommonModule,
+    FormsModule,
+    RouterLink,
+    AppDropdownComponent,
+    AppDatepickerComponent,
+    AppTimepickerComponent,
+    PdfRedactionComponent,
+  ],
+  template: `
+    @if (section) {
+      <section class="space-y-5">
+        <header class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p class="eyebrow">IL TUO DIARIO · {{ section.label | uppercase }}</p>
+            <h1 class="page-title">{{ section.title }}</h1>
+            <p class="mt-2 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
+              {{ section.description }}
+            </p>
+          </div>
+          <div class="flex gap-2">
+            <button type="button" class="button-secondary" (click)="refresh()">Aggiorna</button>
+            @if (section.id !== 'reports') {
+              <button
+                type="button"
+                class="button-primary"
+                [disabled]="section.id !== 'children' && !children.length"
+                (click)="openForm()"
+              >
+                <span aria-hidden="true">＋</span> Aggiungi
+              </button>
+            }
+          </div>
+        </header>
+        @if (section.id === 'expenses') {
+          <div class="grid grid-cols-2 gap-3 lg:grid-cols-3">
+            <div class="stat-card">
+              <span>Totale registrato</span
+              ><strong>{{ total | currency: 'EUR' : 'symbol' : '1.2-2' : 'it' }}</strong>
+            </div>
+            <div class="stat-card">
+              <span>Chilometri</span><strong>{{ kilometers }} km</strong>
+            </div>
+            <div class="stat-card col-span-2 lg:col-span-1">
+              <span>Quota chilometrica stimata</span
+              ><strong>{{ kmRefund | currency: 'EUR' : 'symbol' : '1.2-2' : 'it' }}</strong>
+            </div>
+          </div>
+        }
+        @if (section.id === 'reports') {
+          <div class="panel space-y-4">
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 class="font-semibold">Report per il team clinico</h2>
+                <p class="mt-1 text-sm text-slate-500">
+                  Esporta le voci della sezione corrente in un PDF pronto per la visita.
+                </p>
+              </div>
+              <button type="button" class="button-primary" (click)="exportReport()">
+                Scarica PDF
+              </button>
+            </div>
+            <div class="border-t border-slate-100 pt-4 dark:border-slate-800">
+              <h3 class="font-semibold">Backup completo dei dati</h3>
+              <p class="mt-1 text-sm text-slate-500">
+                Scarica tutte le categorie del diario, inclusi i profili dei bambini. Conserva il
+                file in un luogo sicuro.
+              </p>
+              <div class="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  class="button-secondary"
+                  [disabled]="exporting()"
+                  (click)="exportData('json')"
+                >
+                  JSON</button
+                ><button
+                  type="button"
+                  class="button-secondary"
+                  [disabled]="exporting()"
+                  (click)="exportData('markdown')"
+                >
+                  Markdown</button
+                ><button
+                  type="button"
+                  class="button-secondary"
+                  [disabled]="exporting()"
+                  (click)="exportData('doc')"
+                >
+                  Word (.doc)
+                </button>
+              </div>
+              <p class="mt-2 text-xs text-slate-500">
+                Gli allegati archiviati sono riportati con il loro percorso; i file stessi non sono
+                inclusi.
+              </p>
+            </div>
+          </div>
+        }
+        @if (section.id === 'reports') {
+          <div class="panel grid gap-3 sm:grid-cols-3">
+            <label class="form-field"
+              ><span>Dal</span
+              ><app-datepicker
+                label="Data iniziale"
+                [value]="reportFrom()"
+                (dateChange)="reportFrom.set($event)" /></label
+            ><label class="form-field"
+              ><span>Al</span
+              ><app-datepicker
+                label="Data finale"
+                [value]="reportTo()"
+                (dateChange)="reportTo.set($event)" /></label
+            ><label class="form-field"
+              ><span>Categoria</span
+              ><app-dropdown
+                [options]="reportCategories"
+                [value]="reportCategory()"
+                placeholder="Tutte le categorie"
+                (selection)="reportCategory.set($event)"
+            /></label>
+          </div>
+        }
+        @if (section.id !== 'children' && children.length) {
+          <div
+            class="flex items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-sm dark:bg-slate-900"
+          >
+            <span class="text-xs font-semibold uppercase tracking-wide text-slate-400">Bambino</span
+            ><app-dropdown
+              class="w-full max-w-xs"
+              [options]="childNames"
+              [value]="selectedChildName()"
+              placeholder="Scegli profilo"
+              (selection)="selectChild($event)"
+            />
+          </div>
+        }
+        @if (section.id !== 'children' && !children.length) {
+          <div
+            class="notice-error !border-amber-200 !bg-amber-50 !text-amber-900 dark:!border-amber-800 dark:!bg-amber-950/40 dark:!text-amber-100"
+          >
+            Crea prima un profilo bambino per collegare in modo sicuro le registrazioni.
+            <a routerLink="/children" class="font-bold underline">Vai ai profili</a>
+          </div>
+        }
+        @if (data.error()) {
+          <div class="notice-error" role="alert">{{ data.error() }}</div>
+        }
+        @if (data.syncing()) {
+          <div class="panel py-12 text-center text-sm text-slate-500">
+            Aggiornamento del diario…
+          </div>
+        } @else if (!data.rows().length && section.id !== 'reports') {
+          <div class="panel flex flex-col items-center px-6 py-14 text-center">
+            <div
+              class="mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-teal-50 text-2xl text-teal-700 dark:bg-teal-900/30 dark:text-teal-200"
+            >
+              {{ section.id === 'children' ? '♡' : '＋' }}
+            </div>
+            <h2 class="text-lg font-semibold">Ancora nessuna voce</h2>
+            <p class="mt-2 max-w-sm text-sm text-slate-500">
+              {{
+                section.id === 'children'
+                  ? 'Crea un profilo per iniziare a organizzare il diario.'
+                  : 'Aggiungi la prima voce: potrai aggiornarla e condividerla durante la visita.'
+              }}
+            </p>
+            <button class="button-primary mt-5" (click)="openForm()">
+              {{ section.id === 'children' ? 'Aggiungi un bambino' : 'Aggiungi una voce' }}
+            </button>
+          </div>
+        } @else {
+          <div class="grid gap-3 md:grid-cols-2">
+            @for (row of filteredRows; track row['id']) {
+              <article
+                class="panel group cursor-pointer transition hover:border-teal-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-teal-600"
+                role="button"
+                tabindex="0"
+                [attr.aria-label]="'Apri ' + (value(row, 'title') || value(row, 'name') || 'voce')"
+                (click)="openDetailsFromCard($event, row)"
+                (keydown)="openDetailsFromKeyboard($event, row)"
+                [id]="'diary-row-' + row['id']"
+                [class.search-result-highlight]="highlightedId() === row['id']"
+                [attr.tabindex]="highlightedId() === row['id'] ? -1 : null"
+              >
+                <div class="flex items-start justify-between gap-4">
+                  <div class="min-w-0">
+                    <p
+                      class="text-xs font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-300"
+                    >
+                      {{
+                        section.id === 'contacts'
+                          ? value(row, 'category')
+                          : (value(row, 'date') || value(row, 'start_date') | date: 'd MMM y')
+                      }}
+                    </p>
+                    <h2 class="mt-1 truncate text-base font-semibold">
+                      {{
+                        value(row, 'title') ||
+                          value(row, 'name') ||
+                          value(row, 'category') ||
+                          'Voce del diario'
+                      }}
+                    </h2>
+                    @if (section.id === 'contacts' && value(row, 'role')) {
+                      <p class="mt-1 text-sm text-slate-500">{{ value(row, 'role') }}</p>
+                    }
+                  </div>
+                  <div class="flex gap-3">
+                    <button
+                      type="button"
+                      class="record-action text-teal-700 dark:text-teal-300"
+                      [attr.aria-label]="
+                        'Modifica ' + (value(row, 'title') || value(row, 'name') || 'voce')
+                      "
+                      title="Modifica"
+                      (click)="$event.stopPropagation(); edit(row)"
+                    >
+                      <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 20h9" />
+                        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" /></svg
+                      ><span class="action-label">Modifica</span></button
+                    ><button
+                      type="button"
+                      class="record-action text-slate-500 hover:text-rose-600 dark:text-slate-300"
+                      [attr.aria-label]="
+                        'Elimina ' + (value(row, 'title') || value(row, 'name') || 'voce')
+                      "
+                      title="Elimina"
+                      (click)="$event.stopPropagation(); remove(row)"
+                    >
+                      <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M3 6h18" />
+                        <path d="M8 6V4h8v2" />
+                        <path d="m19 6-1 14H6L5 6" />
+                        <path d="M10 11v5M14 11v5" /></svg
+                      ><span class="action-label">Elimina</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="mt-3 flex flex-wrap gap-2">
+                  @for (field of visibleFields(row); track field.key) {
+                    @if (value(row, field.key)) {
+                      <span class="tag"
+                        ><b>{{ field.label }}:</b>
+                        @if (section.id === 'contacts' && field.key === 'phone') {
+                          <a class="underline" [href]="'tel:' + value(row, field.key)" (click)="$event.stopPropagation()">{{
+                            value(row, field.key)
+                          }}</a>
+                        } @else if (section.id === 'contacts' && field.key === 'email') {
+                          <a class="underline" [href]="'mailto:' + value(row, field.key)" (click)="$event.stopPropagation()">{{
+                            value(row, field.key)
+                          }}</a>
+                        } @else {
+                          {{ value(row, field.key) }}
+                        }
+                      </span>
+                    }
+                  }
+                </div>
+                @if (value(row, 'voice_note_data')) {
+                  <audio
+                    controls
+                    preload="none"
+                    class="mt-3 h-10 w-full max-w-sm"
+                    [src]="value(row, 'voice_note_data')"
+                    aria-label="Nota vocale"
+                  ></audio>
+                }
+                @if (value(row, 'voice_note_path')) {
+                  <button
+                    type="button"
+                    class="mt-3 text-sm font-semibold text-teal-700 hover:underline dark:text-teal-300"
+                    (click)="$event.stopPropagation(); openVoice(row)"
+                  >
+                    ▶ Ascolta nota vocale
+                  </button>
+                }
+                @if (section.id === 'contacts') {
+                  <div
+                    class="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-3 dark:border-slate-800"
+                  >
+                    @if (value(row, 'phone')) {
+                      <a class="button-primary" [href]="'tel:' + value(row, 'phone')" (click)="$event.stopPropagation()">☎ Chiama</a>
+                    }
+                    @if (value(row, 'email')) {
+                      <a class="button-secondary" [href]="'mailto:' + value(row, 'email')" (click)="$event.stopPropagation()"
+                        >✉ Email</a
+                      >
+                    }
+                    <button type="button" class="button-secondary" (click)="$event.stopPropagation(); shareContact(row)">
+                      ↗ Condividi
+                    </button>
+                  </div>
+                  @if (shareNoticeId() === row.id) {
+                    <p class="mt-2 text-xs text-teal-700 dark:text-teal-300" role="status">
+                      {{ shareNotice() }}
+                    </p>
+                  }
+                }
+                @if (
+                  (section.id === 'documents' && value(row, 'storage_path')) ||
+                  (section.id === 'expenses' && value(row, 'receipt_path'))
+                ) {
+                  <button
+                    type="button"
+                    class="record-action mt-3 text-sm font-semibold text-teal-700 dark:text-teal-300"
+                    aria-label="Visualizza allegato"
+                    title="Visualizza allegato"
+                    (click)="$event.stopPropagation(); openDocument(row)"
+                  >
+                    <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+                      <circle cx="12" cy="12" r="3" /></svg
+                    ><span class="action-label">Visualizza allegato</span>
+                  </button>
+                }
+              </article>
+            }
+          </div>
+        }
+        @if (section.id === 'children' && children.length) {
+          <section class="panel space-y-4" aria-labelledby="measurements-title">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 id="measurements-title" class="text-lg font-semibold">Crescita e misure</h2>
+                <p class="mt-1 text-sm text-slate-500">Registra le misure con la data; lo storico aiuta a seguirne l’andamento nel tempo.</p>
+              </div>
+              <label class="form-field min-w-48"><span>Profilo</span><app-dropdown [options]="childNames" [value]="selectedChildName()" placeholder="Scegli bambino" (selection)="selectChild($event)" /></label>
+            </div>
+            @if (selectedChildId()) {
+              <form class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5" (ngSubmit)="saveMeasurement()">
+                <label class="form-field"><span>Data</span><app-datepicker label="Data misurazione" [value]="measurementForm['date']" (dateChange)="measurementForm['date'] = $event" /></label>
+                <label class="form-field"><span>Peso (kg)</span><input class="field-control" type="number" min="0" max="300" step="0.01" [(ngModel)]="measurementForm['weight_kg']" name="weight_kg" /></label>
+                <label class="form-field"><span>Altezza (cm)</span><input class="field-control" type="number" min="0" max="250" step="0.1" [(ngModel)]="measurementForm['height_cm']" name="height_cm" /></label>
+                <label class="form-field"><span>Circonferenza testa (cm)</span><input class="field-control" type="number" min="0" max="100" step="0.1" [(ngModel)]="measurementForm['head_circumference_cm']" name="head_circumference_cm" /></label>
+                <div class="flex items-end"><button class="button-primary w-full" type="submit" [disabled]="measurementSaving()">{{ measurementSaving() ? 'Salvataggio…' : 'Registra misure' }}</button></div>
+              </form>
+              @if (measurementError()) { <p class="notice-error" role="alert">{{ measurementError() }}</p> }
+              @if (measurementRows().length) {
+                <div class="grid gap-4 lg:grid-cols-2">
+                  @for (metric of measurementMetrics; track metric.key) {
+                    @if (hasMeasurement(metric.key)) {
+                      <div class="rounded-xl border border-slate-100 p-4 dark:border-slate-800">
+                        <h3 class="font-semibold">{{ metric.label }}</h3>
+                        <p class="text-xs text-slate-500">{{ measurementTrend(metric.key) }}</p>
+                        <svg viewBox="0 0 320 90" class="mt-3 h-24 w-full" role="img" [attr.aria-label]="'Andamento ' + metric.label + ' nel tempo'">
+                          <path d="M8 80H312" stroke="currentColor" class="text-slate-200 dark:text-slate-700" />
+                          <polyline [attr.points]="measurementPoints(metric.key)" fill="none" stroke="#0f8b83" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                      </div>
+                    }
+                  }
+                </div>
+                <ol class="divide-y divide-slate-100 dark:divide-slate-800">
+                  @for (measurement of measurementRows(); track measurement.id) {
+                    <li class="flex flex-wrap gap-x-5 gap-y-1 py-2 text-sm"><time class="font-medium">{{ value(measurement, 'date') | date:'d MMM y' }}</time>@if (measurement['weight_kg'] != null) { <span>Peso: {{ measurement['weight_kg'] }} kg</span> }@if (measurement['height_cm'] != null) { <span>Altezza: {{ measurement['height_cm'] }} cm</span> }@if (measurement['head_circumference_cm'] != null) { <span>Testa: {{ measurement['head_circumference_cm'] }} cm</span> }</li>
+                  }
+                </ol>
+              } @else { <p class="text-sm text-slate-500">Nessuna misurazione registrata.</p> }
+            }
+          </section>
+        }
+      </section>
+      @if (isFormOpen()) {
+        <div class="modal-backdrop" (click)="closeForm()">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="dialog-title"
+            class="modal-panel"
+            (click)="$event.stopPropagation()"
+          >
+            <header
+              class="flex items-start justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800"
+            >
+              <div>
+                <p class="eyebrow">NUOVA REGISTRAZIONE</p>
+                <h2 id="dialog-title" class="text-xl font-semibold">
+                  {{ section.id === 'children' ? 'Profilo bambino' : 'Aggiungi una voce' }}
+                </h2>
+              </div>
+              <button type="button" class="icon-button" aria-label="Chiudi" (click)="closeForm()">
+                ×
+              </button>
+            </header>
+            <form class="space-y-4 overflow-y-auto px-5 py-5" (ngSubmit)="save()">
+              <div class="grid gap-4 sm:grid-cols-2">
+                @for (field of section.fields; track field.key) {
+                  <div
+                    class="form-field"
+                    [class.full-span]="field.kind === 'textarea' || field.kind === 'file'"
+                    ><span
+                      >{{ field.label }}
+                      @if (field.required) {
+                        <i class="text-rose-500"> *</i>
+                      }
+                    </span>
+                    @switch (field.kind) {
+                      @case ('select') {
+                        <app-dropdown
+                          [options]="field.options ?? []"
+                          [value]="form[field.key]"
+                          [placeholder]="field.placeholder ?? 'Seleziona'"
+                          (selection)="setField(field, $event)"
+                        />
+                      }
+                      @case ('date') {
+                        <app-datepicker
+                          [label]="field.label"
+                          [value]="form[field.key]"
+                          (dateChange)="setField(field, $event)"
+                        />
+                      }
+                      @case ('time') {
+                        <app-timepicker
+                          [label]="field.label"
+                          [value]="form[field.key]"
+                          (timeChange)="setField(field, $event)"
+                        />
+                      }
+                      @case ('textarea') {
+                        <textarea
+                          class="field-control min-h-24 resize-y"
+                          [name]="field.key"
+                          [(ngModel)]="form[field.key]"
+                          [required]="field.required ?? false"
+                          rows="3"
+                        ></textarea>
+                      }
+                      @case ('file') {
+                        <input
+                          class="field-control file:mr-3 file:rounded-lg file:border-0 file:bg-teal-50 file:px-3 file:py-2 file:font-medium file:text-teal-800"
+                          type="file"
+                          [required]="field.required ?? false"
+                          accept=".pdf,image/jpeg,image/png,image/webp,image/heic"
+                          (change)="setFile(field, $event)"
+                        /><small class="text-xs text-slate-400"
+                          >I file vengono caricati nel bucket privato quando Supabase è configurato.
+                          Dai PDF con testo selezionabile viene estratto anche il testo per la
+                          ricerca.</small
+                        >
+                        @if (
+                          section.id === 'documents' && attachedFile?.type === 'application/pdf'
+                        ) {
+                          <tc-pdf-redaction
+                            [file]="attachedFile!"
+                            [initialTerms]="selectedChildName()"
+                            (redacted)="setRedactedFile($event)"
+                          />
+                        }
+                      }
+                      @default {
+                        <input
+                          class="field-control"
+                          [type]="field.kind === 'number' ? 'number' : 'text'"
+                          [name]="field.key"
+                          [(ngModel)]="form[field.key]"
+                          [required]="field.required ?? false"
+                          [placeholder]="field.placeholder ?? ''"
+                          [step]="field.kind === 'number' ? 'any' : null"
+                        />
+                      }
+                    }
+                  </div>
+                }
+              </div>
+              <div class="form-field full-span">
+                <span>Nota vocale</span>
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    class="button-secondary"
+                    [disabled]="!recordingSupported"
+                    (click)="toggleRecording()"
+                  >
+                    {{ recording() ? '■ Ferma registrazione' : 'Registra una nota' }}
+                  </button>
+                  @if (recordedVoice) {
+                    <button
+                      type="button"
+                      class="text-sm text-slate-500 underline"
+                      (click)="clearVoice()"
+                    >
+                      Rimuovi
+                    </button>
+                  }
+                </div>
+                <p class="text-xs text-slate-500">
+                  Registra un promemoria da riordinare in seguito.
+                </p>
+                @if (recording()) {
+                  <div
+                    class="mt-2 flex h-16 items-center gap-1 rounded-xl border border-teal-200 bg-teal-50/70 px-3 dark:border-teal-900 dark:bg-teal-950/30"
+                    role="img"
+                    aria-label="Spettro audio del microfono in tempo reale"
+                  >
+                    @for (level of audioSpectrum(); track $index) {
+                      <span
+                        class="min-w-1 flex-1 rounded-full bg-teal-600 transition-[height] duration-75 dark:bg-teal-400"
+                        [style.height.%]="level"
+                      ></span>
+                    }
+                  </div>
+                  <p class="text-xs text-teal-700 dark:text-teal-300" role="status">
+                    Registrazione in corso · lo spettro si muove quando il microfono rileva audio.
+                  </p>
+                }
+                @if (recordedVoice) {
+                  <audio
+                    controls
+                    class="h-10 max-w-sm"
+                    [src]="recordedVoiceUrl"
+                    aria-label="Anteprima nota vocale"
+                  ></audio>
+                }
+              </div>
+              @if (section.id === 'children' && !form['user_id']) {
+                <p class="text-xs text-slate-500">
+                  I dati restano privati e sono associati al tuo account.
+                </p>
+              }
+              <footer
+                class="flex justify-end gap-2 border-t border-slate-100 pt-4 dark:border-slate-800"
+              >
+                <button type="button" class="button-secondary" (click)="closeForm()">Annulla</button
+                ><button class="button-primary" type="submit" [disabled]="saving()">
+                  {{
+                    extracting()
+                      ? 'Estrazione testo…'
+                      : saving()
+                        ? 'Salvataggio…'
+                        : 'Salva nel diario'
+                  }}
+                </button>
+              </footer>
+            </form>
+          </section>
+        </div>
+      }
+      @if (detailRow(); as row) {
+        <div class="modal-backdrop" (click)="closeDetails()">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="detail-dialog-title"
+            class="modal-panel"
+            (click)="$event.stopPropagation()"
+          >
+            <header class="flex items-start justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+              <div>
+                <p class="eyebrow">{{ section.label | uppercase }} · SOLA LETTURA</p>
+                <h2 id="detail-dialog-title" class="text-xl font-semibold">
+                  {{ value(row, 'title') || value(row, 'name') || value(row, 'category') || 'Voce del diario' }}
+                </h2>
+              </div>
+              <button type="button" class="icon-button" aria-label="Chiudi" (click)="closeDetails()">×</button>
+            </header>
+            <div class="space-y-4 overflow-y-auto px-5 py-5">
+              <dl class="grid gap-4 sm:grid-cols-2">
+                @for (field of visibleFields(row); track field.key) {
+                  @if (value(row, field.key)) {
+                    <div class="min-w-0">
+                      <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ field.label }}</dt>
+                      <dd class="mt-1 whitespace-pre-wrap break-words text-sm">{{ value(row, field.key) }}</dd>
+                    </div>
+                  }
+                }
+              </dl>
+              @if (section.id === 'children') {
+                <section class="space-y-4 border-t border-slate-100 pt-4 dark:border-slate-800" aria-labelledby="detail-measurements-title">
+                  <div>
+                    <h3 id="detail-measurements-title" class="font-semibold">Andamento fisiologico</h3>
+                    <p class="mt-1 text-sm text-slate-500">Peso, altezza e circonferenza della testa nel tempo.</p>
+                  </div>
+                  @if (measurementError()) { <p class="notice-error" role="alert">{{ measurementError() }}</p> }
+                  @if (measurementRows().length) {
+                    <div class="grid gap-3 sm:grid-cols-2">
+                      @for (metric of measurementMetrics; track metric.key) {
+                        @if (hasMeasurement(metric.key)) {
+                          <div class="rounded-xl border border-slate-100 p-3 dark:border-slate-800">
+                            <h4 class="text-sm font-semibold">{{ metric.label }}</h4>
+                            <p class="text-xs text-slate-500">{{ measurementTrend(metric.key) }}</p>
+                            <svg viewBox="0 0 320 90" class="mt-2 h-20 w-full" role="img" [attr.aria-label]="'Andamento ' + metric.label + ' nel tempo'">
+                              <path d="M8 80H312" stroke="currentColor" class="text-slate-200 dark:text-slate-700" />
+                              <polyline [attr.points]="measurementPoints(metric.key)" fill="none" stroke="#0f8b83" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                          </div>
+                        }
+                      }
+                    </div>
+                    <ol class="max-h-36 divide-y divide-slate-100 overflow-y-auto text-sm dark:divide-slate-800">
+                      @for (measurement of measurementRows(); track measurement.id) {
+                        <li class="flex flex-wrap gap-x-4 gap-y-1 py-2"><time>{{ value(measurement, 'date') | date:'d MMM y' }}</time>@if (measurement['weight_kg'] != null) { <span>{{ measurement['weight_kg'] }} kg</span> }@if (measurement['height_cm'] != null) { <span>{{ measurement['height_cm'] }} cm</span> }@if (measurement['head_circumference_cm'] != null) { <span>Testa {{ measurement['head_circumference_cm'] }} cm</span> }</li>
+                      }
+                    </ol>
+                  } @else {
+                    <p class="rounded-xl bg-slate-50 p-3 text-sm text-slate-500 dark:bg-slate-800/60">Non ci sono ancora misurazioni. Aggiungi peso o altezza qui sotto per iniziare a vedere l’andamento.</p>
+                  }
+                  <form class="grid gap-3 sm:grid-cols-2" (ngSubmit)="saveMeasurement()">
+                    <label class="form-field"><span>Data</span><app-datepicker label="Data misurazione" [value]="measurementForm['date']" (dateChange)="measurementForm['date'] = $event" /></label>
+                    <label class="form-field"><span>Peso (kg)</span><input class="field-control" type="number" min="0" max="300" step="0.01" [(ngModel)]="measurementForm['weight_kg']" name="detail_weight_kg" /></label>
+                    <label class="form-field"><span>Altezza (cm)</span><input class="field-control" type="number" min="0" max="250" step="0.1" [(ngModel)]="measurementForm['height_cm']" name="detail_height_cm" /></label>
+                    <label class="form-field"><span>Circonferenza testa (cm)</span><input class="field-control" type="number" min="0" max="100" step="0.1" [(ngModel)]="measurementForm['head_circumference_cm']" name="detail_head_circumference_cm" /></label>
+                    <div class="sm:col-span-2"><button class="button-primary" type="submit" [disabled]="measurementSaving()">{{ measurementSaving() ? 'Salvataggio…' : 'Registra misure' }}</button></div>
+                  </form>
+                </section>
+              }
+              @if (value(row, 'voice_note_data')) {
+                <audio controls preload="none" class="h-10 w-full max-w-sm" [src]="value(row, 'voice_note_data')" aria-label="Nota vocale"></audio>
+              }
+              @if (value(row, 'voice_note_path')) {
+                <button type="button" class="button-secondary" (click)="openVoice(row)">Ascolta nota vocale</button>
+              }
+              @if ((section.id === 'documents' && value(row, 'storage_path')) || (section.id === 'expenses' && value(row, 'receipt_path'))) {
+                <button type="button" class="button-secondary" (click)="openDocument(row)">Visualizza allegato</button>
+              }
+            </div>
+            <footer class="flex justify-end gap-2 border-t border-slate-100 px-5 py-4 dark:border-slate-800">
+              <button type="button" class="button-secondary" (click)="closeDetails()">Chiudi</button>
+              <button type="button" class="button-secondary" (click)="editFromDetails(row)">Modifica</button>
+              <button type="button" class="button-secondary text-rose-700" (click)="removeFromDetails(row)">Elimina</button>
+            </footer>
+          </section>
+        </div>
+      }
+    }
+  `,
+})
 export class FeaturePageComponent implements OnInit, OnDestroy {
   @Input({ required: true }) sectionId!: SectionId;
-  readonly data = inject(DiaryDataService); readonly ui = inject(UiStateService); private readonly auth = inject(AuthService); private readonly pdf = inject(PdfExportService); private readonly dataExport = inject(DataExportService); private readonly supabase = inject(SupabaseClientService); private readonly storage = inject(StorageService);
-  readonly isFormOpen = signal(false); readonly saving = signal(false); readonly extracting = signal(false); readonly exporting = signal(false); readonly initialized = signal(false); readonly recording = signal(false); readonly selectedChildId = signal(''); readonly selectedChildName = signal(''); readonly highlightedId = signal(''); readonly shareNoticeId = signal(''); readonly shareNotice = signal(''); readonly reportFrom = signal(''); readonly reportTo = signal(''); readonly reportCategory = signal(''); readonly reportCategories = ['Farmaci', 'Eventi e sintomi', 'Terapie', 'Documenti', 'Spese e rimborsi']; readonly children: DiaryRow[] = []; form: Record<string, string> = {}; private attachedFile: File | null = null; recordedVoice: Blob | null = null; recordedVoiceUrl = ''; private recorder?: MediaRecorder; private mediaStream?: MediaStream; private editingId = ''; private requestedChildId = ''; private routeSubscription?: Subscription; private readonly route = inject(ActivatedRoute);
-  get recordingSupported(): boolean { return typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined'; }
-  private readonly accountChangeEffect = effect(() => { const ready = this.initialized(); this.auth.user(); if (ready) queueMicrotask(() => void this.reloadForAccount()); });
-  get section(): SectionDefinition { return sectionById(this.sectionId)!; }
-  get childNames(): string[] { return this.children.map(c => String(c['name'])); }
-  get total(): number { return this.data.rows().reduce((sum, row) => sum + (Number(row['amount']) || (Number(row['distance_km']) || 0) * (Number(row['rate_per_km']) || 0)), 0); }
-  get kilometers(): number { return this.data.rows().reduce((sum, row) => sum + (Number(row['distance_km']) || 0), 0); }
-  get kmRefund(): number { return this.data.rows().reduce((sum, row) => sum + (Number(row['distance_km']) || 0) * (Number(row['rate_per_km']) || 0), 0); }
-  get filteredRows(): DiaryRow[] { return this.data.rows().filter(row => { const date = String(row['date'] ?? row['start_date'] ?? row['created_at'] ?? '').slice(0, 10); const category = String(row['record_type'] ?? ''); const categoryLabel = ({ medications: 'Farmaci', health_events: 'Eventi e sintomi', therapies: 'Terapie', documents: 'Documenti', expenses: 'Spese e rimborsi' } as Record<string, string>)[category] ?? ''; return (!this.reportFrom() || date >= this.reportFrom()) && (!this.reportTo() || date <= this.reportTo()) && (!this.reportCategory() || categoryLabel === this.reportCategory()); }); }
-  async ngOnInit(): Promise<void> { this.routeSubscription = this.route.queryParamMap.subscribe(params => { this.highlightedId.set(params.get('highlight') ?? ''); this.requestedChildId = params.get('child') ?? ''; if (this.initialized()) { const child = this.children.find(item => item.id === this.requestedChildId); if (child) { this.selectedChildId.set(child.id); this.selectedChildName.set(String(child['name'])); void this.refresh().then(() => this.scrollToHighlighted()); } else this.scrollToHighlighted(); } }); await this.auth.ready; await this.loadChildren(); await this.refresh(); this.initialized.set(true); this.scrollToHighlighted(); }
-  ngOnDestroy(): void { this.routeSubscription?.unsubscribe(); if (this.isFormOpen()) this.closeForm(); else this.ui.resetBodyScroll(); }
-  async refresh(): Promise<void> { if (this.sectionId === 'reports') { await this.data.loadReport(this.selectedChildId() || undefined); return; } if (this.sectionId !== 'children' && this.selectedChildId()) { const client = this.supabase.client; if (client && this.auth.user()) { this.data.syncing.set(true); const { data, error } = await client.from(this.sectionId).select('*').eq('child_id', this.selectedChildId()).order('created_at', { ascending: false }); if (!error) this.data.rows.set(data as DiaryRow[]); else this.data.error.set(error.message); this.data.syncing.set(false); return; } await this.data.load(this.sectionId); this.data.rows.set(this.data.rows().filter(row => row['child_id'] === this.selectedChildId())); return; } await this.data.load(this.sectionId); }
-  value(row: DiaryRow, key: string): string { const value = row[key]; return value == null ? '' : String(value); }
-  visibleFields(row: DiaryRow): FieldDefinition[] { if (this.sectionId === 'reports') return ([{ key: 'record_type', label: 'Categoria', kind: 'text' }, { key: 'notes', label: 'Note', kind: 'text' }] as FieldDefinition[]).filter(field => row[field.key] != null); return this.section.fields.filter(field => !['file', 'name'].includes(field.key) && field.key !== 'title' && row[field.key] != null); }
-  setField(field: FieldDefinition, value: string): void { this.form[field.key] = value; }
-  setFile(field: FieldDefinition, event: Event): void { const file = (event.target as HTMLInputElement).files?.[0]; if (file) { this.attachedFile = file; this.form[field.key] = file.name; } }
-  selectChild(name: string): void { const child = this.children.find(item => item['name'] === name); this.selectedChildName.set(name); this.selectedChildId.set(child?.id ?? ''); void this.refresh(); }
-  openForm(): void { this.form = {}; this.attachedFile = null; this.clearVoice(); this.editingId = ''; this.isFormOpen.set(true); this.ui.setModal(true); }
-  edit(row: DiaryRow): void { this.form = {}; for (const field of this.section.fields) { const value = row[field.key]; if (value != null && typeof value !== 'object') this.form[field.key] = String(value); } this.editingId = row.id; this.isFormOpen.set(true); this.ui.setModal(true); }
-  closeForm(): void { this.stopRecording(); this.clearVoice(); this.isFormOpen.set(false); this.ui.setModal(false); }
-  async toggleRecording(): Promise<void> { if (this.recording()) { this.stopRecording(); return; } try { this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true }); const chunks: BlobPart[] = []; this.recorder = new MediaRecorder(this.mediaStream); this.recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); }; this.recorder.onstop = () => { if (chunks.length) { this.recordedVoice = new Blob(chunks, { type: this.recorder?.mimeType || 'audio/webm' }); this.recordedVoiceUrl = URL.createObjectURL(this.recordedVoice); } this.mediaStream?.getTracks().forEach(track => track.stop()); this.mediaStream = undefined; this.recording.set(false); }; this.recorder.start(); this.recording.set(true); } catch { this.data.error.set('Impossibile accedere al microfono. Controlla i permessi del browser.'); } }
-  private stopRecording(): void { if (this.recorder && this.recorder.state !== 'inactive') this.recorder.stop(); else { this.mediaStream?.getTracks().forEach(track => track.stop()); this.recording.set(false); } }
-  clearVoice(): void { this.stopRecording(); if (this.recordedVoiceUrl) URL.revokeObjectURL(this.recordedVoiceUrl); this.recordedVoice = null; this.recordedVoiceUrl = ''; }
-  async save(): Promise<void> { this.saving.set(true); const value: Record<string, unknown> = { ...this.form }; if (this.recording()) { const recorder = this.recorder; this.stopRecording(); if (recorder) await new Promise<void>(resolve => recorder.addEventListener('stop', () => resolve(), { once: true })); } if (this.recordedVoice) { if (this.sectionId !== 'children' && this.selectedChildId() && this.supabase.configured && this.auth.user()) { const path = await this.storage.uploadVoice(new File([this.recordedVoice], 'nota-vocale.webm', { type: this.recordedVoice.type }), this.selectedChildId()); if (!path) { this.data.error.set('Non è stato possibile caricare la nota vocale.'); this.saving.set(false); return; } value['voice_note_path'] = path; } else value['voice_note_data'] = await this.blobDataUrl(this.recordedVoice); } for (const key of ['amount', 'distance_km', 'rate_per_km']) if (value[key]) value[key] = Number(value[key]); if (this.sectionId === 'children' && this.auth.user()) value['user_id'] = this.auth.user()!.id; if (this.sectionId === 'documents' && this.attachedFile && (this.attachedFile.type === 'application/pdf' || this.attachedFile.name.toLowerCase().endsWith('.pdf'))) { this.extracting.set(true); try { value['extracted_text'] = await this.extractPdfText(this.attachedFile); if (!value['extracted_text']) this.data.error.set('Il PDF non contiene testo selezionabile. I PDF composti solo da scansioni non sono indicizzati.'); } catch { value['extracted_text'] = ''; this.data.error.set('Non è stato possibile estrarre il testo dal PDF; il documento verrà comunque salvato.'); } finally { this.extracting.set(false); } } if (this.attachedFile && this.selectedChildId() && ['documents', 'expenses'].includes(this.sectionId)) { const path = await this.storage.upload(this.attachedFile, this.selectedChildId()); if (path) value[this.sectionId === 'documents' ? 'storage_path' : 'receipt_path'] = path; else if (this.supabase.configured && this.auth.user()) { this.data.error.set('Upload non autorizzato. Applica le migrazioni Storage aggiornate su Supabase e riprova.'); this.saving.set(false); return; } } if (this.sectionId === 'documents' && value['storage_path']) delete value['file']; if (this.sectionId === 'expenses' && value['receipt_path']) delete value['receipt']; const ok = this.editingId ? await this.data.update(this.sectionId, this.editingId, value) : await this.data.save(this.sectionId, value, this.sectionId === 'children' ? undefined : this.selectedChildId() || undefined); this.saving.set(false); if (ok) this.closeForm(); }
-  private blobDataUrl(blob: Blob): Promise<string> { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(blob); }); }
-  private async extractPdfText(file: File): Promise<string> { GlobalWorkerOptions.workerSrc = new URL('assets/pdfjs/pdf.worker.min.mjs', document.baseURI).toString(); const pdf = await getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise; const pages: string[] = []; for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) { const page = await pdf.getPage(pageNumber); const content = await page.getTextContent(); pages.push(content.items.map(item => 'str' in item ? item.str : '').filter(Boolean).join(' ')); } await pdf.destroy(); return pages.join('\n').replace(/[ \t]+/g, ' ').trim(); }
-  async remove(row: DiaryRow): Promise<void> { if (confirm('Vuoi eliminare questa voce dal diario?')) await this.data.remove(this.sectionId, row); }
+  readonly data = inject(DiaryDataService);
+  readonly ui = inject(UiStateService);
+  private readonly auth = inject(AuthService);
+  private readonly pdf = inject(PdfExportService);
+  private readonly dataExport = inject(DataExportService);
+  private readonly supabase = inject(SupabaseClientService);
+  private readonly storage = inject(StorageService);
+  readonly isFormOpen = signal(false);
+  readonly detailRow = signal<DiaryRow | null>(null);
+  readonly saving = signal(false);
+  readonly extracting = signal(false);
+  readonly exporting = signal(false);
+  readonly initialized = signal(false);
+  readonly recording = signal(false);
+  readonly audioSpectrum = signal<number[]>(Array.from({ length: 28 }, () => 4));
+  readonly selectedChildId = signal('');
+  readonly selectedChildName = signal('');
+  readonly highlightedId = signal('');
+  readonly shareNoticeId = signal('');
+  readonly shareNotice = signal('');
+  readonly reportFrom = signal('');
+  readonly reportTo = signal('');
+  readonly reportCategory = signal('');
+  readonly reportCategories = [
+    'Farmaci',
+    'Eventi e sintomi',
+    'Percorsi terapeutici',
+    'Documenti',
+    'Spese e rimborsi',
+  ];
+  readonly measurementRows = signal<DiaryRow[]>([]);
+  readonly measurementSaving = signal(false);
+  readonly measurementError = signal('');
+  readonly measurementMetrics = [
+    { key: 'weight_kg', label: 'Peso (kg)' },
+    { key: 'height_cm', label: 'Altezza (cm)' },
+    { key: 'head_circumference_cm', label: 'Circonferenza testa (cm)' },
+  ];
+  measurementForm: Record<string, string> = { date: new Date().toISOString().slice(0, 10) };
+  readonly children: DiaryRow[] = [];
+  form: Record<string, string> = {};
+  attachedFile: File | null = null;
+  recordedVoice: Blob | null = null;
+  recordedVoiceUrl = '';
+  private recorder?: MediaRecorder;
+  private mediaStream?: MediaStream;
+  private audioContext?: AudioContext;
+  private analyser?: AnalyserNode;
+  private spectrumFrame = 0;
+  private editingId = '';
+  private requestedChildId = '';
+  private routeSubscription?: Subscription;
+  private readonly route = inject(ActivatedRoute);
+  get recordingSupported(): boolean {
+    return (
+      typeof navigator !== 'undefined' &&
+      !!navigator.mediaDevices?.getUserMedia &&
+      typeof MediaRecorder !== 'undefined'
+    );
+  }
+  private readonly accountChangeEffect = effect(() => {
+    const ready = this.initialized();
+    this.auth.user();
+    if (ready) queueMicrotask(() => void this.reloadForAccount());
+  });
+  get section(): SectionDefinition {
+    return sectionById(this.sectionId)!;
+  }
+  get childNames(): string[] {
+    return this.children.map((c) => String(c['name']));
+  }
+  get total(): number {
+    return this.data
+      .rows()
+      .reduce(
+        (sum, row) =>
+          sum +
+          (Number(row['amount']) ||
+            (Number(row['distance_km']) || 0) * (Number(row['rate_per_km']) || 0)),
+        0,
+      );
+  }
+  get kilometers(): number {
+    return this.data.rows().reduce((sum, row) => sum + (Number(row['distance_km']) || 0), 0);
+  }
+  get kmRefund(): number {
+    return this.data
+      .rows()
+      .reduce(
+        (sum, row) => sum + (Number(row['distance_km']) || 0) * (Number(row['rate_per_km']) || 0),
+        0,
+      );
+  }
+  get filteredRows(): DiaryRow[] {
+    return this.data.rows().filter((row) => {
+      const date = String(row['date'] ?? row['start_date'] ?? '').slice(0, 10);
+      const category = String(row['record_type'] ?? '');
+      const categoryLabel =
+        (
+          {
+            medications: 'Farmaci',
+            health_events: 'Eventi e sintomi',
+            therapies: 'Percorsi terapeutici',
+            documents: 'Documenti',
+            expenses: 'Spese e rimborsi',
+          } as Record<string, string>
+        )[category] ?? '';
+      return (
+        (!this.reportFrom() || date >= this.reportFrom()) &&
+        (!this.reportTo() || date <= this.reportTo()) &&
+        (!this.reportCategory() || categoryLabel === this.reportCategory())
+      );
+    });
+  }
+  async ngOnInit(): Promise<void> {
+    this.routeSubscription = this.route.queryParamMap.subscribe((params) => {
+      this.highlightedId.set(params.get('highlight') ?? '');
+      this.requestedChildId = params.get('child') ?? '';
+      if (this.initialized()) {
+        const child = this.children.find((item) => item.id === this.requestedChildId);
+        if (child) {
+          this.selectedChildId.set(child.id);
+          this.selectedChildName.set(String(child['name']));
+          void this.refresh().then(() => {
+            this.scrollToHighlighted();
+            this.openHighlightedDetails();
+          });
+        } else {
+          this.scrollToHighlighted();
+          this.openHighlightedDetails();
+        }
+      }
+    });
+    await this.auth.ready;
+    await this.loadChildren();
+    await this.refresh();
+    this.initialized.set(true);
+    this.scrollToHighlighted();
+    this.openHighlightedDetails();
+  }
+  ngOnDestroy(): void {
+    this.routeSubscription?.unsubscribe();
+    if (this.isFormOpen()) this.closeForm();
+    else this.ui.resetBodyScroll();
+  }
+  async refresh(): Promise<void> {
+    if (this.sectionId === 'reports') {
+      await this.data.loadReport(this.selectedChildId() || undefined);
+      return;
+    }
+    if (this.sectionId !== 'children' && this.selectedChildId()) {
+      const client = this.supabase.client;
+      if (client && this.auth.user()) {
+        this.data.syncing.set(true);
+        const dateField: Partial<Record<SectionId, string>> = {
+          medications: 'start_date',
+          medicine_cabinet: 'expiry_date',
+          health_events: 'date',
+          therapies: 'start_date',
+          documents: 'date',
+          expenses: 'date',
+        };
+        let query = client.from(this.sectionId).select('*').eq('child_id', this.selectedChildId());
+        const field = dateField[this.sectionId];
+        if (field) query = query.order(field, { ascending: false, nullsFirst: false });
+        const { data, error } = await query;
+        if (!error) this.data.rows.set((data ?? []) as DiaryRow[]);
+        else this.data.error.set(error.message);
+        this.data.syncing.set(false);
+        return;
+      }
+      await this.data.load(this.sectionId);
+      this.data.rows.set(
+        this.data.rows().filter((row) => row['child_id'] === this.selectedChildId()),
+      );
+      return;
+    }
+    await this.data.load(this.sectionId);
+  }
+  value(row: DiaryRow, key: string): string {
+    const value = row[key];
+    if (value == null) return '';
+    if (key === 'time' && typeof value === 'string') {
+      const match = value.match(/^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/);
+      if (match) return `${match[1]}:${match[2]}`;
+    }
+    return String(value);
+  }
+  visibleFields(row: DiaryRow): FieldDefinition[] {
+    if (this.sectionId === 'reports')
+      return (
+        [
+          { key: 'record_type', label: 'Categoria', kind: 'text' },
+          { key: 'notes', label: 'Note', kind: 'text' },
+        ] as FieldDefinition[]
+      ).filter((field) => row[field.key] != null);
+    return this.section.fields.filter(
+      (field) =>
+        !['file', 'name'].includes(field.key) && field.key !== 'title' && row[field.key] != null,
+    );
+  }
+  setField(field: FieldDefinition, value: string): void {
+    this.form[field.key] = value;
+  }
+  setFile(field: FieldDefinition, event: Event): void {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (file) {
+      this.attachedFile = file;
+      this.form[field.key] = file.name;
+    }
+  }
+  setRedactedFile(file: File): void {
+    this.attachedFile = file;
+    this.form['file'] = file.name;
+  }
+  selectChild(name: string): void {
+    const child = this.children.find((item) => item['name'] === name);
+    this.selectedChildName.set(name);
+    this.selectedChildId.set(child?.id ?? '');
+    void this.refresh();
+    void this.loadMeasurements();
+  }
+  async loadMeasurements(): Promise<void> {
+    const childId = this.selectedChildId();
+    if (!childId) { this.measurementRows.set([]); return; }
+    this.measurementError.set('');
+    const client = this.supabase.client;
+    if (client && this.auth.user()) {
+      const { data, error } = await client.from('child_measurements').select('*').eq('child_id', childId).order('date', { ascending: true });
+      if (error) { this.measurementError.set(error.message); this.measurementRows.set([]); return; }
+      this.measurementRows.set((data ?? []) as DiaryRow[]);
+      return;
+    }
+    this.measurementRows.set(this.data.localMeasurements(childId));
+  }
+  async saveMeasurement(): Promise<void> {
+    const values = Object.fromEntries(Object.entries(this.measurementForm).filter(([key, value]) => key === 'date' || value !== '').map(([key, value]) => [key, key === 'date' ? value : Number(value)]));
+    if (Object.keys(values).length < 2) { this.measurementError.set('Inserisci almeno una misura.'); return; }
+    this.measurementSaving.set(true);
+    const ok = await this.data.saveMeasurement(this.selectedChildId(), values);
+    this.measurementSaving.set(false);
+    if (ok) { this.measurementError.set(''); this.measurementForm = { date: new Date().toISOString().slice(0, 10) }; await this.loadMeasurements(); }
+    else this.measurementError.set(this.data.error() || 'Non è stato possibile salvare la misurazione.');
+  }
+  measurementTrend(key: string): string {
+    const values = this.measurementRows().filter(row => row[key] != null);
+    if (values.length < 2) return 'Aggiungi altre rilevazioni per vedere il trend';
+    const first = Number(values[0][key]); const last = Number(values.at(-1)?.[key]);
+    const delta = last - first;
+    return `${delta > 0 ? '+' : ''}${delta.toFixed(1)} rispetto alla prima rilevazione`;
+  }
+  hasMeasurement(key: string): boolean {
+    return this.measurementRows().some((row) => row[key] != null);
+  }
+  measurementPoints(key: string): string {
+    const values = this.measurementRows().filter(row => row[key] != null).map(row => Number(row[key]));
+    if (values.length === 1) return `160,45 312,45`;
+    const min = Math.min(...values); const max = Math.max(...values); const spread = max - min || 1;
+    return values.map((value, index) => `${8 + index * (304 / (values.length - 1))},${80 - ((value - min) / spread) * 64}`).join(' ');
+  }
+  openForm(): void {
+    this.form = {};
+    this.attachedFile = null;
+    this.clearVoice();
+    this.editingId = '';
+    this.isFormOpen.set(true);
+    this.ui.setModal(true);
+  }
+  openDetailsFromCard(event: MouseEvent, row: DiaryRow): void {
+    if ((event.target as HTMLElement).closest('button, a, audio')) return;
+    this.openDetails(row);
+  }
+  openDetailsFromKeyboard(event: KeyboardEvent, row: DiaryRow): void {
+    if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
+    event.preventDefault();
+    this.openDetails(row);
+  }
+  private openDetails(row: DiaryRow): void {
+    this.detailRow.set(row);
+    if (this.sectionId === 'children') {
+      this.selectedChildId.set(row.id);
+      this.selectedChildName.set(String(row['name'] ?? ''));
+      void this.loadMeasurements();
+    }
+    this.ui.setModal(true);
+  }
+  closeDetails(): void {
+    this.detailRow.set(null);
+    this.ui.setModal(false);
+  }
+  editFromDetails(row: DiaryRow): void {
+    this.closeDetails();
+    this.edit(row);
+  }
+  async removeFromDetails(row: DiaryRow): Promise<void> {
+    this.closeDetails();
+    await this.remove(row);
+  }
+  private openHighlightedDetails(): void {
+    const id = this.highlightedId();
+    if (!id) return;
+    const row = this.data.rows().find((item) => item.id === id);
+    if (row) this.openDetails(row);
+  }
+  edit(row: DiaryRow): void {
+    this.form = {};
+    for (const field of this.section.fields) {
+      const value = row[field.key];
+      if (value != null && typeof value !== 'object') this.form[field.key] = String(value);
+    }
+    this.editingId = row.id;
+    this.isFormOpen.set(true);
+    this.ui.setModal(true);
+  }
+  closeForm(): void {
+    this.stopRecording();
+    this.clearVoice();
+    this.isFormOpen.set(false);
+    this.ui.setModal(false);
+  }
+  async toggleRecording(): Promise<void> {
+    if (this.recording()) {
+      this.stopRecording();
+      return;
+    }
+    try {
+      this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const chunks: BlobPart[] = [];
+      this.recorder = new MediaRecorder(this.mediaStream);
+      this.recorder.ondataavailable = (event) => {
+        if (event.data.size) chunks.push(event.data);
+      };
+      this.recorder.onstop = () => {
+        if (chunks.length) {
+          this.recordedVoice = new Blob(chunks, { type: this.recorder?.mimeType || 'audio/webm' });
+          this.recordedVoiceUrl = URL.createObjectURL(this.recordedVoice);
+        }
+        this.mediaStream?.getTracks().forEach((track) => track.stop());
+        this.mediaStream = undefined;
+        this.stopSpectrum();
+        this.recording.set(false);
+      };
+      this.audioContext = new AudioContext();
+      this.analyser = this.audioContext.createAnalyser();
+      this.analyser.fftSize = 64;
+      this.audioContext.createMediaStreamSource(this.mediaStream).connect(this.analyser);
+      this.recorder.start();
+      this.recording.set(true);
+      this.updateSpectrum();
+    } catch {
+      this.stopSpectrum();
+      this.mediaStream?.getTracks().forEach((track) => track.stop());
+      this.mediaStream = undefined;
+      this.data.error.set('Impossibile accedere al microfono. Controlla i permessi del browser.');
+    }
+  }
+  private updateSpectrum(): void {
+    const analyser = this.analyser;
+    if (!analyser) return;
+    const values = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(values);
+    this.audioSpectrum.set(
+      Array.from(values, (value) => Math.max(4, Math.round((value / 255) * 96))),
+    );
+    this.spectrumFrame = requestAnimationFrame(() => this.updateSpectrum());
+  }
+  private stopSpectrum(): void {
+    cancelAnimationFrame(this.spectrumFrame);
+    this.spectrumFrame = 0;
+    this.analyser?.disconnect();
+    this.analyser = undefined;
+    if (this.audioContext && this.audioContext.state !== 'closed') void this.audioContext.close();
+    this.audioContext = undefined;
+    this.audioSpectrum.set(Array.from({ length: 28 }, () => 4));
+  }
+  private stopRecording(): void {
+    if (this.recorder && this.recorder.state !== 'inactive') this.recorder.stop();
+    else {
+      this.mediaStream?.getTracks().forEach((track) => track.stop());
+      this.stopSpectrum();
+      this.recording.set(false);
+    }
+  }
+  clearVoice(): void {
+    this.stopRecording();
+    if (this.recordedVoiceUrl) URL.revokeObjectURL(this.recordedVoiceUrl);
+    this.recordedVoice = null;
+    this.recordedVoiceUrl = '';
+  }
+  async save(): Promise<void> {
+    this.saving.set(true);
+    const value: Record<string, unknown> = { ...this.form };
+    if (this.recording()) {
+      const recorder = this.recorder;
+      this.stopRecording();
+      if (recorder)
+        await new Promise<void>((resolve) =>
+          recorder.addEventListener('stop', () => resolve(), { once: true }),
+        );
+    }
+    if (this.recordedVoice) {
+      if (
+        this.sectionId !== 'children' &&
+        this.selectedChildId() &&
+        this.supabase.configured &&
+        this.auth.user()
+      ) {
+        const path = await this.storage.uploadVoice(
+          new File([this.recordedVoice], 'nota-vocale.webm', { type: this.recordedVoice.type }),
+          this.selectedChildId(),
+        );
+        if (!path) {
+          this.data.error.set('Non è stato possibile caricare la nota vocale.');
+          this.saving.set(false);
+          return;
+        }
+        value['voice_note_path'] = path;
+      } else value['voice_note_data'] = await this.blobDataUrl(this.recordedVoice);
+    }
+    for (const key of ['amount', 'distance_km', 'rate_per_km', 'price']) {
+      if (value[key] === '' && key === 'price') value[key] = null;
+      else if (value[key] !== '' && value[key] != null) value[key] = Number(value[key]);
+    }
+    if (this.sectionId === 'children' && this.auth.user()) value['user_id'] = this.auth.user()!.id;
+    if (
+      this.sectionId === 'documents' &&
+      this.attachedFile &&
+      (this.attachedFile.type === 'application/pdf' ||
+        this.attachedFile.name.toLowerCase().endsWith('.pdf'))
+    ) {
+      this.extracting.set(true);
+      try {
+        value['extracted_text'] = await this.extractPdfText(this.attachedFile);
+        if (!value['extracted_text'])
+          this.data.error.set(
+            'Il PDF non contiene testo selezionabile. I PDF composti solo da scansioni non sono indicizzati.',
+          );
+      } catch {
+        value['extracted_text'] = '';
+        this.data.error.set(
+          'Non è stato possibile estrarre il testo dal PDF; il documento verrà comunque salvato.',
+        );
+      } finally {
+        this.extracting.set(false);
+      }
+    }
+    if (
+      this.attachedFile &&
+      this.selectedChildId() &&
+      ['documents', 'expenses'].includes(this.sectionId)
+    ) {
+      const path = await this.storage.upload(this.attachedFile, this.selectedChildId());
+      if (path) value[this.sectionId === 'documents' ? 'storage_path' : 'receipt_path'] = path;
+      else if (this.supabase.configured && this.auth.user()) {
+        this.data.error.set(
+          'Upload non autorizzato. Applica le migrazioni Storage aggiornate su Supabase e riprova.',
+        );
+        this.saving.set(false);
+        return;
+      }
+    }
+    if (this.sectionId === 'documents' && value['storage_path']) delete value['file'];
+    if (this.sectionId === 'expenses' && value['receipt_path']) delete value['receipt'];
+    const ok = this.editingId
+      ? await this.data.update(this.sectionId, this.editingId, value)
+      : await this.data.save(
+        this.sectionId,
+        value,
+        this.sectionId === 'children' ? undefined : this.selectedChildId() || undefined,
+      );
+    this.saving.set(false);
+    if (ok) this.closeForm();
+  }
+  private blobDataUrl(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  }
+  private async extractPdfText(file: File): Promise<string> {
+    GlobalWorkerOptions.workerSrc = new URL(
+      'assets/pdfjs/pdf.worker.min.mjs',
+      document.baseURI,
+    ).toString();
+    const pdf = await getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+    const pages: string[] = [];
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+      const page = await pdf.getPage(pageNumber);
+      const content = await page.getTextContent();
+      pages.push(
+        content.items
+          .map((item) => ('str' in item ? item.str : ''))
+          .filter(Boolean)
+          .join(' '),
+      );
+    }
+    await pdf.destroy();
+    return pages
+      .join('\n')
+      .replace(/[ \t]+/g, ' ')
+      .trim();
+  }
+  async remove(row: DiaryRow): Promise<void> {
+    if (confirm('Vuoi eliminare questa voce dal diario?'))
+      await this.data.remove(this.sectionId, row);
+  }
   async shareContact(row: DiaryRow): Promise<void> {
-    const lines = [row['name'], row['role'], row['category'], row['facility'], row['phone'], row['email']]
-      .filter(value => value != null && String(value).trim())
-      .map(value => String(value).trim());
+    const lines = [
+      row['name'],
+      row['role'],
+      row['category'],
+      row['facility'],
+      row['phone'],
+      row['email'],
+    ]
+      .filter((value) => value != null && String(value).trim())
+      .map((value) => String(value).trim());
     const text = lines.join('\n');
     try {
       if (navigator.share) {
@@ -100,12 +1192,73 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       this.showShareNotice(row.id, 'Non è stato possibile condividere il contatto.');
     }
   }
-  private showShareNotice(id: string, message: string): void { this.shareNoticeId.set(id); this.shareNotice.set(message); }
-  exportReport(): void { this.pdf.export(this.section, this.filteredRows, this.selectedChildName()); }
-  async exportData(format: 'json' | 'markdown' | 'doc'): Promise<void> { this.exporting.set(true); this.data.error.set(''); try { await this.dataExport.export(format); } catch (error) { this.data.error.set(error instanceof Error ? error.message : 'Esportazione non riuscita. Riprova.'); } finally { this.exporting.set(false); } }
-  async openVoice(row: DiaryRow): Promise<void> { const url = await this.storage.signedUrl(String(row['voice_note_path'])); if (url) window.open(url, '_blank', 'noopener'); else this.data.error.set('Impossibile aprire la nota vocale.'); }
-  async openDocument(row: DiaryRow): Promise<void> { const path = row['storage_path'] ?? row['receipt_path']; const url = await this.storage.signedUrl(String(path)); if (url) window.open(url, '_blank', 'noopener'); else this.data.error.set('Impossibile aprire il file. Accedi al tuo account e riprova.'); }
-  private async loadChildren(): Promise<void> { this.children.splice(0); if (this.sectionId === 'children') return; const client = this.supabase.client; if (client && this.auth.user()) { const { data } = await client.from('children').select('id,name').order('name'); this.children.push(...(data ?? []) as DiaryRow[]); } else { const stored = JSON.parse(localStorage.getItem('trialcare-diary-v1') ?? '{}') as Record<string, DiaryRow[]>; this.children.push(...(stored['children'] ?? [])); } const selected = this.children.find(item => item.id === this.requestedChildId) ?? this.children[0]; if (selected) { this.selectedChildId.set(selected.id); this.selectedChildName.set(String(selected['name'])); } else { this.selectedChildId.set(''); this.selectedChildName.set(''); } }
-  private scrollToHighlighted(): void { const id = this.highlightedId(); if (!id) return; requestAnimationFrame(() => { const element = document.getElementById(`diary-row-${id}`); element?.scrollIntoView({ behavior: 'smooth', block: 'center' }); element?.focus({ preventScroll: true }); }); }
-  private async reloadForAccount(): Promise<void> { await this.loadChildren(); await this.refresh(); }
+  private showShareNotice(id: string, message: string): void {
+    this.shareNoticeId.set(id);
+    this.shareNotice.set(message);
+  }
+  exportReport(): void {
+    this.pdf.export(this.section, this.filteredRows, this.selectedChildName());
+  }
+  async exportData(format: 'json' | 'markdown' | 'doc'): Promise<void> {
+    this.exporting.set(true);
+    this.data.error.set('');
+    try {
+      await this.dataExport.export(format);
+    } catch (error) {
+      this.data.error.set(
+        error instanceof Error ? error.message : 'Esportazione non riuscita. Riprova.',
+      );
+    } finally {
+      this.exporting.set(false);
+    }
+  }
+  async openVoice(row: DiaryRow): Promise<void> {
+    const url = await this.storage.signedUrl(String(row['voice_note_path']));
+    if (url) window.open(url, '_blank', 'noopener');
+    else this.data.error.set('Impossibile aprire la nota vocale.');
+  }
+  async openDocument(row: DiaryRow): Promise<void> {
+    const path = row['storage_path'] ?? row['receipt_path'];
+    const url = await this.storage.signedUrl(String(path));
+    if (url) window.open(url, '_blank', 'noopener');
+    else this.data.error.set('Impossibile aprire il file. Accedi al tuo account e riprova.');
+  }
+  private async loadChildren(): Promise<void> {
+    this.children.splice(0);
+    if (this.sectionId === 'children') return;
+    const client = this.supabase.client;
+    if (client && this.auth.user()) {
+      const { data } = await client.from('children').select('id,name').order('name');
+      this.children.push(...((data ?? []) as DiaryRow[]));
+    } else {
+      const stored = JSON.parse(localStorage.getItem('trialcare-diary-v1') ?? '{}') as Record<
+        string,
+        DiaryRow[]
+      >;
+      this.children.push(...(stored['children'] ?? []));
+    }
+    const selected =
+      this.children.find((item) => item.id === this.requestedChildId) ?? this.children[0];
+    if (selected) {
+      this.selectedChildId.set(selected.id);
+      this.selectedChildName.set(String(selected['name']));
+    } else {
+      this.selectedChildId.set('');
+      this.selectedChildName.set('');
+    }
+  }
+  private scrollToHighlighted(): void {
+    const id = this.highlightedId();
+    if (!id) return;
+    requestAnimationFrame(() => {
+      const element = document.getElementById(`diary-row-${id}`);
+      element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      element?.focus({ preventScroll: true });
+    });
+  }
+  private async reloadForAccount(): Promise<void> {
+    await this.loadChildren();
+    await this.refresh();
+    if (this.sectionId === 'children') { const first = this.children[0]; if (first) { this.selectedChildId.set(first.id); this.selectedChildName.set(String(first['name'])); await this.loadMeasurements(); } }
+  }
 }

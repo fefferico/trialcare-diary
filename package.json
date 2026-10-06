@@ -7,7 +7,8 @@
     "start": "ng serve",
     "build": "ng build",
     "build:pages": "ng build --base-href ./",
-    "update-context": "node scripts/update-context.js"
+    "update-context": "node scripts/update-context.js",
+    "format": "prettier --write \"src/**/*.{ts,html,css}\""
   },
   "dependencies": {
     "@angular/common": "21.2.19",
@@ -29,6 +30,7 @@
     "@angular/compiler-cli": "21.2.19",
     "@tailwindcss/postcss": "4.2.2",
     "postcss": "8.5.26",
+    "prettier": "^3.8.2",
     "tailwindcss": "4.2.2",
     "typescript": "5.9.3"
   }
