@@ -8,11 +8,13 @@ import { UiStateService } from './core/ui-state.service';
 import { StorageService } from './core/storage.service';
 import { LoginComponent } from './auth/login.component';
 import { SECTIONS } from './models/diary.models';
+import { AppConfirmDialogComponent } from './shared/app-confirm-dialog.component';
+import { TooltipDirective } from './shared/directives/tooltip.directive';
 
 @Component({
   selector: 'tc-root',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, LoginComponent],
+  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, LoginComponent, AppConfirmDialogComponent, TooltipDirective],
   template: ` @if (!auth.user()) {
       <tc-login />
     } @else if (biometricLocked()) {
@@ -52,6 +54,7 @@ import { SECTIONS } from './models/diary.models';
         class="app-frame min-h-dvh bg-[#f6f8f5] text-slate-800 dark:bg-[#0e1719] dark:text-slate-100"
         [class.sidebar-collapsed]="sidebarCollapsed()"
       >
+        <app-confirm-dialog />
         <aside class="sidebar hidden lg:flex">
           <a routerLink="/dashboard" class="brand-lockup" aria-label="TrialCare Diary"
             ><span class="brand-mark"
@@ -69,7 +72,7 @@ import { SECTIONS } from './models/diary.models';
               routerLinkActive="nav-active"
               class="nav-link"
               aria-label="Panoramica"
-              title="Panoramica"
+              appTooltip="Panoramica"
               ><span class="nav-glyph"
                 ><svg
                   viewBox="0 0 24 24"
@@ -89,7 +92,7 @@ import { SECTIONS } from './models/diary.models';
               routerLinkActive="nav-active"
               class="nav-link"
               aria-label="Calendario"
-              title="Calendario"
+              appTooltip="Calendario"
               ><span class="nav-glyph"
                 ><svg
                   viewBox="0 0 24 24"
@@ -112,7 +115,7 @@ import { SECTIONS } from './models/diary.models';
                 routerLinkActive="nav-active"
                 class="nav-link"
                 [attr.aria-label]="section.label"
-                [attr.title]="section.label"
+                [appTooltip]="section.label"
                 ><span class="nav-glyph"
                   ><svg
                     viewBox="0 0 24 24"
@@ -136,7 +139,7 @@ import { SECTIONS } from './models/diary.models';
                   class="avatar"
                   [attr.aria-label]="'Account di ' + user.email"
                   [attr.aria-expanded]="accountMenuOpen()"
-                  title="Account"
+                  appTooltip="Account"
                   (click)="accountMenuOpen.update((open) => !open)"
                 >
                   @if (avatarUrl()) {
@@ -213,7 +216,7 @@ import { SECTIONS } from './models/diary.models';
               type="button"
               class="sidebar-toggle icon-button"
               [attr.aria-label]="sidebarCollapsed() ? 'Espandi menu' : 'Riduci menu'"
-              [attr.title]="sidebarCollapsed() ? 'Espandi menu' : 'Riduci menu'"
+              [appTooltip]="sidebarCollapsed() ? 'Espandi menu' : 'Riduci menu'"
               (click)="toggleSidebar()"
             >
               <svg

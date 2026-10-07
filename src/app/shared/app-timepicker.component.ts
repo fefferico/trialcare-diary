@@ -9,8 +9,8 @@ import { Component, input, output, signal } from '@angular/core';
         class="field-control min-w-0 flex-1"
         type="text"
         inputmode="numeric"
-        placeholder="hh:mm"
-        [value]="value()"
+        [placeholder]="withSeconds() ? 'hh:mm:ss' : 'hh:mm'"
+        [value]="displayValue()"
         [attr.aria-label]="label()"
         (input)="onInput($event)"
       /><button
@@ -30,9 +30,9 @@ import { Component, input, output, signal } from '@angular/core';
           <button
             type="button"
             class="rounded-lg px-2 py-2 text-sm hover:bg-teal-50 dark:hover:bg-slate-800"
-            (click)="timeChange.emit(time); open.set(false)"
+            (click)="selectTime(time)"
           >
-            {{ time }}
+            {{ withSeconds() ? time + ':00' : time }}
           </button>
         }
       </div>
@@ -42,14 +42,34 @@ import { Component, input, output, signal } from '@angular/core';
 export class AppTimepickerComponent {
   readonly label = input('Orario');
   readonly value = input('');
+  readonly withSeconds = input(false);
   readonly timeChange = output<string>();
   readonly open = signal(false);
   readonly times = Array.from(
     { length: 48 },
     (_, i) => `${String(Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`,
   );
+
+  displayValue(): string {
+    const value = this.value() ?? '';
+    return this.withSeconds() ? value : value.replace(/^((?:[01]\d|2[0-3]):[0-5]\d):[0-5]\d$/, '$1');
+  }
+
+  selectTime(time: string): void {
+    const formatted = this.withSeconds() ? `${time}:00` : time;
+    this.timeChange.emit(formatted);
+    this.open.set(false);
+  }
+
   onInput(event: Event): void {
     const value = (event.target as HTMLInputElement).value;
-    if (/^([01]\d|2[0-3]):[0-5]\d$/.test(value) || !value) this.timeChange.emit(value);
+    if (!value) {
+      this.timeChange.emit('');
+      return;
+    }
+    const match = value.match(/^(\d{1,2}):([0-5]\d)(?::([0-5]\d))?$/);
+    if (!match || Number(match[1]) > 23) return;
+    const normalized = `${match[1].padStart(2, '0')}:${match[2]}${match[3] ? `:${match[3]}` : ''}`;
+    this.timeChange.emit(normalized);
   }
 }

@@ -566,6 +566,9 @@ textarea:focus-visible {
   padding: 0;
   backdrop-filter: blur(3px);
 }
+.confirmation-backdrop {
+  z-index: 60;
+}
 .modal-panel {
   display: flex;
   width: 100%;

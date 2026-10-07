@@ -1,6 +1,6 @@
 # API Catalog
 
-> Generato da `npm run update-context` il 06/10/2026, 21:38:22.
+> Generato da `npm run update-context` il 07/10/2026, 10:06:34.
 
 ## Servizi
 
@@ -21,6 +21,13 @@ File: [src/app/core/biometric-auth.service.ts](../src/app/core/biometric-auth.se
 - `signIn()`: `Promise<void>`
 - `revoke()`: `void`
 
+### ConfirmationService
+
+File: [src/app/core/confirmation.service.ts](../src/app/core/confirmation.service.ts)
+
+- `confirm(message: string, options: Partial<ConfirmationRequest> = {})`: `Promise<boolean>`
+- `finish(confirmed: boolean)`: `void`
+
 ### DataExportService
 
 File: [src/app/core/data-export.service.ts](../src/app/core/data-export.service.ts)
@@ -36,6 +43,13 @@ File: [src/app/core/diary-data.service.ts](../src/app/core/diary-data.service.ts
 - `loadAllForExport()`: `Promise<DiaryExportData>`
 - `localMeasurements(childId?: string)`: `DiaryRow[]`
 - `saveMeasurement(childId: string, value: Record<string, unknown>)`: `Promise<boolean>`
+- `markMedicationDoseTaken(
+    medicationId: string,
+    childId: string,
+    scheduledDate: string,
+    scheduledTime: string,
+    takenAt: string,
+  )`: `Promise<boolean>`
 - `loadReport(childId?: string)`: `Promise<void>`
 - `save(
     section: SectionId,
@@ -85,12 +99,14 @@ File: [src/app/core/ui-state.service.ts](../src/app/core/ui-state.service.ts)
 
 - [AppComponent](../src/app/app.component.ts)
 - [LoginComponent](../src/app/auth/login.component.ts)
-- [CalendarPreviewComponent](../src/app/calendar/calendar-preview.component.ts)
-- [CalendarComponent](../src/app/calendar/calendar.component.ts)
+- [CalendarPreviewComponent](../src/app/components/calendar-preview/calendar-preview.component.ts)
 - [DashboardComponent](../src/app/dashboard/dashboard.component.ts)
 - [PdfRedactionComponent](../src/app/documents/pdf-redaction.component.ts)
+- [CalendarComponent](../src/app/features/calendar/calendar.component.ts)
 - [FeaturePageComponent](../src/app/features/feature-page.component.ts)
 - [ChildProfileComponent](../src/app/features/section-wrappers.ts)
+- [AppAutocompleteComponent](../src/app/shared/app-autocomplete.component.ts)
+- [AppConfirmDialogComponent](../src/app/shared/app-confirm-dialog.component.ts)
 - [AppDatepickerComponent](../src/app/shared/app-datepicker.component.ts)
 - [AppDropdownComponent](../src/app/shared/app-dropdown.component.ts)
 - [AppTimepickerComponent](../src/app/shared/app-timepicker.component.ts)

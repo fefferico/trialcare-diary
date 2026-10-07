@@ -12,7 +12,7 @@ import { RouterLink } from '@angular/router';
 import { AuthService } from '../core/auth.service';
 import { DiaryDataService, SearchableDiaryItem } from '../core/diary-data.service';
 import { SECTIONS, SectionId } from '../models/diary.models';
-import { CalendarPreviewComponent } from '../calendar/calendar-preview.component';
+import { CalendarPreviewComponent } from '../components/calendar-preview/calendar-preview.component';
 
 interface SearchResult {
   section: Exclude<SectionId, 'reports'>;
@@ -28,7 +28,7 @@ interface SearchResult {
   standalone: true,
   imports: [CommonModule, RouterLink, CalendarPreviewComponent],
   template: ` <section class="space-y-6">
-    @if (!hasChildren()) {
+    @if (!loading() && !hasChildren()) {
       <div class="welcome-card">
         <div class="relative z-10 max-w-2xl">
           <p class="text-sm font-semibold text-teal-100">IL TUO SPAZIO DI CURA</p>

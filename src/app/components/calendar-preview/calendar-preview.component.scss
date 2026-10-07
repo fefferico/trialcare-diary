@@ -1,0 +1,37 @@
+.preview-scroll-list {
+    scrollbar-width: thin;
+    scrollbar-color: #99aeb0 transparent;
+    scrollbar-gutter: stable;
+}
+
+.preview-scroll-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.preview-scroll-list::-webkit-scrollbar-track {
+    background: transparent;
+    margin-block: 8px;
+}
+
+.preview-scroll-list::-webkit-scrollbar-thumb {
+    background: #99aeb0;
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+}
+
+.preview-scroll-list::-webkit-scrollbar-thumb:hover {
+    background: #0f766e;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+:host-context(.dark) .preview-scroll-list {
+    scrollbar-color: #52686b transparent;
+}
+
+:host-context(.dark) .preview-scroll-list::-webkit-scrollbar-thumb {
+    background: #52686b;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}

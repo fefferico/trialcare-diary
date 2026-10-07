@@ -13,8 +13,10 @@ const SEARCHABLE_SECTIONS: Exclude<SectionId, 'reports'>[] = [
   'children',
   'contacts',
   'medications',
+  'medication_doses',
   'medicine_cabinet',
   'health_events',
+  'calendar_events',
   'therapies',
   'documents',
   'expenses',
@@ -23,8 +25,10 @@ export type DiaryExportData = Record<Exclude<SectionId, 'reports'>, DiaryRow[]> 
 
 const DOCUMENT_DATE_FIELD: Partial<Record<SectionId, string>> = {
   medications: 'start_date',
+  medication_doses: 'scheduled_date',
   medicine_cabinet: 'expiry_date',
   health_events: 'date',
+  calendar_events: 'date',
   therapies: 'start_date',
   documents: 'date',
   expenses: 'date',
@@ -158,6 +162,50 @@ export class DiaryDataService {
     return true;
   }
 
+  async markMedicationDoseTaken(
+    medicationId: string,
+    childId: string,
+    scheduledDate: string,
+    scheduledTime: string,
+    takenAt: string,
+  ): Promise<boolean> {
+    this.error.set('');
+    const key = `${medicationId}|${scheduledDate}|${scheduledTime}`;
+    const client = this.supabase.client;
+    if (client && this.auth.user()) {
+      const { error } = await client.from('medication_doses').upsert(
+        {
+          medication_id: medicationId,
+          child_id: childId,
+          scheduled_date: scheduledDate,
+          scheduled_time: scheduledTime,
+          taken_at: takenAt,
+        },
+        { onConflict: 'medication_id,scheduled_date,scheduled_time', ignoreDuplicates: true },
+      );
+      if (error) {
+        this.error.set(error.message);
+        return false;
+      }
+    } else {
+      const rows = this.local.medication_doses ?? [];
+      if (!rows.some((row) => row['dose_key'] === key)) {
+        rows.unshift({
+          id: crypto.randomUUID(),
+          child_id: childId,
+          medication_id: medicationId,
+          scheduled_date: scheduledDate,
+          scheduled_time: scheduledTime,
+          dose_key: key,
+          taken_at: takenAt,
+        });
+        this.local.medication_doses = rows;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.local));
+      }
+    }
+    return true;
+  }
+
   async loadReport(childId?: string): Promise<void> {
     this.syncing.set(true);
     this.error.set('');
@@ -178,7 +226,9 @@ export class DiaryDataService {
       this.rows.set(
         results
           .flatMap((result, index) =>
-            (result.data ?? []).map((row) => ({ ...row, record_type: tables[index] })),
+            (result.data ?? [])
+              .filter((row) => tables[index] !== 'health_events' || !isLegacyCalendarEvent(row))
+              .map((row) => ({ ...row, record_type: tables[index] })),
           )
           .sort((a, b) => this.reportDate(b).localeCompare(this.reportDate(a))) as DiaryRow[],
       );
@@ -188,6 +238,7 @@ export class DiaryDataService {
           .flatMap((table) =>
             newestFirst(this.local[table] ?? [], table)
               .filter((row) => !childId || row['child_id'] === childId)
+              .filter((row) => table !== 'health_events' || !isLegacyCalendarEvent(row))
               .map((row) => ({ ...row, record_type: table })),
           )
           .sort((a, b) => this.reportDate(b).localeCompare(this.reportDate(a))),
@@ -293,4 +344,13 @@ export class DiaryDataService {
     await this.load(section);
     return true;
   }
+}
+
+function isLegacyCalendarEvent(row: DiaryRow): boolean {
+  return (
+    String(row['category'] ?? '') === 'Appuntamento' ||
+    ['Da confermare', 'Saltato'].includes(String(row['status'] ?? '')) ||
+    !!row['skipped_reason'] ||
+    !!row['recurrence_group_id']
+  );
 }

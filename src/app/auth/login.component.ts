@@ -59,6 +59,12 @@ import { BiometricAuthService } from '../core/biometric-auth.service';
             {{ biometrics.busy() ? 'Verifica in corso…' : 'Accedi con impronta o passkey' }}
           </button>
         }
+        @if (!createAccount && biometrics.available() && !biometrics.enrolled()) {
+          <p class="text-center text-xs leading-5 text-slate-500">
+            Per attivare l’accesso biometrico, accedi prima con email e password, poi scegli
+            “Attiva accesso biometrico” dal menu del tuo account.
+          </p>
+        }
         <button
           type="button"
           class="w-full py-2 text-sm font-medium text-teal-700 hover:underline dark:text-teal-300"

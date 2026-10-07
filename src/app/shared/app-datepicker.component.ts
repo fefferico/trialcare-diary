@@ -44,7 +44,7 @@ import { Component, input, output, signal } from '@angular/core';
           ><button type="button" class="icon-button" (click)="shiftMonth(1)">›</button>
         </div>
         <div class="grid grid-cols-7 gap-1 text-center text-xs text-slate-400">
-          @for (day of weekdays; track day) {
+          @for (day of weekdays; track $index) {
             <span class="py-1">{{ day }}</span>
           }
         </div>

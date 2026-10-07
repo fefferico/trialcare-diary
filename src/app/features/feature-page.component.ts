@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { DiaryDataService } from '../core/diary-data.service';
+import { ConfirmationService } from '../core/confirmation.service';
 import { UiStateService } from '../core/ui-state.service';
 import { AuthService } from '../core/auth.service';
 import { PdfExportService } from '../core/pdf-export.service';
@@ -15,6 +16,8 @@ import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist/legacy/build/pdf.mj
 import { AppDropdownComponent } from '../shared/app-dropdown.component';
 import { AppDatepickerComponent } from '../shared/app-datepicker.component';
 import { AppTimepickerComponent } from '../shared/app-timepicker.component';
+import { AppAutocompleteComponent } from '../shared/app-autocomplete.component';
+import { TooltipDirective } from '../shared/directives/tooltip.directive';
 import {
   DiaryRow,
   FieldDefinition,
@@ -33,6 +36,8 @@ import {
     AppDropdownComponent,
     AppDatepickerComponent,
     AppTimepickerComponent,
+    AppAutocompleteComponent,
+    TooltipDirective,
     PdfRedactionComponent,
   ],
   template: `
@@ -175,10 +180,22 @@ import {
           <div class="notice-error" role="alert">{{ data.error() }}</div>
         }
         @if (data.syncing()) {
-          <div class="panel py-12 text-center text-sm text-slate-500">
-            Aggiornamento del diario…
+          <div class="grid gap-3 md:grid-cols-2" aria-label="Caricamento voci" aria-busy="true">
+            @for (placeholder of [1, 2, 3, 4]; track placeholder) {
+              <div class="panel animate-pulse space-y-4 motion-reduce:animate-none">
+                <div class="flex items-start justify-between gap-4">
+                  <div class="w-full space-y-3">
+                    <div class="h-3 w-1/4 rounded bg-slate-200 dark:bg-slate-700"></div>
+                    <div class="h-5 w-2/3 rounded bg-slate-200 dark:bg-slate-700"></div>
+                  </div>
+                  <div class="h-6 w-16 rounded-full bg-slate-100 dark:bg-slate-800"></div>
+                </div>
+                <div class="h-3 w-full rounded bg-slate-100 dark:bg-slate-800"></div>
+                <div class="h-3 w-3/5 rounded bg-slate-100 dark:bg-slate-800"></div>
+              </div>
+            }
           </div>
-        } @else if (!data.rows().length && section.id !== 'reports') {
+        } @else if (!filteredRows.length && section.id !== 'reports') {
           <div class="panel flex flex-col items-center px-6 py-14 text-center">
             <div
               class="mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-teal-50 text-2xl text-teal-700 dark:bg-teal-900/30 dark:text-teal-200"
@@ -216,11 +233,13 @@ import {
                     <p
                       class="text-xs font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-300"
                     >
-                      {{
-                        section.id === 'contacts'
-                          ? value(row, 'category')
-                          : (value(row, 'date') || value(row, 'start_date') | date: 'd MMM y')
-                      }}
+                      @if (section.id === 'contacts') {
+                        <span class="inline-flex rounded-full bg-teal-50 px-2.5 py-1 text-[11px] font-semibold normal-case tracking-normal text-teal-800 dark:bg-teal-900/40 dark:text-teal-200">
+                          {{ value(row, 'category') }}
+                        </span>
+                      } @else {
+                        {{ value(row, 'date') || value(row, 'start_date') | date: 'd MMM y' }}
+                      }
                     </p>
                     <h2 class="mt-1 truncate text-base font-semibold">
                       {{
@@ -231,7 +250,10 @@ import {
                       }}
                     </h2>
                     @if (section.id === 'contacts' && value(row, 'role')) {
-                      <p class="mt-1 text-sm text-slate-500">{{ value(row, 'role') }}</p>
+                      <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                        <span class="mr-1 text-xs font-medium text-slate-400">Professione o ruolo:</span>
+                        {{ value(row, 'role') }}
+                      </p>
                     }
                   </div>
                   <div class="flex gap-3">
@@ -241,7 +263,7 @@ import {
                       [attr.aria-label]="
                         'Modifica ' + (value(row, 'title') || value(row, 'name') || 'voce')
                       "
-                      title="Modifica"
+                      appTooltip="Modifica"
                       (click)="$event.stopPropagation(); edit(row)"
                     >
                       <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -254,7 +276,7 @@ import {
                       [attr.aria-label]="
                         'Elimina ' + (value(row, 'title') || value(row, 'name') || 'voce')
                       "
-                      title="Elimina"
+                      appTooltip="Elimina"
                       (click)="$event.stopPropagation(); remove(row)"
                     >
                       <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -334,7 +356,7 @@ import {
                     type="button"
                     class="record-action mt-3 text-sm font-semibold text-teal-700 dark:text-teal-300"
                     aria-label="Visualizza allegato"
-                    title="Visualizza allegato"
+                    appTooltip="Visualizza allegato"
                     (click)="$event.stopPropagation(); openDocument(row)"
                   >
                     <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -365,7 +387,13 @@ import {
                 <div class="flex items-end"><button class="button-primary w-full" type="submit" [disabled]="measurementSaving()">{{ measurementSaving() ? 'Salvataggio…' : 'Registra misure' }}</button></div>
               </form>
               @if (measurementError()) { <p class="notice-error" role="alert">{{ measurementError() }}</p> }
-              @if (measurementRows().length) {
+              @if (measurementLoading()) {
+                <div class="space-y-3" aria-label="Caricamento misurazioni" aria-busy="true">
+                  @for (placeholder of [1, 2, 3]; track placeholder) {
+                    <div class="h-5 animate-pulse rounded bg-slate-100 dark:bg-slate-800 motion-reduce:animate-none"></div>
+                  }
+                </div>
+              } @else if (measurementRows().length) {
                 <div class="grid gap-4 lg:grid-cols-2">
                   @for (metric of measurementMetrics; track metric.key) {
                     @if (hasMeasurement(metric.key)) {
@@ -405,7 +433,13 @@ import {
               <div>
                 <p class="eyebrow">NUOVA REGISTRAZIONE</p>
                 <h2 id="dialog-title" class="text-xl font-semibold">
-                  {{ section.id === 'children' ? 'Profilo bambino' : 'Aggiungi una voce' }}
+                  {{
+                    section.id === 'children'
+                      ? 'Profilo bambino'
+                      : section.id === 'contacts'
+                        ? 'Nuovo contatto'
+                        : 'Aggiungi una voce'
+                  }}
                 </h2>
               </div>
               <button type="button" class="icon-button" aria-label="Chiudi" (click)="closeForm()">
@@ -413,8 +447,25 @@ import {
               </button>
             </header>
             <form class="space-y-4 overflow-y-auto px-5 py-5" (ngSubmit)="save()">
+              @if (section.id === 'contacts') {
+                <div class="grid gap-3 rounded-2xl border border-teal-100 bg-teal-50/70 p-3 text-xs leading-5 dark:border-teal-900/60 dark:bg-teal-950/20 sm:grid-cols-2 sm:p-4">
+                  <p class="text-slate-600 dark:text-slate-300">
+                    <strong class="block text-teal-900 dark:text-teal-200">Professione o ruolo</strong>
+                    Cosa fa la persona: medico, chirurgo, terapista. Puoi anche inserire un ruolo personalizzato.
+                  </p>
+                  <p class="text-slate-600 dark:text-slate-300">
+                    <strong class="block text-teal-900 dark:text-teal-200">Ambito del contatto</strong>
+                    In quale gruppo ritrovarla: team clinico, centro trial, emergenze o altri ambiti.
+                  </p>
+                </div>
+              }
               <div class="grid gap-4 sm:grid-cols-2">
                 @for (field of section.fields; track field.key) {
+                  @if (
+                    !(section.id === 'medications' &&
+                      ['spray_count', 'administration_duration_seconds'].includes(field.key)) ||
+                    ['spray', 'aerosol'].includes((form['formulation'] || '').toLocaleLowerCase())
+                  ) {
                   <div
                     class="form-field"
                     [class.full-span]="field.kind === 'textarea' || field.kind === 'file'"
@@ -425,6 +476,33 @@ import {
                       }
                     </span>
                     @switch (field.kind) {
+                      @case ('text') {
+                        @if (section.id === 'contacts' && field.key === 'role') {
+                          <app-autocomplete
+                            [options]="contactRoleSuggestions"
+                            [value]="form[field.key] || ''"
+                            [placeholder]="field.placeholder ?? 'Inserisci professione o ruolo'"
+                            [maxLength]="120"
+                            [maxOptions]="contactRoleSuggestions.length"
+                            (valueChange)="setField(field, $event)"
+                          />
+                        } @else {
+                          <input
+                            class="field-control"
+                            type="text"
+                            [name]="field.key"
+                            [(ngModel)]="form[field.key]"
+                            [required]="field.required ?? false"
+                            [placeholder]="field.placeholder ?? ''"
+                            (blur)="section.id === 'medications' && field.key === 'schedule_times' && normalizeScheduleTimesInput()"
+                          />
+                          @if (section.id === 'medications' && field.key === 'schedule_times') {
+                            <small class="text-xs text-slate-500">
+                              Inserisci un orario come 08:00 oppure una fascia come 08:00-10:00, separando le dosi con una virgola. Riporta le indicazioni concordate con il team clinico.
+                            </small>
+                          }
+                        }
+                      }
                       @case ('select') {
                         <app-dropdown
                           [options]="field.options ?? []"
@@ -486,11 +564,13 @@ import {
                           [(ngModel)]="form[field.key]"
                           [required]="field.required ?? false"
                           [placeholder]="field.placeholder ?? ''"
-                          [step]="field.kind === 'number' ? 'any' : null"
+                          [step]="['spray_count', 'administration_duration_seconds'].includes(field.key) ? 1 : field.kind === 'number' ? 'any' : null"
+                          [min]="['spray_count', 'administration_duration_seconds'].includes(field.key) ? 1 : null"
                         />
                       }
                     }
                   </div>
+                  }
                 }
               </div>
               <div class="form-field full-span">
@@ -656,6 +736,26 @@ import {
   `,
 })
 export class FeaturePageComponent implements OnInit, OnDestroy {
+  readonly contactRoleSuggestions = [
+    'Medico',
+    'Pediatra',
+    'Chirurgo',
+    'Neurologo',
+    'Cardiologo',
+    'Oncologo',
+    'Genetista',
+    'Logopedista',
+    'Fisiatra',
+    'Fisioterapista',
+    'Infermiere',
+    'Coordinatore del trial',
+    'Case manager',
+    'Terapista',
+    'Psicologo',
+    'Assistente sociale',
+    'Farmacista',
+    'Altro',
+  ];
   @Input({ required: true }) sectionId!: SectionId;
   readonly data = inject(DiaryDataService);
   readonly ui = inject(UiStateService);
@@ -664,6 +764,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   private readonly dataExport = inject(DataExportService);
   private readonly supabase = inject(SupabaseClientService);
   private readonly storage = inject(StorageService);
+  private readonly confirmation = inject(ConfirmationService);
   readonly isFormOpen = signal(false);
   readonly detailRow = signal<DiaryRow | null>(null);
   readonly saving = signal(false);
@@ -688,6 +789,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     'Spese e rimborsi',
   ];
   readonly measurementRows = signal<DiaryRow[]>([]);
+  readonly measurementLoading = signal(false);
   readonly measurementSaving = signal(false);
   readonly measurementError = signal('');
   readonly measurementMetrics = [
@@ -708,6 +810,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   private spectrumFrame = 0;
   private editingId = '';
   private requestedChildId = '';
+  private loadedUserId: string | null = null;
   private routeSubscription?: Subscription;
   private readonly route = inject(ActivatedRoute);
   get recordingSupported(): boolean {
@@ -719,11 +822,20 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   }
   private readonly accountChangeEffect = effect(() => {
     const ready = this.initialized();
-    this.auth.user();
-    if (ready) queueMicrotask(() => void this.reloadForAccount());
+    const userId = this.auth.user()?.id ?? null;
+    if (ready && userId !== this.loadedUserId) {
+      this.loadedUserId = userId;
+      queueMicrotask(() => void this.reloadForAccount());
+    }
   });
   get section(): SectionDefinition {
     return sectionById(this.sectionId)!;
+  }
+  normalizeScheduleTimesInput(): void {
+    this.form['schedule_times'] = (this.form['schedule_times'] ?? '')
+      .split(',')
+      .map((entry) => entry.replace(/\b(\d):([0-5]\d)\b/g, '0$1:$2'))
+      .join(', ');
   }
   get childNames(): string[] {
     return this.children.map((c) => String(c['name']));
@@ -751,8 +863,19 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       );
   }
   get filteredRows(): DiaryRow[] {
+    const today = new Date();
+    const todayDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     return this.data.rows().filter((row) => {
       const date = String(row['date'] ?? row['start_date'] ?? '').slice(0, 10);
+      if (this.sectionId === 'health_events' && (!date || date > todayDate)) return false;
+      if (
+        this.sectionId === 'health_events' &&
+        (String(row['category'] ?? '') === 'Appuntamento' ||
+          ['Da confermare', 'Saltato'].includes(String(row['status'] ?? '')) ||
+          !!row['skipped_reason'] ||
+          !!row['recurrence_group_id'])
+      )
+        return false;
       const category = String(row['record_type'] ?? '');
       const categoryLabel =
         (
@@ -791,6 +914,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       }
     });
     await this.auth.ready;
+    this.loadedUserId = this.auth.user()?.id ?? null;
     await this.loadChildren();
     await this.refresh();
     this.initialized.set(true);
@@ -882,15 +1006,18 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   async loadMeasurements(): Promise<void> {
     const childId = this.selectedChildId();
     if (!childId) { this.measurementRows.set([]); return; }
+    this.measurementLoading.set(true);
     this.measurementError.set('');
     const client = this.supabase.client;
     if (client && this.auth.user()) {
       const { data, error } = await client.from('child_measurements').select('*').eq('child_id', childId).order('date', { ascending: true });
-      if (error) { this.measurementError.set(error.message); this.measurementRows.set([]); return; }
+      if (error) { this.measurementError.set(error.message); this.measurementRows.set([]); this.measurementLoading.set(false); return; }
       this.measurementRows.set((data ?? []) as DiaryRow[]);
+      this.measurementLoading.set(false);
       return;
     }
     this.measurementRows.set(this.data.localMeasurements(childId));
+    this.measurementLoading.set(false);
   }
   async saveMeasurement(): Promise<void> {
     const values = Object.fromEntries(Object.entries(this.measurementForm).filter(([key, value]) => key === 'date' || value !== '').map(([key, value]) => [key, key === 'date' ? value : Number(value)]));
@@ -1080,6 +1207,23 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       if (value[key] === '' && key === 'price') value[key] = null;
       else if (value[key] !== '' && value[key] != null) value[key] = Number(value[key]);
     }
+    if (this.sectionId === 'medications') {
+      const sprayFormulation = ['spray', 'aerosol'].includes(
+        String(value['formulation'] ?? '').toLocaleLowerCase(),
+      );
+      for (const key of ['spray_count', 'administration_duration_seconds']) {
+        if (!sprayFormulation || value[key] === '' || value[key] == null) value[key] = null;
+        else {
+          const number = Number(value[key]);
+          if (!Number.isInteger(number) || number < 1) {
+            this.data.error.set('Inserisci un numero intero maggiore di zero per puff e durata.');
+            this.saving.set(false);
+            return;
+          }
+          value[key] = number;
+        }
+      }
+    }
     if (this.sectionId === 'children' && this.auth.user()) value['user_id'] = this.auth.user()!.id;
     if (
       this.sectionId === 'documents' &&
@@ -1162,7 +1306,10 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       .trim();
   }
   async remove(row: DiaryRow): Promise<void> {
-    if (confirm('Vuoi eliminare questa voce dal diario?'))
+    if (await this.confirmation.confirm('Vuoi eliminare questa voce dal diario?', {
+      title: 'Elimina voce',
+      confirmLabel: 'Elimina',
+    }))
       await this.data.remove(this.sectionId, row);
   }
   async shareContact(row: DiaryRow): Promise<void> {

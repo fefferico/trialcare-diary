@@ -1,8 +1,10 @@
 export type SectionId =
   | 'children'
   | 'medications'
+  | 'medication_doses'
   | 'medicine_cabinet'
   | 'health_events'
+  | 'calendar_events'
   | 'therapies'
   | 'documents'
   | 'expenses'
@@ -87,12 +89,24 @@ export const SECTIONS: SectionDefinition[] = [
         key: 'formulation',
         label: 'Formulazione',
         kind: 'select',
-        options: ['Compressa', 'Sciroppo', 'Gocce', 'Spray', 'Crema', 'Altro'],
+        options: ['Compressa', 'Sciroppo', 'Gocce', 'Spray', 'Aerosol', 'Crema', 'Altro'],
+      },
+      { key: 'spray_count', label: 'Puff o spruzzi per somministrazione', kind: 'number' },
+      {
+        key: 'administration_duration_seconds',
+        label: 'Durata della somministrazione (secondi)',
+        kind: 'number',
       },
       { key: 'start_date', label: 'Dal', kind: 'date' },
       { key: 'end_date', label: 'Al', kind: 'date' },
-      { key: 'schedule_times', label: 'Orari (es. 08:00, 14:00)', kind: 'text' },
+      {
+        key: 'schedule_times',
+        label: 'Orari o fasce orarie prescritte',
+        kind: 'text',
+        placeholder: 'Es. 08:00-10:00, 14:00-16:00',
+      },
       { key: 'planned_pause', label: 'Pause programmate', kind: 'textarea' },
+      { key: 'notes', label: 'Note', kind: 'textarea' },
     ],
   },
   {
@@ -135,9 +149,16 @@ export const SECTIONS: SectionDefinition[] = [
       { key: 'title', label: 'Evento', kind: 'text', required: true },
       {
         key: 'category',
-        label: 'Categoria',
+        label: 'Ambito del contatto',
         kind: 'select',
-        options: ['Febbre', 'Tosse', 'Broncospasmo', 'Trauma', 'Evento avverso', 'Altro'],
+        options: [
+          'Febbre',
+          'Tosse',
+          'Broncospasmo',
+          'Trauma',
+          'Evento avverso',
+          'Altro',
+        ],
       },
       { key: 'date', label: 'Data', kind: 'date', required: true },
       { key: 'time', label: 'Ora', kind: 'time' },
@@ -222,10 +243,10 @@ export const SECTIONS: SectionDefinition[] = [
       { key: 'name', label: 'Nome e cognome', kind: 'text', required: true },
       {
         key: 'role',
-        label: 'Ruolo o specialità',
+        label: 'Professione o ruolo',
         kind: 'text',
         required: true,
-        placeholder: 'Es. pediatra, coordinatore trial',
+        placeholder: 'Es. medico, chirurgo, coordinatore trial',
       },
       {
         key: 'category',

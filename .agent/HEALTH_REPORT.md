@@ -1,10 +1,10 @@
 # Project Health
 
-> Generato il 06/10/2026, 21:38:22.
+> Generato il 07/10/2026, 10:06:34.
 
-- Servizi Angular: 8
-- Componenti standalone: 11
-- File applicativi: 23
+- Servizi Angular: 9
+- Componenti standalone: 13
+- File applicativi: 29
 
 ## TODO e FIXME
 
@@ -23,3 +23,8 @@ Nessun commento TODO/FIXME trovato.
 - [202610060009_trialcare_profile_avatars.sql](../supabase/migrations/202610060009_trialcare_profile_avatars.sql)
 - [202610060010_trialcare_child_measurements.sql](../supabase/migrations/202610060010_trialcare_child_measurements.sql)
 - [202610060011_trialcare_health_event_location.sql](../supabase/migrations/202610060011_trialcare_health_event_location.sql)
+- [202610070001_trialcare_calendar_events.sql](../supabase/migrations/202610070001_trialcare_calendar_events.sql)
+- [202610070002_trialcare_move_controllo_1ab9838e.sql](../supabase/migrations/202610070002_trialcare_move_controllo_1ab9838e.sql)
+- [202610070003_trialcare_medication_schedule_times.sql](../supabase/migrations/202610070003_trialcare_medication_schedule_times.sql)
+- [20261007073925_medication_dose_tracking.sql](../supabase/migrations/20261007073925_medication_dose_tracking.sql)
+- [20261007080127_medication_spray_administration_details.sql](../supabase/migrations/20261007080127_medication_spray_administration_details.sql)

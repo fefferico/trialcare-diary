@@ -26,6 +26,7 @@
 ## Modifiche e verifica
 - Controlla lo stato Git e preserva le modifiche preesistenti dell'utente.
 - Segui gli script e i comandi già definiti in `package.json`; non inventare procedure di deploy o applicazione migrazioni.
-- Non lanciare test o verifiche non richiesti dall'utente. Se richiesto, riporta esattamente i comandi eseguiti e il risultato.
+- Dopo ogni modifica al codice applicativo, esegui una build di compilazione usando lo script `build` definito in `package.json` (per esempio `npm run build`). Se la cartella di output predefinita non è scrivibile o contiene file protetti, imposta una cartella temporanea tramite l'opzione supportata dalla build e ripeti la compilazione. Correggi gli errori introdotti dalla modifica e ripeti la build finché termina correttamente; riporta eventuali avvisi e impedimenti residui.
+- Non lanciare test o altre verifiche non richiesti dall'utente. Riporta esattamente i comandi di build eseguiti e il risultato.
 - Dopo modifiche a rotte, servizi o componenti, aggiorna il contesto generato con `npm run update-context` quando pertinente.
 - Prima di modificare codice esistente, leggi i file coinvolti e i relativi chiamanti/dipendenze necessari.

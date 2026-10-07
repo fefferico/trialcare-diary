@@ -12,7 +12,7 @@ import {
   TherapyTrackerComponent,
 } from './features/section-wrappers';
 import { requireAuthentication } from './core/auth.guard';
-import { CalendarComponent } from './calendar/calendar.component';
+import { CalendarComponent } from './features/calendar/calendar.component';
 
 export const routes: Routes = [
   { path: 'dashboard', component: DashboardComponent, canActivate: [requireAuthentication] },
