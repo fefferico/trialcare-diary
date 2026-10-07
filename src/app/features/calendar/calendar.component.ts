@@ -36,6 +36,7 @@ interface CalendarEvent {
   medicationId?: string;
   doseTaken?: boolean;
   takenAt?: string;
+  doseSkipped?: boolean;
 }
 
 @Component({
@@ -446,9 +447,27 @@ export class CalendarComponent implements OnInit, OnDestroy {
   async saveSkipped(): Promise<void> {
     const event = this.skipEvent();
     if (!event || !this.skipReason().trim()) return;
-    if (
-      await this.updateEvent(event, { status: 'Saltato', skipped_reason: this.skipReason().trim() })
-    )
+    let skipped: boolean;
+    if (event.medicationId && event.childId) {
+      this.saving.set(true);
+      this.saveError.set('');
+      skipped = await this.data.markMedicationDoseSkipped(
+          event.medicationId,
+          event.childId,
+          event.date,
+          event.time,
+          this.skipReason().trim(),
+        );
+      this.saving.set(false);
+      if (!skipped) this.saveError.set(this.data.error() || 'Non è stato possibile registrare la dose saltata.');
+    } else {
+      skipped = await this.updateEvent(event, {
+        status: 'Saltato',
+        skipped_reason: this.skipReason().trim(),
+      });
+    }
+    if (skipped && event.medicationId) this.entries.set(await this.data.loadAllForSearch());
+    if (skipped)
       this.skipEvent.set(null);
   }
   private async updateEvent(
@@ -534,12 +553,22 @@ function toEvents(entries: SearchableDiaryItem[], month: Date): CalendarEvent[] 
       const start = String(row['start_date'] ?? '').slice(0, 10);
       if (validDate(start)) output.push(makeEvent(row, section, start));
     } else if (section === 'medications') {
-      const start = String(row['start_date'] ?? '').slice(0, 10);
-      const end = String(row['end_date'] ?? '').slice(0, 10);
-      const times = parseScheduleTimes(String(row['schedule_times'] ?? ''));
-      const firstDoseDate = validDate(start) ? (start > monthStart ? start : monthStart) : monthStart;
-      const lastDoseDate = validDate(end) ? (end < monthEnd ? end : monthEnd) : monthEnd;
-      if (times.length && firstDoseDate <= lastDoseDate) {
+      const schedules = medicationSchedulePeriods(row);
+      const start = schedules.find((period) => period.start_date)?.start_date ?? String(row['start_date'] ?? '').slice(0, 10);
+      const end = schedules.length > 1
+        ? schedules.at(-1)?.end_date ?? ''
+        : schedules[0]?.end_date ?? String(row['end_date'] ?? '').slice(0, 10);
+      for (const period of schedules) {
+        const periodStart = period.start_date || start;
+        const periodEnd = period.end_date || (schedules.length === 1 ? end : '');
+        const times = parseScheduleTimes(period.schedule_times);
+        const firstDoseDate = validDate(periodStart)
+          ? periodStart > monthStart ? periodStart : monthStart
+          : monthStart;
+        const lastDoseDate = validDate(periodEnd)
+          ? periodEnd < monthEnd ? periodEnd : monthEnd
+          : monthEnd;
+        if (!times.length || firstDoseDate > lastDoseDate) continue;
         for (let cursor = parseDate(firstDoseDate)!; dateKey(cursor) <= lastDoseDate; cursor.setDate(cursor.getDate() + 1)) {
           const date = dateKey(cursor);
           for (const slot of times) {
@@ -550,11 +579,14 @@ function toEvents(entries: SearchableDiaryItem[], month: Date): CalendarEvent[] 
             output.push({
               ...makeEvent(row, section, date),
               id: `dose-${row.id}-${date}-${time}`,
-              title: `${String(row['name'] ?? 'Farmaco')} · ${String(row['dosage'] ?? '')}`.trim(),
+              title: `${String(row['name'] ?? 'Farmaco')} · ${period.dosage}`.trim(),
               time,
               category: slot.end ? `Fascia ${slot.start}–${slot.end}` : `Orario ${slot.start}`,
               medicationId: row.id,
-              doseTaken: !!dose,
+              doseTaken: !!dose && String(dose.row['status'] ?? 'Somministrata') !== 'Saltata',
+              doseSkipped: String(dose?.row['status'] ?? '') === 'Saltata',
+              status: String(dose?.row['status'] ?? '') === 'Saltata' ? 'Saltato' : undefined,
+              skippedReason: String(dose?.row['skipped_reason'] ?? ''),
               takenAt: dose ? String(dose.row['taken_at'] ?? '') : undefined,
             });
           }
@@ -570,6 +602,28 @@ function toEvents(entries: SearchableDiaryItem[], month: Date): CalendarEvent[] 
     }
   }
   return output;
+}
+function medicationSchedulePeriods(
+  row: DiaryRow,
+): Array<{ start_date: string; end_date: string; dosage: string; schedule_times: string }> {
+  const stored = row['schedule_periods'];
+  if (Array.isArray(stored) && stored.length) {
+    const periods = stored
+      .filter((value): value is Record<string, unknown> => !!value && typeof value === 'object')
+      .map((value) => ({
+        start_date: String(value['start_date'] ?? '').slice(0, 10),
+        end_date: String(value['end_date'] ?? '').slice(0, 10),
+        dosage: String(value['dosage'] ?? row['dosage'] ?? ''),
+        schedule_times: String(value['schedule_times'] ?? ''),
+      }));
+    if (periods.length) return periods;
+  }
+  return [{
+    start_date: String(row['start_date'] ?? '').slice(0, 10),
+    end_date: String(row['end_date'] ?? '').slice(0, 10),
+    dosage: String(row['dosage'] ?? ''),
+    schedule_times: String(row['schedule_times'] ?? ''),
+  }];
 }
 function parseScheduleTimes(value: string): Array<{ start: string; end?: string }> {
   return value.split(',').flatMap((entry) => {

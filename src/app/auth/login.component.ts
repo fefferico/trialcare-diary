@@ -84,6 +84,9 @@ export class LoginComponent {
   createAccount = false;
   async submit(): Promise<void> {
     if (this.createAccount) await this.auth.signUp(this.email, this.password);
-    else await this.auth.signIn(this.email, this.password);
+    else if (await this.auth.signIn(this.email, this.password)) {
+      sessionStorage.setItem('trialcare-biometric-offer-pending', 'true');
+      window.location.reload();
+    }
   }
 }

@@ -35,6 +35,16 @@ export interface DiaryRow {
   created_at?: string;
   [key: string]: unknown;
 }
+export interface MedicationSchedulePeriod {
+  start_date: string | null;
+  end_date: string | null;
+  dosage: string;
+  formulation: string | null;
+  spray_count: number | null;
+  administration_duration_seconds: number | null;
+  schedule_times: string | null;
+  planned_pause: string | null;
+}
 export interface ChildRow extends DiaryRow {
   name: string;
   birth_date: string;
@@ -134,6 +144,7 @@ export const SECTIONS: SectionDefinition[] = [
       { key: 'price', label: 'Prezzo (€)', kind: 'number' },
       { key: 'purchase_date', label: 'Data di acquisto', kind: 'date' },
       { key: 'opened_date', label: 'Data di apertura', kind: 'date' },
+      { key: 'expiry_precision', label: 'Precisione scadenza', kind: 'select', options: ['Data completa', 'Mese e anno'] },
       { key: 'expiry_date', label: 'Data di scadenza', kind: 'date' },
       { key: 'notes', label: 'Note', kind: 'textarea' },
     ],

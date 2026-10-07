@@ -150,7 +150,18 @@ interface SearchResult {
                   <path [attr.d]="medicationIconPath(item.id)" />
                 </svg>
               } @else {
-                {{ item.glyph }}
+                <svg
+                  class="h-5 w-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path [attr.d]="sectionIconPath(item.id)" />
+                </svg>
               }</span
             ><span
               class="text-slate-300 transition group-hover:translate-x-1 group-hover:text-teal-600"
@@ -174,7 +185,12 @@ interface SearchResult {
           </p>
         </div>
       </div>
-      <a routerLink="/health_events" class="button-secondary shrink-0">Registra un evento</a>
+      <a
+        routerLink="/health_events"
+        [queryParams]="{ action: 'new' }"
+        class="button-secondary shrink-0"
+        >Registra un evento</a
+      >
     </div>
   </section>`,
 })
@@ -212,6 +228,21 @@ export class DashboardComponent implements OnInit {
     return section === 'medicine_cabinet'
       ? 'M9 3.5h6v3H9z M7 6.5h10v14H7z M7 10h10 M12 12v5 M9.5 14.5h5'
       : 'M8 5h8a3.5 3.5 0 0 1 0 7H8a3.5 3.5 0 0 1 0-7z M12 5v7';
+  }
+
+  sectionIconPath(section: string): string {
+    return (
+      {
+        children: 'M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M20 8v6 M23 11h-6',
+        medication_doses: 'M8 5h8a3.5 3.5 0 0 1 0 7H8a3.5 3.5 0 0 1 0-7z M12 5v7 M12 16v5 M9.5 18.5h5',
+        health_events: 'M3 12h4l3-8 4 16 3-8h4',
+        calendar_events: 'M8 3v4 M16 3v4 M4 9h16 M5 5h14a1 1 0 0 1 1 1v13H4V6a1 1 0 0 1 1-1z M8 13h2 M14 13h2 M8 17h2',
+        therapies: 'M12 21s-8.5-4.8-8.5-11a4.5 4.5 0 0 1 8.5-2.1A4.5 4.5 0 0 1 20.5 10c0 6.2-8.5 11-8.5 11z M12 8v7 M8.5 11.5h7',
+        documents: 'M13 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10z M13 3v7h7 M8 14h8 M8 17h6',
+        expenses: 'M12 2v20 M17 6.5c-.8-1-2.2-1.5-4.5-1.5-2.5 0-4 1.1-4 3s1.5 4 4.5 4 4.5 2 4.5 4-1.5 3-4 3c-2 0-3.8-.7-5-2',
+        contacts: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8',
+      } as Record<string, string>
+    )[section] ?? 'M12 5v14 M5 12h14';
   }
 
   sectionLabel(section: Exclude<SectionId, 'reports'>): string {
@@ -267,11 +298,21 @@ export class DashboardComponent implements OnInit {
         'trial_id',
         'emergency_contact',
       ];
+      const medicationDetails = item.section === 'medications'
+        ? [
+            item.row['dosage'],
+            item.row['formulation'],
+            item.row['start_date'] ? `Dal ${formatDate(item.row['start_date'])}` : '',
+            item.row['end_date'] ? `Al ${formatDate(item.row['end_date'])}` : '',
+            item.row['schedule_times'] ? `Orari: ${item.row['schedule_times']}` : '',
+          ]
+        : [];
       const pdfText =
         typeof item.row['extracted_text'] === 'string' ? item.row['extracted_text'] : '';
       const pdfExcerpt = pdfText.slice(0, 140);
       const detail = [
         childNames.get(String(item.row['child_id'] ?? '')),
+        ...medicationDetails,
         ...detailKeys.map((key) => item.row[key]),
         ...(pdfExcerpt ? [`PDF: ${pdfExcerpt}${pdfText.length > 140 ? '…' : ''}`] : []),
       ]
@@ -301,6 +342,12 @@ function normalize(value: string): string {
     .replace(/[\u0300-\u036f]/g, '')
     .toLocaleLowerCase('it')
     .trim();
+}
+
+function formatDate(value: unknown): string {
+  const raw = String(value ?? '');
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  return parts ? `${parts[3]}/${parts[2]}/${parts[1]}` : raw;
 }
 
 function bestMatch(term: string, fields: string[]): number {

@@ -584,6 +584,14 @@ textarea:focus-visible {
   border-color: #2d4143;
   background: #142124;
 }
+.pdf-preview-modal {
+  max-height: min(96dvh, 1000px);
+}
+@media (min-width: 640px) {
+  .modal-panel.pdf-preview-modal {
+    max-width: min(96vw, 1100px);
+  }
+}
 .notice-error {
   border: 1px solid #f1c7c2;
   border-radius: 12px;

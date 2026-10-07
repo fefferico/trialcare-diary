@@ -180,6 +180,8 @@ export class DiaryDataService {
           scheduled_date: scheduledDate,
           scheduled_time: scheduledTime,
           taken_at: takenAt,
+          status: 'Somministrata',
+          skipped_reason: null,
         },
         { onConflict: 'medication_id,scheduled_date,scheduled_time', ignoreDuplicates: true },
       );
@@ -198,7 +200,57 @@ export class DiaryDataService {
           scheduled_time: scheduledTime,
           dose_key: key,
           taken_at: takenAt,
+          status: 'Somministrata',
+          skipped_reason: null,
         });
+        this.local.medication_doses = rows;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.local));
+      }
+    }
+    return true;
+  }
+
+  async markMedicationDoseSkipped(
+    medicationId: string,
+    childId: string,
+    scheduledDate: string,
+    scheduledTime: string,
+    reason: string,
+  ): Promise<boolean> {
+    this.error.set('');
+    const key = `${medicationId}|${scheduledDate}|${scheduledTime}`;
+    const client = this.supabase.client;
+    if (client && this.auth.user()) {
+      const { error } = await client.from('medication_doses').upsert(
+        {
+          medication_id: medicationId,
+          child_id: childId,
+          scheduled_date: scheduledDate,
+          scheduled_time: scheduledTime,
+          taken_at: null,
+          status: 'Saltata',
+          skipped_reason: reason.trim(),
+        },
+        { onConflict: 'medication_id,scheduled_date,scheduled_time', ignoreDuplicates: true },
+      );
+      if (error) {
+        this.error.set(error.message);
+        return false;
+      }
+    } else {
+      const rows = this.local.medication_doses ?? [];
+      if (!rows.some((row) => row['dose_key'] === key)) {
+        rows.unshift({
+          id: crypto.randomUUID(),
+          child_id: childId,
+          medication_id: medicationId,
+          scheduled_date: scheduledDate,
+          scheduled_time: scheduledTime,
+          dose_key: key,
+          taken_at: null,
+          status: 'Saltata',
+          skipped_reason: reason.trim(),
+        } as DiaryRow);
         this.local.medication_doses = rows;
         localStorage.setItem(STORAGE_KEY, JSON.stringify(this.local));
       }

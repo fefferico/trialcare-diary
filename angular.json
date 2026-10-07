@@ -17,7 +17,13 @@
             "tsConfig": "tsconfig.app.json",
             "inlineStyleLanguage": "css",
             "styles": ["src/styles.css"],
-            "assets": [{"glob":"**/*","input":"public"},{"glob":"pdf.worker.min.mjs","input":"node_modules/pdfjs-dist/legacy/build","output":"assets/pdfjs/"}],
+            "assets": [
+              {"glob":"**/*","input":"public"},
+              {"glob":"pdf.worker.min.mjs","input":"node_modules/pdfjs-dist/legacy/build","output":"assets/pdfjs/"},
+              {"glob":"worker.min.js","input":"node_modules/tesseract.js/dist","output":"assets/tesseract/"},
+              {"glob":"tesseract-core*.js","input":"node_modules/tesseract.js-core","output":"assets/tesseract/core/"},
+              {"glob":"tesseract-core*.wasm","input":"node_modules/tesseract.js-core","output":"assets/tesseract/core/"}
+            ],
             "outputPath": "dist/trialcare-diary"
           },
           "configurations": {

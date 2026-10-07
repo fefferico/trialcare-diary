@@ -45,7 +45,7 @@
         <a routerLink="/medicine-cabinet" [queryParams]="{ highlight: item.id, child: item.childId || null }"
           class="flex justify-between gap-3 rounded-xl bg-white/80 px-3 py-2 text-sm dark:bg-slate-900/70"><strong
             class="truncate">{{ item.title }}</strong><span class="shrink-0 text-amber-800 dark:text-amber-200">{{
-            shortDate(item.date)
+            (item.monthOnly ? monthYear(item.date) : shortDate(item.date))
             }}</span></a>
       </li>
       }
@@ -68,7 +68,7 @@
                         ? 'bg-rose-50 dark:bg-rose-950/30'
                         : 'bg-slate-50 dark:bg-slate-800/60'
                     "><span class="min-w-12 text-xs font-semibold text-teal-700 dark:text-teal-300">{{
-              shortDate(item.date) }}</span><span class="min-w-0"><strong class="block truncate text-sm">{{ item.title
+              (item.monthOnly ? monthYear(item.date) : shortDate(item.date)) }}</span><span class="min-w-0"><strong class="block truncate text-sm">{{ item.title
                 }}</strong><span class="text-xs text-slate-500">{{ item.kind }}</span>
               @if (item.specialist) {
               <span class="mt-1 block text-xs text-slate-500">{{ item.specialist }}</span>
@@ -133,7 +133,7 @@
         <li>
           <a [routerLink]="item.path" [queryParams]="{ highlight: item.highlightId, child: item.childId || null }"
             class="flex gap-3 rounded-xl bg-slate-50 p-3 hover:bg-amber-50 dark:bg-slate-800/60 dark:hover:bg-slate-800"><span
-              class="min-w-12 text-xs font-semibold text-amber-700 dark:text-amber-300">{{ shortDate(item.date)
+              class="min-w-12 text-xs font-semibold text-amber-700 dark:text-amber-300">{{ item.monthOnly ? monthYear(item.date) : shortDate(item.date)
               }}</span><span class="min-w-0"><strong class="block truncate text-sm">{{ item.title }}</strong><span
                 class="text-xs text-slate-500">{{ item.kind }}</span></span></a>
         </li>

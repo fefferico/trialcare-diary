@@ -25,6 +25,7 @@ interface PreviewItem {
   location?: string;
   kind: string;
   path: string;
+  monthOnly?: boolean;
 }
 @Component({
   selector: 'tc-calendar-preview',
@@ -148,7 +149,7 @@ export class CalendarPreviewComponent implements OnInit {
       .flatMap((item) => {
         const dates =
           item.section === 'medicine_cabinet' && item.row['expiry_date']
-            ? [{ date: String(item.row['expiry_date']), kind: 'Scadenza farmaco' }]
+            ? [{ date: String(item.row['expiry_date']), kind: 'Scadenza farmaco', monthOnly: item.row['expiry_precision'] === 'month' }]
             : ['medications', 'therapies'].includes(item.section) && item.row['end_date']
               ? [
                 {
@@ -168,6 +169,7 @@ export class CalendarPreviewComponent implements OnInit {
             title: String(item.row['name'] ?? item.row['title'] ?? d.kind),
             date: d.date,
             kind: d.kind,
+            monthOnly: 'monthOnly' in d ? d.monthOnly : false,
             path: `/${item.section}`,
           }));
       })
@@ -181,6 +183,7 @@ export class CalendarPreviewComponent implements OnInit {
         childId: item.row['child_id'] ? String(item.row['child_id']) : undefined,
         title: String(item.row['name'] ?? 'Farmaco'),
         date: String(item.row['expiry_date'] ?? '').slice(0, 10),
+        monthOnly: item.row['expiry_precision'] === 'month',
       }))
       .filter((item) => isBetween(item.date, this.today, this.windowEnd))
       .sort(byDate),
@@ -214,6 +217,9 @@ export class CalendarPreviewComponent implements OnInit {
       day: '2-digit',
       month: 'short',
     });
+  }
+  monthYear(date: string): string {
+    return new Date(`${date}T12:00:00`).toLocaleDateString('it-IT', { month: 'short', year: 'numeric' });
   }
 }
 function dateKey(date: Date): string {

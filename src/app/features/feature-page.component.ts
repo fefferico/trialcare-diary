@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, Input, OnDestroy, OnInit, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { DiaryDataService } from '../core/diary-data.service';
 import { ConfirmationService } from '../core/confirmation.service';
@@ -21,10 +21,22 @@ import { TooltipDirective } from '../shared/directives/tooltip.directive';
 import {
   DiaryRow,
   FieldDefinition,
+  MedicationSchedulePeriod,
   SectionDefinition,
   SectionId,
   sectionById,
 } from '../models/diary.models';
+
+interface MedicationScheduleDraft {
+  start_date: string;
+  end_date: string;
+  dosage: string;
+  formulation: string;
+  spray_count: string;
+  administration_duration_seconds: string;
+  schedule_times: string;
+  planned_pause: string;
+}
 
 @Component({
   selector: 'tc-feature-page',
@@ -249,7 +261,7 @@ import {
                           'Voce del diario'
                       }}
                     </h2>
-                    @if (section.id === 'contacts' && value(row, 'role')) {
+                        @if (section.id === 'contacts' && value(row, 'role')) {
                       <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
                         <span class="mr-1 text-xs font-medium text-slate-400">Professione o ruolo:</span>
                         {{ value(row, 'role') }}
@@ -308,6 +320,11 @@ import {
                     }
                   }
                 </div>
+                @if (section.id === 'medications' && medicationSchedulePeriods(row).length > 1) {
+                  <p class="mt-2 text-xs font-medium text-teal-700 dark:text-teal-300">
+                    {{ medicationSchedulePeriods(row).length }} periodi di terapia
+                  </p>
+                }
                 @if (value(row, 'voice_note_data')) {
                   <audio
                     controls
@@ -425,6 +442,7 @@ import {
             aria-modal="true"
             aria-labelledby="dialog-title"
             class="modal-panel"
+            [class.pdf-preview-modal]="section.id === 'documents' && attachedFile?.type === 'application/pdf'"
             (click)="$event.stopPropagation()"
           >
             <header
@@ -447,6 +465,9 @@ import {
               </button>
             </header>
             <form class="space-y-4 overflow-y-auto px-5 py-5" (ngSubmit)="save()">
+              @if (data.error()) {
+                <p class="notice-error" role="alert">{{ data.error() }}</p>
+              }
               @if (section.id === 'contacts') {
                 <div class="grid gap-3 rounded-2xl border border-teal-100 bg-teal-50/70 p-3 text-xs leading-5 dark:border-teal-900/60 dark:bg-teal-950/20 sm:grid-cols-2 sm:p-4">
                   <p class="text-slate-600 dark:text-slate-300">
@@ -457,6 +478,12 @@ import {
                     <strong class="block text-teal-900 dark:text-teal-200">Ambito del contatto</strong>
                     In quale gruppo ritrovarla: team clinico, centro trial, emergenze o altri ambiti.
                   </p>
+                </div>
+              }
+              @if (section.id === 'medications') {
+                <div class="rounded-2xl border border-teal-100 bg-teal-50/70 p-3 text-xs leading-5 text-slate-600 dark:border-teal-900/60 dark:bg-teal-950/20 dark:text-slate-300 sm:p-4">
+                  <strong class="block text-sm text-teal-900 dark:text-teal-200">Regime iniziale</strong>
+                  <span>Inserisci qui il primo dosaggio. Potrai aggiungere variazioni con date e orari diversi mantenendo lo storico nella stessa terapia.</span>
                 </div>
               }
               <div class="grid gap-4 sm:grid-cols-2">
@@ -515,6 +542,9 @@ import {
                         <app-datepicker
                           [label]="field.label"
                           [value]="form[field.key]"
+                          [lenient]="section.id === 'medicine_cabinet' && field.key === 'expiry_date'"
+                          [monthOnly]="section.id === 'medicine_cabinet' && field.key === 'expiry_date' && form['expiry_precision'] === 'Mese e anno'"
+                          (monthOnlyDetected)="form['expiry_precision'] = 'Mese e anno'"
                           (dateChange)="setField(field, $event)"
                         />
                       }
@@ -573,6 +603,37 @@ import {
                   }
                 }
               </div>
+              @if (section.id === 'medications') {
+                <section class="space-y-4 rounded-2xl border border-slate-200 p-4 dark:border-slate-700" aria-labelledby="medication-schedule-title">
+                  <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 id="medication-schedule-title" class="font-semibold">Variazioni della terapia</h3>
+                      <p class="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">Aggiungi un nuovo periodo quando cambiano dosaggio, date o orari. Ogni periodo parte dopo la fine del precedente.</p>
+                    </div>
+                    <button type="button" class="button-secondary shrink-0 !px-3 !py-2 text-xs" (click)="addMedicationSchedule()">＋ Aggiungi periodo</button>
+                  </div>
+                  @for (period of additionalMedicationSchedules(); track $index; let index = $index) {
+                    <article class="space-y-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-800/60">
+                      <div class="flex items-center justify-between gap-2">
+                        <h4 class="text-sm font-semibold">Periodo {{ index + 2 }}</h4>
+                        <button type="button" class="text-xs font-semibold text-rose-700 hover:underline dark:text-rose-300" (click)="removeMedicationSchedule(index)">Rimuovi</button>
+                      </div>
+                      <div class="grid gap-3 sm:grid-cols-2">
+                        <label class="form-field"><span>Dal <i class="text-rose-500">*</i></span><app-datepicker [label]="'Inizio periodo ' + (index + 2)" [value]="period.start_date" (dateChange)="updateMedicationSchedule(index, 'start_date', $event)" /></label>
+                        <label class="form-field"><span>Al</span><app-datepicker [label]="'Fine periodo ' + (index + 2)" [value]="period.end_date" (dateChange)="updateMedicationSchedule(index, 'end_date', $event)" /></label>
+                        <label class="form-field"><span>Dosaggio <i class="text-rose-500">*</i></span><input class="field-control" type="text" [ngModel]="period.dosage" [ngModelOptions]="{ standalone: true }" (ngModelChange)="updateMedicationSchedule(index, 'dosage', $event)" placeholder="Es. 2 puff" /></label>
+                        <label class="form-field"><span>Formulazione</span><app-dropdown [options]="medicationFormulations" [value]="period.formulation" placeholder="Seleziona" (selection)="updateMedicationSchedule(index, 'formulation', $event)" /></label>
+                        <label class="form-field sm:col-span-2"><span>Orari o fasce orarie</span><input class="field-control" type="text" [ngModel]="period.schedule_times" [ngModelOptions]="{ standalone: true }" (ngModelChange)="updateMedicationSchedule(index, 'schedule_times', $event)" placeholder="Es. 08:00-10:00, 14:00-16:00" /></label>
+                        @if (['spray', 'aerosol'].includes(period.formulation.toLocaleLowerCase())) {
+                          <label class="form-field"><span>Puff o spruzzi per somministrazione</span><input class="field-control" type="number" min="1" step="1" [ngModel]="period.spray_count" [ngModelOptions]="{ standalone: true }" (ngModelChange)="updateMedicationSchedule(index, 'spray_count', $event)" /></label>
+                          <label class="form-field"><span>Durata (secondi)</span><input class="field-control" type="number" min="1" step="1" [ngModel]="period.administration_duration_seconds" [ngModelOptions]="{ standalone: true }" (ngModelChange)="updateMedicationSchedule(index, 'administration_duration_seconds', $event)" /></label>
+                        }
+                        <label class="form-field sm:col-span-2"><span>Pause previste</span><textarea class="field-control min-h-20" [ngModel]="period.planned_pause" [ngModelOptions]="{ standalone: true }" (ngModelChange)="updateMedicationSchedule(index, 'planned_pause', $event)" rows="2"></textarea></label>
+                      </div>
+                    </article>
+                  }
+                </section>
+              }
               <div class="form-field full-span">
                 <span>Nota vocale</span>
                 <div class="flex items-center gap-2">
@@ -666,7 +727,7 @@ import {
             </header>
             <div class="space-y-4 overflow-y-auto px-5 py-5">
               <dl class="grid gap-4 sm:grid-cols-2">
-                @for (field of visibleFields(row); track field.key) {
+                @for (field of detailFields(row); track field.key) {
                   @if (value(row, field.key)) {
                     <div class="min-w-0">
                       <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ field.label }}</dt>
@@ -675,6 +736,88 @@ import {
                   }
                 }
               </dl>
+              @if (section.id === 'medicine_cabinet') {
+                <section class="space-y-4 border-t border-slate-100 pt-4 dark:border-slate-800" aria-labelledby="medicine-stock-title">
+                  <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 id="medicine-stock-title" class="font-semibold">Dettagli della confezione</h3>
+                      <p class="mt-1 text-xs text-slate-500">Disponibilità, uso previsto e date del farmaco.</p>
+                    </div>
+                    <span class="rounded-full px-3 py-1 text-xs font-semibold" [ngClass]="inventoryExpiryTone(row)">
+                      {{ inventoryExpiryLabel(row) }}
+                    </span>
+                  </div>
+                  <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    @if (value(row, 'quantity')) {
+                      <div class="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/60">
+                        <p class="text-xs font-medium text-slate-500">Quantità disponibile</p>
+                        <p class="mt-1 font-semibold">{{ value(row, 'quantity') }}</p>
+                      </div>
+                    }
+                    @if (value(row, 'planned_dosage')) {
+                      <div class="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/60 sm:col-span-2 lg:col-span-1">
+                        <p class="text-xs font-medium text-slate-500">Dosaggio previsto</p>
+                        <p class="mt-1 whitespace-pre-wrap font-semibold">{{ value(row, 'planned_dosage') }}</p>
+                      </div>
+                    }
+                    @if (row['price'] != null && value(row, 'price') !== '') {
+                      <div class="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/60">
+                        <p class="text-xs font-medium text-slate-500">Prezzo registrato</p>
+                        <p class="mt-1 font-semibold">{{ value(row, 'price') | currency: 'EUR' : 'symbol' : '1.2-2' : 'it' }}</p>
+                      </div>
+                    }
+                  </div>
+                  <dl class="grid gap-3 sm:grid-cols-3">
+                    @if (value(row, 'purchase_date')) {
+                      <div><dt class="text-xs font-medium text-slate-500">Acquistato il</dt><dd class="mt-1 text-sm">{{ value(row, 'purchase_date') | date: 'd MMMM y' }}</dd></div>
+                    }
+                    @if (value(row, 'opened_date')) {
+                      <div><dt class="text-xs font-medium text-slate-500">Aperto il</dt><dd class="mt-1 text-sm">{{ value(row, 'opened_date') | date: 'd MMMM y' }}</dd></div>
+                    }
+                    @if (value(row, 'expiry_date')) {
+                      <div><dt class="text-xs font-medium text-slate-500">Scadenza</dt><dd class="mt-1 text-sm font-semibold">{{ value(row, 'expiry_date') | date: (row['expiry_precision'] === 'month' ? 'MM/yyyy' : 'd MMMM y') }}</dd></div>
+                    }
+                  </dl>
+                </section>
+              }
+              @if (section.id === 'medications') {
+                <section class="space-y-3 border-t border-slate-100 pt-4 dark:border-slate-800" aria-labelledby="medication-plan-title">
+                  <div>
+                    <h3 id="medication-plan-title" class="font-semibold">Piano di somministrazione</h3>
+                    <p class="mt-1 text-xs text-slate-500">Dosaggi e indicazioni per ciascun periodo della terapia.</p>
+                  </div>
+                  <ol class="space-y-2">
+                    @for (period of medicationSchedulePeriods(row); track $index; let index = $index) {
+                      <li class="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/60">
+                        <div class="flex flex-wrap items-start justify-between gap-2">
+                          <strong class="text-sm">{{ medicationSchedulePeriods(row).length > 1 ? 'Periodo ' + (index + 1) : 'Regime' }} · {{ period.dosage }}</strong>
+                          <span class="rounded-full bg-teal-100 px-2 py-0.5 text-[11px] font-semibold text-teal-800 dark:bg-teal-900/50 dark:text-teal-200">
+                            {{ period.start_date ? (period.start_date | date: 'd MMM y') : 'Inizio non specificato' }}
+                            @if (period.end_date) { – {{ period.end_date | date: 'd MMM y' }} } @else { · in corso }
+                          </span>
+                        </div>
+                        <dl class="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                          @if (period.formulation) {
+                            <div><dt class="text-xs font-medium text-slate-500">Formulazione</dt><dd class="mt-0.5">{{ period.formulation }}</dd></div>
+                          }
+                          @if (period.schedule_times) {
+                            <div><dt class="text-xs font-medium text-slate-500">Orari o fasce</dt><dd class="mt-0.5">{{ period.schedule_times }}</dd></div>
+                          }
+                          @if (period.spray_count != null) {
+                            <div><dt class="text-xs font-medium text-slate-500">Puff o spruzzi per somministrazione</dt><dd class="mt-0.5">{{ period.spray_count }}</dd></div>
+                          }
+                          @if (period.administration_duration_seconds != null) {
+                            <div><dt class="text-xs font-medium text-slate-500">Durata della somministrazione</dt><dd class="mt-0.5">{{ period.administration_duration_seconds }} secondi</dd></div>
+                          }
+                          @if (period.planned_pause) {
+                            <div class="sm:col-span-2"><dt class="text-xs font-medium text-slate-500">Pause previste</dt><dd class="mt-0.5 whitespace-pre-wrap">{{ period.planned_pause }}</dd></div>
+                          }
+                        </dl>
+                      </li>
+                    }
+                  </ol>
+                </section>
+              }
               @if (section.id === 'children') {
                 <section class="space-y-4 border-t border-slate-100 pt-4 dark:border-slate-800" aria-labelledby="detail-measurements-title">
                   <div>
@@ -788,6 +931,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     'Documenti',
     'Spese e rimborsi',
   ];
+  readonly medicationFormulations = ['Compressa', 'Sciroppo', 'Gocce', 'Spray', 'Aerosol', 'Crema', 'Altro'];
   readonly measurementRows = signal<DiaryRow[]>([]);
   readonly measurementLoading = signal(false);
   readonly measurementSaving = signal(false);
@@ -800,6 +944,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   measurementForm: Record<string, string> = { date: new Date().toISOString().slice(0, 10) };
   readonly children: DiaryRow[] = [];
   form: Record<string, string> = {};
+  readonly additionalMedicationSchedules = signal<MedicationScheduleDraft[]>([]);
   attachedFile: File | null = null;
   recordedVoice: Blob | null = null;
   recordedVoiceUrl = '';
@@ -813,6 +958,9 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   private loadedUserId: string | null = null;
   private routeSubscription?: Subscription;
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private openNewEventAfterLoad = false;
+  private handledNewEventRequest = false;
   get recordingSupported(): boolean {
     return (
       typeof navigator !== 'undefined' &&
@@ -836,6 +984,63 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       .split(',')
       .map((entry) => entry.replace(/\b(\d):([0-5]\d)\b/g, '0$1:$2'))
       .join(', ');
+  }
+  addMedicationSchedule(): void {
+    const previous = this.additionalMedicationSchedules().at(-1);
+    const source = previous ?? this.form;
+    this.additionalMedicationSchedules.update((periods) => [
+      ...periods,
+      {
+        start_date: '',
+        end_date: '',
+        dosage: String(source['dosage'] ?? ''),
+        formulation: String(source['formulation'] ?? ''),
+        spray_count: String(source['spray_count'] ?? ''),
+        administration_duration_seconds: String(source['administration_duration_seconds'] ?? ''),
+        schedule_times: String(source['schedule_times'] ?? ''),
+        planned_pause: String(source['planned_pause'] ?? ''),
+      },
+    ]);
+  }
+  updateMedicationSchedule(
+    index: number,
+    key: keyof MedicationScheduleDraft,
+    value: unknown,
+  ): void {
+    this.additionalMedicationSchedules.update((periods) =>
+      periods.map((period, current) => current === index
+        ? { ...period, [key]: value == null ? '' : String(value) }
+        : period),
+    );
+  }
+  removeMedicationSchedule(index: number): void {
+    this.additionalMedicationSchedules.update((periods) => periods.filter((_, i) => i !== index));
+  }
+  medicationSchedulePeriods(row: DiaryRow): MedicationSchedulePeriod[] {
+    const schedules = row['schedule_periods'];
+    if (Array.isArray(schedules) && schedules.length) {
+      return schedules.filter((value): value is Record<string, unknown> => !!value && typeof value === 'object')
+        .map((value) => ({
+          start_date: value['start_date'] ? String(value['start_date']) : null,
+          end_date: value['end_date'] ? String(value['end_date']) : null,
+          dosage: String(value['dosage'] ?? ''),
+          formulation: value['formulation'] ? String(value['formulation']) : null,
+          spray_count: value['spray_count'] == null ? null : Number(value['spray_count']),
+          administration_duration_seconds: value['administration_duration_seconds'] == null ? null : Number(value['administration_duration_seconds']),
+          schedule_times: value['schedule_times'] ? String(value['schedule_times']) : null,
+          planned_pause: value['planned_pause'] ? String(value['planned_pause']) : null,
+        }));
+    }
+    return [{
+      start_date: row['start_date'] ? String(row['start_date']) : null,
+      end_date: row['end_date'] ? String(row['end_date']) : null,
+      dosage: String(row['dosage'] ?? ''),
+      formulation: row['formulation'] ? String(row['formulation']) : null,
+      spray_count: row['spray_count'] == null ? null : Number(row['spray_count']),
+      administration_duration_seconds: row['administration_duration_seconds'] == null ? null : Number(row['administration_duration_seconds']),
+      schedule_times: row['schedule_times'] ? String(row['schedule_times']) : null,
+      planned_pause: row['planned_pause'] ? String(row['planned_pause']) : null,
+    }];
   }
   get childNames(): string[] {
     return this.children.map((c) => String(c['name']));
@@ -897,9 +1102,21 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   async ngOnInit(): Promise<void> {
     this.routeSubscription = this.route.queryParamMap.subscribe((params) => {
       this.highlightedId.set(params.get('highlight') ?? '');
-      this.requestedChildId = params.get('child') ?? '';
+      const childId = params.get('child') ?? '';
+      const childChanged = childId !== this.requestedChildId;
+      this.requestedChildId = childId;
+      if (
+        this.sectionId === 'health_events' &&
+        params.get('action') === 'new' &&
+        !this.handledNewEventRequest
+      ) {
+        this.handledNewEventRequest = true;
+        this.openNewEventAfterLoad = true;
+      }
       if (this.initialized()) {
-        const child = this.children.find((item) => item.id === this.requestedChildId);
+        const child = childChanged
+          ? this.children.find((item) => item.id === this.requestedChildId)
+          : undefined;
         if (child) {
           this.selectedChildId.set(child.id);
           this.selectedChildName.set(String(child['name']));
@@ -911,6 +1128,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
           this.scrollToHighlighted();
           this.openHighlightedDetails();
         }
+        if (this.openNewEventAfterLoad) this.openRequestedNewEvent();
       }
     });
     await this.auth.ready;
@@ -920,6 +1138,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.initialized.set(true);
     this.scrollToHighlighted();
     this.openHighlightedDetails();
+    if (this.openNewEventAfterLoad) this.openRequestedNewEvent();
   }
   ngOnDestroy(): void {
     this.routeSubscription?.unsubscribe();
@@ -979,8 +1198,54 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       ).filter((field) => row[field.key] != null);
     return this.section.fields.filter(
       (field) =>
-        !['file', 'name'].includes(field.key) && field.key !== 'title' && row[field.key] != null,
+        !['file', 'name', 'expiry_precision'].includes(field.key) && field.key !== 'title' && row[field.key] != null,
     );
+  }
+  detailFields(row: DiaryRow): FieldDefinition[] {
+    const fields = this.visibleFields(row);
+    if (this.sectionId === 'medicine_cabinet') {
+      const stockFields = new Set([
+        'quantity',
+        'planned_dosage',
+        'price',
+        'purchase_date',
+        'opened_date',
+        'expiry_date',
+      ]);
+      return fields.filter((field) => !stockFields.has(field.key));
+    }
+    if (this.sectionId !== 'medications') return fields;
+    const regimenFields = new Set([
+      'dosage',
+      'formulation',
+      'spray_count',
+      'administration_duration_seconds',
+      'start_date',
+      'end_date',
+      'schedule_times',
+      'planned_pause',
+    ]);
+    return fields.filter((field) => !regimenFields.has(field.key));
+  }
+  inventoryExpiryLabel(row: DiaryRow): string {
+    const expiry = String(row['expiry_date'] ?? '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(expiry)) return 'Scadenza non indicata';
+    const [year, month, day] = expiry.split('-').map(Number);
+    const expiryDay = Date.UTC(year, month - 1, day);
+    const now = new Date();
+    const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    const remainingDays = Math.floor((expiryDay - today) / 86_400_000);
+    if (remainingDays < 0) return 'Scaduto';
+    if (remainingDays === 0) return 'Scade oggi';
+    if (remainingDays <= 30) return `Scade tra ${remainingDays} giorni`;
+    return 'Scadenza oltre 30 giorni';
+  }
+  inventoryExpiryTone(row: DiaryRow): string {
+    const label = this.inventoryExpiryLabel(row);
+    if (label === 'Scaduto') return 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200';
+    if (label.startsWith('Scade')) return 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200';
+    if (label === 'Scadenza oltre 30 giorni') return 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200';
+    return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300';
   }
   setField(field: FieldDefinition, value: string): void {
     this.form[field.key] = value;
@@ -1045,12 +1310,23 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     return values.map((value, index) => `${8 + index * (304 / (values.length - 1))},${80 - ((value - min) / spread) * 64}`).join(' ');
   }
   openForm(): void {
-    this.form = {};
+    this.form = this.sectionId === 'medicine_cabinet' ? { expiry_precision: 'Data completa' } : {};
+    this.additionalMedicationSchedules.set([]);
     this.attachedFile = null;
     this.clearVoice();
     this.editingId = '';
     this.isFormOpen.set(true);
     this.ui.setModal(true);
+  }
+  private openRequestedNewEvent(): void {
+    this.openNewEventAfterLoad = false;
+    this.openForm();
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { action: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
   openDetailsFromCard(event: MouseEvent, row: DiaryRow): void {
     if ((event.target as HTMLElement).closest('button, a, audio')) return;
@@ -1092,8 +1368,37 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.form = {};
     for (const field of this.section.fields) {
       const value = row[field.key];
-      if (value != null && typeof value !== 'object') this.form[field.key] = String(value);
+      if (field.key === 'expiry_precision' && this.sectionId === 'medicine_cabinet') {
+        this.form[field.key] = value === 'month' ? 'Mese e anno' : 'Data completa';
+      } else if (value != null && typeof value !== 'object') this.form[field.key] = String(value);
     }
+    const savedSchedules = this.medicationSchedulePeriods(row);
+    if (this.sectionId === 'medications' && Array.isArray(row['schedule_periods']) && savedSchedules.length) {
+      const first = savedSchedules[0];
+      for (const key of [
+        'start_date',
+        'end_date',
+        'dosage',
+        'formulation',
+        'spray_count',
+        'administration_duration_seconds',
+        'schedule_times',
+        'planned_pause',
+      ] as const) {
+        const value = first[key];
+        this.form[key] = value == null ? '' : String(value);
+      }
+      this.additionalMedicationSchedules.set(savedSchedules.slice(1).map((period) => ({
+        start_date: period.start_date ?? '',
+        end_date: period.end_date ?? '',
+        dosage: period.dosage,
+        formulation: period.formulation ?? '',
+        spray_count: period.spray_count == null ? '' : String(period.spray_count),
+        administration_duration_seconds: period.administration_duration_seconds == null ? '' : String(period.administration_duration_seconds),
+        schedule_times: period.schedule_times ?? '',
+        planned_pause: period.planned_pause ?? '',
+      })));
+    } else this.additionalMedicationSchedules.set([]);
     this.editingId = row.id;
     this.isFormOpen.set(true);
     this.ui.setModal(true);
@@ -1173,9 +1478,98 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.recordedVoice = null;
     this.recordedVoiceUrl = '';
   }
+  private buildMedicationSchedules(
+    initial: Record<string, unknown>,
+  ): MedicationSchedulePeriod[] | null {
+    const drafts: MedicationScheduleDraft[] = [
+      {
+        start_date: String(initial['start_date'] ?? ''),
+        end_date: String(initial['end_date'] ?? ''),
+        dosage: String(initial['dosage'] ?? ''),
+        formulation: String(initial['formulation'] ?? ''),
+        spray_count: String(initial['spray_count'] ?? ''),
+        administration_duration_seconds: String(initial['administration_duration_seconds'] ?? ''),
+        schedule_times: String(initial['schedule_times'] ?? ''),
+        planned_pause: String(initial['planned_pause'] ?? ''),
+      },
+      ...this.additionalMedicationSchedules(),
+    ];
+    const hasChanges = drafts.length > 1;
+    if (hasChanges) {
+      for (const [index, period] of drafts.entries()) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(period.start_date)) {
+          this.data.error.set(`Inserisci la data di inizio del periodo ${index + 1}.`);
+          return null;
+        }
+        if (!period.dosage.trim()) {
+          this.data.error.set(`Inserisci il dosaggio del periodo ${index + 1}.`);
+          return null;
+        }
+        if (period.end_date && period.end_date < period.start_date) {
+          this.data.error.set(`La fine del periodo ${index + 1} precede il suo inizio.`);
+          return null;
+        }
+        if (index > 0) {
+          const previous = drafts[index - 1];
+          if (!previous.end_date || previous.end_date >= period.start_date) {
+            this.data.error.set(
+              `Imposta la fine del periodo ${index} prima dell’inizio del periodo ${index + 1}.`,
+            );
+            return null;
+          }
+        }
+      }
+    }
+    const output: MedicationSchedulePeriod[] = [];
+    for (const [index, period] of drafts.entries()) {
+      const formulation = period.formulation.trim();
+      const usesSpray = ['spray', 'aerosol'].includes(formulation.toLocaleLowerCase());
+      const parsePositiveInteger = (raw: string, label: string): number | null | false => {
+        if (!usesSpray || !raw.trim()) return null;
+        const value = Number(raw);
+        if (!Number.isInteger(value) || value < 1) {
+          this.data.error.set(`Inserisci un valore intero maggiore di zero per ${label} nel periodo ${index + 1}.`);
+          return false;
+        }
+        return value;
+      };
+      const sprayCount = parsePositiveInteger(period.spray_count, 'puff o spruzzi');
+      const duration = parsePositiveInteger(period.administration_duration_seconds, 'durata');
+      if (sprayCount === false || duration === false) return null;
+      output.push({
+        start_date: period.start_date || null,
+        end_date: period.end_date || null,
+        dosage: period.dosage.trim(),
+        formulation: formulation || null,
+        spray_count: sprayCount,
+        administration_duration_seconds: duration,
+        schedule_times: period.schedule_times.trim() || null,
+        planned_pause: period.planned_pause.trim() || null,
+      });
+    }
+    return output;
+  }
   async save(): Promise<void> {
     this.saving.set(true);
     const value: Record<string, unknown> = { ...this.form };
+    this.data.error.set('');
+    if (this.sectionId === 'medicine_cabinet') {
+      const monthOnly = value['expiry_precision'] === 'Mese e anno';
+      value['expiry_precision'] = monthOnly ? 'month' : 'day';
+      const expiry = String(value['expiry_date'] ?? '').slice(0, 10);
+      if (monthOnly && /^\d{4}-\d{2}-\d{2}$/.test(expiry)) {
+        const [year, month] = expiry.split('-').map(Number);
+        value['expiry_date'] = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`;
+      }
+    }
+    if (this.sectionId === 'medications') {
+      const schedules = this.buildMedicationSchedules(value);
+      if (!schedules) {
+        this.saving.set(false);
+        return;
+      }
+      value['schedule_periods'] = schedules;
+    }
     if (this.recording()) {
       const recorder = this.recorder;
       this.stopRecording();

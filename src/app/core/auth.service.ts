@@ -18,18 +18,20 @@ export class AuthService {
     } else this.ready = Promise.resolve();
   }
 
-  async signIn(email: string, password: string): Promise<void> {
+  async signIn(email: string, password: string): Promise<boolean> {
     if (!this.supabase.client) {
       this.error.set('Configura la chiave publishable Supabase per attivare l’accesso.');
-      return;
+      return false;
     }
     this.busy.set(true);
     this.error.set('');
     try {
       const { error } = await this.supabase.client.auth.signInWithPassword({ email, password });
       if (error) this.error.set(this.translateAuthError(error.message, 'accesso'));
+      return !error;
     } catch {
       this.error.set('Non è stato possibile accedere. Controlla la connessione e riprova.');
+      return false;
     } finally {
       this.busy.set(false);
     }

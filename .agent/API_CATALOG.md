@@ -1,6 +1,6 @@
 # API Catalog
 
-> Generato da `npm run update-context` il 07/10/2026, 10:06:34.
+> Generato da `npm run update-context` il 07/10/2026, 10:47:46.
 
 ## Servizi
 
@@ -8,7 +8,7 @@
 
 File: [src/app/core/auth.service.ts](../src/app/core/auth.service.ts)
 
-- `signIn(email: string, password: string)`: `Promise<void>`
+- `signIn(email: string, password: string)`: `Promise<boolean>`
 - `signUp(email: string, password: string)`: `Promise<void>`
 - `signOut()`: `Promise<void>`
 
@@ -49,6 +49,13 @@ File: [src/app/core/diary-data.service.ts](../src/app/core/diary-data.service.ts
     scheduledDate: string,
     scheduledTime: string,
     takenAt: string,
+  )`: `Promise<boolean>`
+- `markMedicationDoseSkipped(
+    medicationId: string,
+    childId: string,
+    scheduledDate: string,
+    scheduledTime: string,
+    reason: string,
   )`: `Promise<boolean>`
 - `loadReport(childId?: string)`: `Promise<void>`
 - `save(

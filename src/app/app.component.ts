@@ -425,6 +425,41 @@ import { TooltipDirective } from './shared/directives/tooltip.directive';
       >
         Verifica accesso…
       </div>
+    }
+    @if (biometricPromptVisible()) {
+      <div class="modal-backdrop">
+        <section
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="biometric-offer-title"
+          class="modal-panel max-w-md p-6"
+        >
+          <p class="eyebrow">ACCESSO PIÙ RAPIDO</p>
+          <h2 id="biometric-offer-title" class="mt-1 text-2xl font-semibold">
+            Vuoi usare l’impronta?
+          </h2>
+          <p class="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+            Puoi accedere con l’impronta o un altro metodo biometrico disponibile su questo
+            dispositivo. La passkey resta sul dispositivo.
+          </p>
+          @if (biometrics.error()) {
+            <p role="alert" class="notice-error mt-4">{{ biometrics.error() }}</p>
+          }
+          <div class="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button type="button" class="button-secondary" (click)="dismissBiometricPrompt()">
+              Non ora
+            </button>
+            <button
+              type="button"
+              class="button-primary"
+              [disabled]="biometrics.busy()"
+              (click)="enableBiometrics()"
+            >
+              {{ biometrics.busy() ? 'Attendi…' : 'Attiva accesso biometrico' }}
+            </button>
+          </div>
+        </section>
+      </div>
     }`,
 })
 export class AppComponent implements OnDestroy {
@@ -452,6 +487,8 @@ export class AppComponent implements OnDestroy {
   );
   readonly authReady = signal(false);
   readonly biometricLocked = signal(false);
+  readonly biometricPromptVisible = signal(false);
+  private biometricOfferStarted = false;
   constructor() {
     void this.auth.ready.finally(() => this.authReady.set(true));
     effect(() => {
@@ -459,7 +496,17 @@ export class AppComponent implements OnDestroy {
       const ready = this.authReady();
       const enrolled = this.biometrics.enrolled();
       if (user && ready) {
-        untracked(() => void this.loadAvatar());
+        untracked(() => {
+          void this.loadAvatar();
+          if (
+            sessionStorage.getItem('trialcare-biometric-offer-pending') === 'true' &&
+            !this.biometricOfferStarted
+          ) {
+            this.biometricOfferStarted = true;
+            sessionStorage.removeItem('trialcare-biometric-offer-pending');
+            void this.offerBiometricEnrollment();
+          }
+        });
         if (enrolled && sessionStorage.getItem('trialcare-biometric-unlocked') !== 'true')
           this.biometricLocked.set(true);
         const path = window.location.hash.slice(1);
@@ -545,6 +592,18 @@ export class AppComponent implements OnDestroy {
       sessionStorage.setItem('trialcare-biometric-unlocked', 'true');
       this.biometricLocked.set(false);
     }
+  }
+  async enableBiometrics(): Promise<void> {
+    await this.biometrics.enroll();
+    if (this.biometrics.enrolled()) this.biometricPromptVisible.set(false);
+  }
+  dismissBiometricPrompt(): void {
+    this.biometricPromptVisible.set(false);
+  }
+  private async offerBiometricEnrollment(): Promise<void> {
+    await this.biometrics.checkAvailability();
+    if (this.auth.user() && this.biometrics.available() && !this.biometrics.enrolled())
+      this.biometricPromptVisible.set(true);
   }
   async signOut(): Promise<void> {
     this.biometrics.revoke();
