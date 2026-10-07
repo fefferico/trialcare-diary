@@ -9,6 +9,7 @@ import {
   HealthEventsComponent,
   MedicationTrackerComponent,
   MedicineCabinetComponent,
+  OrthosesComponent,
   TherapyTrackerComponent,
 } from './features/section-wrappers';
 import { requireAuthentication } from './core/auth.guard';
@@ -28,6 +29,7 @@ export const routes: Routes = [
     component: MedicineCabinetComponent,
     canActivate: [requireAuthentication],
   },
+  { path: 'orthoses', component: OrthosesComponent, canActivate: [requireAuthentication] },
   { path: 'medicine_cabinet', redirectTo: 'medicine-cabinet', pathMatch: 'full' },
   { path: 'health_events', component: HealthEventsComponent, canActivate: [requireAuthentication] },
   { path: 'therapies', component: TherapyTrackerComponent, canActivate: [requireAuthentication] },

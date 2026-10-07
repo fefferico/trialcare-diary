@@ -15,6 +15,7 @@ const SEARCHABLE_SECTIONS: Exclude<SectionId, 'reports'>[] = [
   'medications',
   'medication_doses',
   'medicine_cabinet',
+  'orthoses',
   'health_events',
   'calendar_events',
   'therapies',
@@ -27,6 +28,7 @@ const DOCUMENT_DATE_FIELD: Partial<Record<SectionId, string>> = {
   medications: 'start_date',
   medication_doses: 'scheduled_date',
   medicine_cabinet: 'expiry_date',
+  orthoses: 'start_date',
   health_events: 'date',
   calendar_events: 'date',
   therapies: 'start_date',
@@ -261,7 +263,7 @@ export class DiaryDataService {
   async loadReport(childId?: string): Promise<void> {
     this.syncing.set(true);
     this.error.set('');
-    const tables = ['medications', 'health_events', 'therapies', 'documents', 'expenses'] as const;
+    const tables = ['medications', 'health_events', 'therapies', 'orthoses', 'documents', 'expenses'] as const;
     const client = this.supabase.client;
     if (client && this.auth.user()) {
       const results = await Promise.all(

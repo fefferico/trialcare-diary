@@ -442,7 +442,7 @@ interface MedicationScheduleDraft {
             aria-modal="true"
             aria-labelledby="dialog-title"
             class="modal-panel"
-            [class.pdf-preview-modal]="section.id === 'documents' && attachedFile?.type === 'application/pdf'"
+            [class.pdf-preview-modal]="section.id === 'documents' && isPdfAttachment()"
             (click)="$event.stopPropagation()"
           >
             <header
@@ -498,7 +498,7 @@ interface MedicationScheduleDraft {
                     [class.full-span]="field.kind === 'textarea' || field.kind === 'file'"
                     ><span
                       >{{ field.label }}
-                      @if (field.required) {
+                      @if (field.required && !(field.kind === 'file' && isEditing())) {
                         <i class="text-rose-500"> *</i>
                       }
                     </span>
@@ -568,21 +568,21 @@ interface MedicationScheduleDraft {
                         <input
                           class="field-control file:mr-3 file:rounded-lg file:border-0 file:bg-teal-50 file:px-3 file:py-2 file:font-medium file:text-teal-800"
                           type="file"
-                          [required]="field.required ?? false"
+                          [required]="(field.required ?? false) && !isEditing()"
                           accept=".pdf,image/jpeg,image/png,image/webp,image/heic"
                           (change)="setFile(field, $event)"
                         /><small class="text-xs text-slate-400"
                           >I file vengono caricati nel bucket privato quando Supabase è configurato.
-                          Dai PDF con testo selezionabile viene estratto anche il testo per la
+                          Il testo estratto o scritto a mano viene salvato con il documento per la
                           ricerca.</small
                         >
-                        @if (
-                          section.id === 'documents' && attachedFile?.type === 'application/pdf'
-                        ) {
+                        @if (section.id === 'documents' && isPdfAttachment()) {
                           <tc-pdf-redaction
                             [file]="attachedFile!"
                             [initialTerms]="selectedChildName()"
                             (redacted)="setRedactedFile($event)"
+                            (textForSaving)="setPdfTextForSaving($event)"
+                            (processingChange)="setPdfTextProcessing($event)"
                           />
                         }
                       }
@@ -603,6 +603,18 @@ interface MedicationScheduleDraft {
                   }
                 }
               </div>
+              @if (section.id === 'documents' && !isPdfAttachment()) {
+                <label class="form-field">
+                  <span>Testo del documento per la ricerca</span>
+                  <textarea
+                    class="field-control min-h-40 resize-y"
+                    name="extracted_text"
+                    [(ngModel)]="form['extracted_text']"
+                    rows="6"
+                    placeholder="Scrivi o correggi il testo da associare al documento…"
+                  ></textarea>
+                </label>
+              }
               @if (section.id === 'medications') {
                 <section class="space-y-4 rounded-2xl border border-slate-200 p-4 dark:border-slate-700" aria-labelledby="medication-schedule-title">
                   <div class="flex flex-wrap items-start justify-between gap-3">
@@ -693,7 +705,7 @@ interface MedicationScheduleDraft {
                 class="flex justify-end gap-2 border-t border-slate-100 pt-4 dark:border-slate-800"
               >
                 <button type="button" class="button-secondary" (click)="closeForm()">Annulla</button
-                ><button class="button-primary" type="submit" [disabled]="saving()">
+                ><button class="button-primary" type="submit" [disabled]="saving() || documentTextProcessing()">
                   {{
                     extracting()
                       ? 'Estrazione testo…'
@@ -912,6 +924,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   readonly detailRow = signal<DiaryRow | null>(null);
   readonly saving = signal(false);
   readonly extracting = signal(false);
+  readonly documentTextProcessing = signal(false);
   readonly exporting = signal(false);
   readonly initialized = signal(false);
   readonly recording = signal(false);
@@ -928,6 +941,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     'Farmaci',
     'Eventi e sintomi',
     'Percorsi terapeutici',
+    'Ortesi e ausili',
     'Documenti',
     'Spese e rimborsi',
   ];
@@ -946,6 +960,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   form: Record<string, string> = {};
   readonly additionalMedicationSchedules = signal<MedicationScheduleDraft[]>([]);
   attachedFile: File | null = null;
+  private pdfTextForSaving: { file: File; text: string } | null = null;
   recordedVoice: Blob | null = null;
   recordedVoiceUrl = '';
   private recorder?: MediaRecorder;
@@ -1088,6 +1103,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
             medications: 'Farmaci',
             health_events: 'Eventi e sintomi',
             therapies: 'Percorsi terapeutici',
+            orthoses: 'Ortesi e ausili',
             documents: 'Documenti',
             expenses: 'Spese e rimborsi',
           } as Record<string, string>
@@ -1157,6 +1173,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         const dateField: Partial<Record<SectionId, string>> = {
           medications: 'start_date',
           medicine_cabinet: 'expiry_date',
+          orthoses: 'start_date',
           health_events: 'date',
           therapies: 'start_date',
           documents: 'date',
@@ -1250,16 +1267,37 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   setField(field: FieldDefinition, value: string): void {
     this.form[field.key] = value;
   }
+  isPdfAttachment(): boolean {
+    return !!this.attachedFile &&
+      (this.attachedFile.type === 'application/pdf' || this.attachedFile.name.toLowerCase().endsWith('.pdf'));
+  }
+  isEditing(): boolean {
+    return !!this.editingId;
+  }
   setFile(field: FieldDefinition, event: Event): void {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (file) {
       this.attachedFile = file;
       this.form[field.key] = file.name;
+      if (this.sectionId === 'documents') {
+        this.pdfTextForSaving = null;
+        this.form['extracted_text'] = '';
+        this.documentTextProcessing.set(this.isPdfAttachment());
+      }
     }
   }
   setRedactedFile(file: File): void {
     this.attachedFile = file;
     this.form['file'] = file.name;
+    this.form['extracted_text'] = '';
+    this.pdfTextForSaving = null;
+    this.documentTextProcessing.set(true);
+  }
+  setPdfTextForSaving(value: { file: File; text: string }): void {
+    if (value.file === this.attachedFile) this.pdfTextForSaving = value;
+  }
+  setPdfTextProcessing(value: { file: File; processing: boolean }): void {
+    if (value.file === this.attachedFile) this.documentTextProcessing.set(value.processing);
   }
   selectChild(name: string): void {
     const child = this.children.find((item) => item['name'] === name);
@@ -1313,6 +1351,8 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.form = this.sectionId === 'medicine_cabinet' ? { expiry_precision: 'Data completa' } : {};
     this.additionalMedicationSchedules.set([]);
     this.attachedFile = null;
+    this.pdfTextForSaving = null;
+    this.documentTextProcessing.set(false);
     this.clearVoice();
     this.editingId = '';
     this.isFormOpen.set(true);
@@ -1366,12 +1406,17 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   }
   edit(row: DiaryRow): void {
     this.form = {};
+    this.attachedFile = null;
+    this.pdfTextForSaving = null;
+    this.documentTextProcessing.set(false);
     for (const field of this.section.fields) {
       const value = row[field.key];
       if (field.key === 'expiry_precision' && this.sectionId === 'medicine_cabinet') {
         this.form[field.key] = value === 'month' ? 'Mese e anno' : 'Data completa';
       } else if (value != null && typeof value !== 'object') this.form[field.key] = String(value);
     }
+    if (this.sectionId === 'documents')
+      this.form['extracted_text'] = String(row['extracted_text'] ?? '');
     const savedSchedules = this.medicationSchedulePeriods(row);
     if (this.sectionId === 'medications' && Array.isArray(row['schedule_periods']) && savedSchedules.length) {
       const first = savedSchedules[0];
@@ -1406,6 +1451,9 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   closeForm(): void {
     this.stopRecording();
     this.clearVoice();
+    this.attachedFile = null;
+    this.pdfTextForSaving = null;
+    this.documentTextProcessing.set(false);
     this.isFormOpen.set(false);
     this.ui.setModal(false);
   }
@@ -1550,6 +1598,10 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     return output;
   }
   async save(): Promise<void> {
+    if (this.sectionId === 'documents' && this.documentTextProcessing()) {
+      this.data.error.set('Attendi che la lettura del PDF sia completata prima di salvare.');
+      return;
+    }
     this.saving.set(true);
     const value: Record<string, unknown> = { ...this.form };
     this.data.error.set('');
@@ -1627,10 +1679,12 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     ) {
       this.extracting.set(true);
       try {
-        value['extracted_text'] = await this.extractPdfText(this.attachedFile);
-        if (!value['extracted_text'])
+        value['extracted_text'] = this.pdfTextForSaving?.file === this.attachedFile
+          ? this.pdfTextForSaving.text
+          : await this.extractPdfText(this.attachedFile);
+        if (!String(value['extracted_text'] ?? '').trim())
           this.data.error.set(
-            'Il PDF non contiene testo selezionabile. I PDF composti solo da scansioni non sono indicizzati.',
+            'Il documento sarà salvato senza testo ricercabile. Puoi scriverlo nel riquadro prima di salvare.',
           );
       } catch {
         value['extracted_text'] = '';

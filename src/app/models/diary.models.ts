@@ -3,6 +3,7 @@ export type SectionId =
   | 'medications'
   | 'medication_doses'
   | 'medicine_cabinet'
+  | 'orthoses'
   | 'health_events'
   | 'calendar_events'
   | 'therapies'
@@ -146,6 +147,26 @@ export const SECTIONS: SectionDefinition[] = [
       { key: 'opened_date', label: 'Data di apertura', kind: 'date' },
       { key: 'expiry_precision', label: 'Precisione scadenza', kind: 'select', options: ['Data completa', 'Mese e anno'] },
       { key: 'expiry_date', label: 'Data di scadenza', kind: 'date' },
+      { key: 'notes', label: 'Note', kind: 'textarea' },
+    ],
+  },
+  {
+    id: 'orthoses',
+    label: 'Ortesi e ausili',
+    shortLabel: 'Ortesi',
+    title: 'Ortesi e ausili',
+    description: 'Tieni traccia di tutori, scarpe ortopediche, tutine, pantaloncini e altri ausili.',
+    icon: 'accessibility',
+    fields: [
+      { key: 'name', label: 'Nome dell’ortesi o ausilio', kind: 'text', required: true, placeholder: 'Es. tutore caviglia-piede' },
+      { key: 'category', label: 'Tipologia', kind: 'select', required: true, options: ['Tutore', 'Scarpe ortopediche', 'Tutina', 'Pantaloncini', 'Plantare', 'Altro'] },
+      { key: 'brand', label: 'Marca', kind: 'text' },
+      { key: 'model', label: 'Modello', kind: 'text' },
+      { key: 'size', label: 'Taglia o misura', kind: 'text', placeholder: 'Es. 28, 10 cm' },
+      { key: 'laterality', label: 'Lato', kind: 'select', options: ['Destro', 'Sinistro', 'Entrambi'] },
+      { key: 'purchase_date', label: 'Data di acquisto', kind: 'date' },
+      { key: 'start_date', label: 'In uso dal', kind: 'date' },
+      { key: 'end_date', label: 'Non più in uso dal', kind: 'date' },
       { key: 'notes', label: 'Note', kind: 'textarea' },
     ],
   },

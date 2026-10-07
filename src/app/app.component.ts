@@ -618,6 +618,7 @@ export class AppComponent implements OnDestroy {
             'M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8z',
           medications: 'M8 5h8a3.5 3.5 0 0 1 0 7H8a3.5 3.5 0 0 1 0-7z M12 5v7',
           medicine_cabinet: 'M9 3.5h6v3H9z M7 6.5h10v14H7z M7 10h10 M12 12v5 M9.5 14.5h5',
+          orthoses: 'M3 15c3 0 4-1 5-4l2-6h4l1 6c.4 2 2 4 6 4v3H3z M9 15h2 M13 15h2',
           health_events: 'M3 12h4l3-8 4 16 3-8h4',
           therapies:
             'M12 21s-8.5-4.8-8.5-11a4.5 4.5 0 0 1 8.5-2.1A4.5 4.5 0 0 1 20.5 10c0 6.2-8.5 11-8.5 11z M12 8v7 M8.5 11.5h7',

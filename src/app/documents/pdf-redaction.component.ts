@@ -230,19 +230,38 @@ type ResizeCorner = 'nw' | 'ne' | 'sw' | 'se';
           <p class="mt-2 text-sm text-slate-500 dark:text-slate-400" role="status">
             {{ ocrProgress() || 'Lettura del documento in corso…' }}
           </p>
-        } @else if (extractedText()) {
-          <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3 text-sm leading-6 text-slate-700 dark:bg-slate-900 dark:text-slate-200">{{ extractedText() }}</pre>
-          @if (ocrUsed()) {
-            <p class="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300">
-              Testo riconosciuto localmente con OCR: controlla attentamente nomi, date, codici e dosaggi perché la scansione può causare errori.
+        }
+        @if (!busy()) {
+          <label class="form-field mt-3">
+            <span>Testo da salvare con il documento</span>
+            <textarea
+              class="field-control min-h-64 resize-y font-mono text-sm leading-6"
+              rows="12"
+              [value]="extractedText()"
+              (input)="editExtractedText($event)"
+              placeholder="Scrivi o correggi qui il testo del documento…"
+            ></textarea>
+          </label>
+          <p class="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+            Correggi nomi, date e dosaggi prima di salvare. Questo testo sarà associato al documento
+            e usato per la ricerca.
+          </p>
+          @if (textEdited()) {
+            <p class="mt-1 text-xs text-amber-700 dark:text-amber-300">
+              Riprova OCR sostituirà le modifiche scritte qui.
             </p>
           }
-        } @else if (ocrAttempted()) {
+        }
+        @if (!busy() && ocrError()) {
+          <p class="mt-2 text-sm text-amber-700 dark:text-amber-300" role="alert">
+            {{ ocrError() }}
+          </p>
+        } @else if (!busy() && !extractedText() && ocrAttempted()) {
           <p class="mt-2 text-sm text-amber-700 dark:text-amber-300">
             L’OCR non ha restituito testo per questo documento. Puoi riprovare oppure controllare
             manualmente la scansione.
           </p>
-        } @else {
+        } @else if (!busy() && !extractedText()) {
           <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
             Non è stato trovato testo selezionabile. Il documento potrebbe essere una scansione.
           </p>
@@ -262,6 +281,8 @@ export class PdfRedactionComponent implements OnChanges {
   @Input({ required: true }) file!: File;
   @Input() initialTerms = '';
   @Output() redacted = new EventEmitter<File>();
+  @Output() textForSaving = new EventEmitter<{ file: File; text: string }>();
+  @Output() processingChange = new EventEmitter<{ file: File; processing: boolean }>();
   readonly busy = signal(false);
   readonly page = signal(1);
   readonly pageCount = signal(0);
@@ -269,8 +290,10 @@ export class PdfRedactionComponent implements OnChanges {
   readonly notice = signal('');
   readonly terms = signal('');
   readonly extractedText = signal('');
+  readonly textEdited = signal(false);
   readonly ocrUsed = signal(false);
   readonly ocrAttempted = signal(false);
+  readonly ocrError = signal('');
   readonly ocrProgress = signal('');
   private pdf: any;
   private pages: HTMLCanvasElement[] = [];
@@ -287,6 +310,14 @@ export class PdfRedactionComponent implements OnChanges {
   }
   pageBoxes(): Redaction[] {
     return this.boxes[this.page() - 1] ?? [];
+  }
+  editExtractedText(event: Event): void {
+    this.textEdited.set(true);
+    this.setTextForSaving((event.target as HTMLTextAreaElement).value);
+  }
+  private setTextForSaving(text: string): void {
+    this.extractedText.set(text);
+    this.textForSaving.emit({ file: this.file, text });
   }
   pageWidth(): number {
     return this.pages[this.page() - 1]?.width ?? 1;
@@ -432,11 +463,15 @@ export class PdfRedactionComponent implements OnChanges {
     this.deleteBox(index, event);
   }
   async load(): Promise<void> {
+    const file = this.file;
     this.busy.set(true);
+    this.processingChange.emit({ file, processing: true });
     this.notice.set('');
     this.extractedText.set('');
+    this.textEdited.set(false);
     this.ocrUsed.set(false);
     this.ocrAttempted.set(false);
+    this.ocrError.set('');
     this.ocrProgress.set('');
     let ocrWorker: BrowserOcrWorker | null = null;
     let ocrFailed = false;
@@ -445,7 +480,7 @@ export class PdfRedactionComponent implements OnChanges {
         'assets/pdfjs/pdf.worker.min.mjs',
         document.baseURI,
       ).toString();
-      this.pdf = await getDocument({ data: new Uint8Array(await this.file.arrayBuffer()) }).promise;
+      this.pdf = await getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
       this.pageCount.set(this.pdf.numPages);
       this.pages = [];
       this.boxes = Array.from({ length: this.pdf.numPages }, () => []);
@@ -478,9 +513,12 @@ export class PdfRedactionComponent implements OnChanges {
         }
         if (recognizedText.trim()) textPages.push(`Pagina ${n}\n${recognizedText.trim()}`);
       }
-      this.extractedText.set(textPages.join('\n\n').replace(/[ \t]+/g, ' ').trim());
-      if (ocrFailed)
+      if (this.file === file)
+        this.setTextForSaving(textPages.join('\n\n').replace(/[ \t]+/g, ' ').trim());
+      if (ocrFailed) {
+        this.ocrError.set('Il motore OCR non è riuscito a elaborare il documento. Puoi riprovare.');
         this.notice.set('OCR non riuscito su alcune pagine. Puoi riprovare con il pulsante nella sezione del testo.');
+      }
       this.page.set(1);
       this.draw();
     } catch {
@@ -489,14 +527,18 @@ export class PdfRedactionComponent implements OnChanges {
       await ocrWorker?.terminate().catch(() => undefined);
       this.ocrProgress.set('');
       this.busy.set(false);
+      this.processingChange.emit({ file, processing: false });
     }
   }
   async runOcr(): Promise<void> {
     if (!this.pdf || this.busy()) return;
+    const file = this.file;
     this.busy.set(true);
+    this.processingChange.emit({ file, processing: true });
     this.notice.set('');
     this.ocrUsed.set(false);
     this.ocrAttempted.set(true);
+    this.ocrError.set('');
     const textPages: string[] = [];
     let worker: BrowserOcrWorker | null = null;
     try {
@@ -510,21 +552,28 @@ export class PdfRedactionComponent implements OnChanges {
           textPages.push(`Pagina ${n}\n${text}`);
           this.ocrUsed.set(true);
         }
-        this.extractedText.set(textPages.join('\n\n'));
       }
-      if (!textPages.length) this.notice.set('Non è stato possibile riconoscere testo nelle pagine.');
+      if (textPages.length && this.file === file) {
+        this.textEdited.set(false);
+        this.setTextForSaving(textPages.join('\n\n'));
+      } else if (!textPages.length) {
+        this.notice.set('Non è stato possibile riconoscere testo nelle pagine.');
+      }
     } catch {
-      this.notice.set('OCR non riuscito. Riprova oppure controlla il documento manualmente.');
+      this.ocrError.set('Il motore OCR non è riuscito a elaborare il documento. Puoi riprovare.');
     } finally {
       await worker?.terminate().catch(() => undefined);
       this.ocrProgress.set('');
       this.busy.set(false);
+      this.processingChange.emit({ file, processing: false });
     }
   }
   private async createOcrWorker(): Promise<BrowserOcrWorker> {
-    const { createWorker } = await import('tesseract.js');
+    const imported = await import('tesseract.js');
+    // Angular bundles this CommonJS dependency as a module with a default export.
+    const tesseract = (imported as unknown as { default?: typeof imported }).default ?? imported;
     const assetUrl = (path: string) => new URL(path, document.baseURI).toString();
-    return createWorker('ita+eng', undefined, {
+    return tesseract.createWorker('ita+eng', undefined, {
       workerPath: assetUrl('assets/tesseract/worker.min.js'),
       corePath: assetUrl('assets/tesseract/core/'),
       langPath: assetUrl('assets/tesseract/lang/'),
@@ -757,6 +806,7 @@ export class PdfRedactionComponent implements OnChanges {
     this.draw();
   }
   async apply(): Promise<void> {
+    const file = this.file;
     this.busy.set(true);
     try {
       const output = new jsPDF({
@@ -791,7 +841,7 @@ export class PdfRedactionComponent implements OnChanges {
     } catch {
       this.notice.set('Creazione del PDF oscurato non riuscita.');
     } finally {
-      this.busy.set(false);
+      if (this.file === file) this.busy.set(false);
     }
   }
 }

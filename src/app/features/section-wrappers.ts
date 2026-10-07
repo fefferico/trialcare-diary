@@ -23,6 +23,13 @@ export class MedicationTrackerComponent {}
 })
 export class MedicineCabinetComponent {}
 @Component({
+  selector: 'tc-orthoses',
+  standalone: true,
+  imports: [FeaturePageComponent],
+  template: `<tc-feature-page sectionId="orthoses" />`,
+})
+export class OrthosesComponent {}
+@Component({
   selector: 'tc-health-events',
   standalone: true,
   imports: [FeaturePageComponent],

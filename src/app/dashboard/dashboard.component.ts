@@ -115,8 +115,8 @@ interface SearchResult {
           </div>
         }
         <span id="global-search-hint" class="mt-2 block text-xs text-slate-500 dark:text-slate-400"
-          >Ricerca anche con piccoli errori di battitura tra contatti, profili, farmaci, eventi,
-          terapie, documenti e spese.</span
+          >Ricerca anche con piccoli errori di battitura tra contatti, profili, farmaci, ortesi,
+          eventi, terapie, documenti e spese.</span
         >
       </div>
     </section>
@@ -203,8 +203,8 @@ export class DashboardComponent implements OnInit {
   readonly entries = signal<SearchableDiaryItem[]>([]);
   readonly loading = signal(true);
   readonly quickLinks = SECTIONS.filter((item) => item.id !== 'children' && item.id !== 'reports')
-    .slice(0, 6)
-    .map((item, index) => ({ ...item, glyph: ['◉', '⌁', '♡', '▤', '€', '☎'][index] }));
+    .slice(0, 7)
+    .map((item, index) => ({ ...item, glyph: ['◉', '⌁', '♡', '▤', '€', '☎', '◇'][index] }));
   readonly results = computed(() => this.rank(this.query(), this.entries()).slice(0, 10));
   readonly showResults = computed(() => this.isOpen() && this.query().trim().length >= 2);
   readonly hasChildren = computed(() =>
@@ -236,6 +236,7 @@ export class DashboardComponent implements OnInit {
         children: 'M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M20 8v6 M23 11h-6',
         medication_doses: 'M8 5h8a3.5 3.5 0 0 1 0 7H8a3.5 3.5 0 0 1 0-7z M12 5v7 M12 16v5 M9.5 18.5h5',
         health_events: 'M3 12h4l3-8 4 16 3-8h4',
+        orthoses: 'M3 15c3 0 4-1 5-4l2-6h4l1 6c.4 2 2 4 6 4v3H3z M9 15h2 M13 15h2',
         calendar_events: 'M8 3v4 M16 3v4 M4 9h16 M5 5h14a1 1 0 0 1 1 1v13H4V6a1 1 0 0 1 1-1z M8 13h2 M14 13h2 M8 17h2',
         therapies: 'M12 21s-8.5-4.8-8.5-11a4.5 4.5 0 0 1 8.5-2.1A4.5 4.5 0 0 1 20.5 10c0 6.2-8.5 11-8.5 11z M12 8v7 M8.5 11.5h7',
         documents: 'M13 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10z M13 3v7h7 M8 14h8 M8 17h6',
