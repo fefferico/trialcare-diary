@@ -20,8 +20,42 @@ interface Redaction {
   height: number;
 }
 
+interface OcrBbox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+interface OcrWordItem {
+  text: string;
+  bbox: OcrBbox;
+}
+
+interface OcrLineItem {
+  text: string;
+  bbox: OcrBbox;
+  words?: OcrWordItem[];
+}
+
+interface OcrPageData {
+  text: string;
+  lines: OcrLineItem[];
+  canvasWidth: number;
+  canvasHeight: number;
+}
+
 interface BrowserOcrWorker {
-  recognize(image: HTMLCanvasElement): Promise<{ data: { text: string } }>;
+  recognize(
+    image: HTMLCanvasElement,
+    options?: Record<string, unknown>,
+    output?: { text?: boolean; blocks?: boolean },
+  ): Promise<{
+    data: {
+      text: string;
+      blocks?: any[] | null;
+    };
+  }>;
   terminate(): Promise<unknown>;
 }
 
@@ -43,8 +77,7 @@ type ResizeCorner = 'nw' | 'ne' | 'sw' | 'se';
       testo selezionabile verrà rimosso dalla copia.
     </p>
     <label class="form-field mt-3"
-      ><span>Parole da cercare nel testo selezionabile</span
-      ><input
+      ><span>Parole da cercare (testo selezionabile o scansioni OCR)</span><input
         class="field-control"
         [value]="terms()"
         (input)="terms.set($any($event.target).value)"
@@ -263,14 +296,13 @@ type ResizeCorner = 'nw' | 'ne' | 'sw' | 'se';
           </p>
         } @else if (!busy() && !extractedText()) {
           <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
-            Non è stato trovato testo selezionabile. Il documento potrebbe essere una scansione.
+            Nessun testo selezionabile rilevato automaticamente. Puoi avviare l’OCR o digitarlo a mano.
           </p>
         }
       </section>
-      <p class="mt-2 text-xs text-amber-700 dark:text-amber-300">
-        Trascina sull’anteprima per aggiungere aree nere. Controlla tutte le pagine prima di
-        procedere: la ricerca automatica usa il testo selezionabile e non individua le parole
-        riconosciute dall’OCR.
+      <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+        Trascina sull’anteprima per aggiungere aree nere. La ricerca automatica individua le parole sia
+        nel testo selezionabile sia nelle scansioni tramite OCR. Controlla tutte le pagine prima di procedere.
       </p>
     }
   </div>`,
@@ -298,6 +330,7 @@ export class PdfRedactionComponent implements OnChanges {
   private pdf: any;
   private pages: HTMLCanvasElement[] = [];
   private boxes: Redaction[][] = [];
+  private ocrPages: (OcrPageData | null)[] = [];
   private dragStart?: { x: number; y: number };
   private resizeDrag?: { index: number; corner: ResizeCorner };
   private moveDrag?: { index: number; startX: number; startY: number; boxX: number; boxY: number };
@@ -484,6 +517,7 @@ export class PdfRedactionComponent implements OnChanges {
       this.pageCount.set(this.pdf.numPages);
       this.pages = [];
       this.boxes = Array.from({ length: this.pdf.numPages }, () => []);
+      this.ocrPages = Array.from({ length: this.pdf.numPages }, () => null);
       const textPages: string[] = [];
       for (let n = 1; n <= this.pdf.numPages; n++) {
         const page = await this.pdf.getPage(n);
@@ -505,9 +539,14 @@ export class PdfRedactionComponent implements OnChanges {
             this.ocrProgress.set(`Avvio del motore OCR per la pagina ${n} di ${this.pdf.numPages}…`);
             ocrWorker ??= await this.createOcrWorker();
             this.ocrProgress.set(`Riconoscimento OCR della pagina ${n} di ${this.pdf.numPages}…`);
-            recognizedText = await this.recognizePage(page, ocrWorker);
-            if (recognizedText) this.ocrUsed.set(true);
-          } catch {
+            const ocrResult = await this.recognizePage(page, ocrWorker);
+            if (ocrResult?.text) {
+              this.ocrPages[n - 1] = ocrResult;
+              this.ocrUsed.set(true);
+              recognizedText = ocrResult.text;
+            }
+          } catch (err) {
+            console.warn('[PdfRedaction] OCR failed in load for page', n, err);
             ocrFailed = true;
           }
         }
@@ -516,7 +555,7 @@ export class PdfRedactionComponent implements OnChanges {
       if (this.file === file)
         this.setTextForSaving(textPages.join('\n\n').replace(/[ \t]+/g, ' ').trim());
       if (ocrFailed) {
-        this.ocrError.set('Il motore OCR non è riuscito a elaborare il documento. Puoi riprovare.');
+        this.ocrError.set('Il motore OCR non è riuscito a elaborare alcune pagine. Puoi riprovare.');
         this.notice.set('OCR non riuscito su alcune pagine. Puoi riprovare con il pulsante nella sezione del testo.');
       }
       this.page.set(1);
@@ -547,9 +586,10 @@ export class PdfRedactionComponent implements OnChanges {
       for (let n = 1; n <= this.pdf.numPages; n++) {
         this.ocrProgress.set(`Riconoscimento OCR della pagina ${n} di ${this.pdf.numPages}…`);
         const page = await this.pdf.getPage(n);
-        const text = await this.recognizePage(page, worker);
-        if (text) {
-          textPages.push(`Pagina ${n}\n${text}`);
+        const ocrResult = await this.recognizePage(page, worker);
+        if (ocrResult?.text) {
+          this.ocrPages[n - 1] = ocrResult;
+          textPages.push(`Pagina ${n}\n${ocrResult.text}`);
           this.ocrUsed.set(true);
         }
       }
@@ -559,7 +599,8 @@ export class PdfRedactionComponent implements OnChanges {
       } else if (!textPages.length) {
         this.notice.set('Non è stato possibile riconoscere testo nelle pagine.');
       }
-    } catch {
+    } catch (err) {
+      console.warn('[PdfRedaction] runOcr failed', err);
       this.ocrError.set('Il motore OCR non è riuscito a elaborare il documento. Puoi riprovare.');
     } finally {
       await worker?.terminate().catch(() => undefined);
@@ -594,22 +635,58 @@ export class PdfRedactionComponent implements OnChanges {
   private async recognizePage(
     page: any,
     worker: BrowserOcrWorker,
-  ): Promise<string> {
-    // Higher resolution helps the low-quality OPBG scans, which have small print.
-    const viewport = page.getViewport({ scale: 3.2 });
+  ): Promise<OcrPageData | null> {
+    const baseViewport = page.getViewport({ scale: 1.0 });
+    const longest = Math.max(baseViewport.width, baseViewport.height);
+    const targetLongest = 2400;
+    let scale = targetLongest / (longest || 1);
+    scale = Math.min(Math.max(scale, 0.5), 3.2);
+    if (longest * scale > 2600) {
+      scale = 2600 / longest;
+    }
+    const viewport = page.getViewport({ scale });
     const canvas = document.createElement('canvas');
     canvas.width = Math.ceil(viewport.width);
     canvas.height = Math.ceil(viewport.height);
     await page.render({ canvas, canvasContext: canvas.getContext('2d')!, viewport }).promise;
     let enhanced: HTMLCanvasElement | null = null;
     try {
-      const initialText = (await worker.recognize(canvas)).data.text.trim();
-      if (initialText.replace(/\s/g, '').length >= 24) return initialText;
+      const res = await worker.recognize(canvas, {}, { text: true, blocks: true });
+      const initialText = res.data?.text?.trim() ?? '';
+      const initialBlocks = res.data?.blocks ?? [];
+      const initialLines = this.extractLinesFromBlocks(initialBlocks);
+
+      if (initialText.replace(/\s/g, '').length >= 24) {
+        return {
+          text: initialText,
+          lines: initialLines,
+          canvasWidth: canvas.width,
+          canvasHeight: canvas.height,
+        };
+      }
 
       // Retry sparse results on a contrast-normalized black and white copy.
       enhanced = this.createHighContrastCopy(canvas);
-      const enhancedText = (await worker.recognize(enhanced)).data.text.trim();
-      return enhancedText.length > initialText.length ? enhancedText : initialText;
+      const enhancedRes = await worker.recognize(enhanced, {}, { text: true, blocks: true });
+      const enhancedText = enhancedRes.data?.text?.trim() ?? '';
+      const enhancedBlocks = enhancedRes.data?.blocks ?? [];
+      const enhancedLines = this.extractLinesFromBlocks(enhancedBlocks);
+
+      if (enhancedText.length > initialText.length) {
+        return {
+          text: enhancedText,
+          lines: enhancedLines,
+          canvasWidth: canvas.width,
+          canvasHeight: canvas.height,
+        };
+      }
+
+      return {
+        text: initialText,
+        lines: initialLines,
+        canvasWidth: canvas.width,
+        canvasHeight: canvas.height,
+      };
     } finally {
       canvas.width = 0;
       canvas.height = 0;
@@ -618,6 +695,34 @@ export class PdfRedactionComponent implements OnChanges {
         enhanced.height = 0;
       }
     }
+  }
+  private extractLinesFromBlocks(blocks: any[]): OcrLineItem[] {
+    const lines: OcrLineItem[] = [];
+    if (!Array.isArray(blocks)) return lines;
+    for (const block of blocks) {
+      if (!block) continue;
+      const paragraphs = Array.isArray(block.paragraphs) ? block.paragraphs : [block];
+      for (const p of paragraphs) {
+        if (!p) continue;
+        const pLines = Array.isArray(p.lines) ? p.lines : [];
+        for (const line of pLines) {
+          if (!line) continue;
+          const words: OcrWordItem[] = [];
+          if (Array.isArray(line.words)) {
+            for (const w of line.words) {
+              const text = String(w.text ?? '').trim();
+              if (text && w.bbox) {
+                words.push({ text, bbox: { ...w.bbox } });
+              }
+            }
+          }
+          const lineText = String(line.text ?? '').trim();
+          const bbox = line.bbox ?? { x0: 0, y0: 0, x1: 0, y1: 0 };
+          lines.push({ text: lineText, words, bbox });
+        }
+      }
+    }
+    return lines;
   }
   private createHighContrastCopy(source: HTMLCanvasElement): HTMLCanvasElement {
     const enhanced = document.createElement('canvas');
@@ -657,6 +762,7 @@ export class PdfRedactionComponent implements OnChanges {
         threshold = value;
       }
     }
+    threshold = Math.min(Math.max(threshold, 60), 210);
     for (let pixel = 0; pixel < luminance.length; pixel++) {
       const color = luminance[pixel] <= threshold ? 0 : 255;
       const offset = pixel * 4;
@@ -742,6 +848,103 @@ export class PdfRedactionComponent implements OnChanges {
     this.matches.set(0);
     this.draw();
   }
+  private cleanToken(s: string): string {
+    return s
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^\p{L}\p{N}]+/gu, '');
+  }
+  private isBoxDuplicate(existing: Redaction[], candidate: Redaction): boolean {
+    return existing.some(
+      (b) =>
+        Math.abs(b.x - candidate.x) < 8 &&
+        Math.abs(b.y - candidate.y) < 8 &&
+        Math.abs(b.width - candidate.width) < 12 &&
+        Math.abs(b.height - candidate.height) < 12,
+    );
+  }
+  private findOcrMatches(
+    lines: OcrLineItem[],
+    rawTerms: string[],
+    scaleX: number,
+    scaleY: number,
+    pageWidth: number,
+    pageHeight: number,
+  ): Redaction[] {
+    const matches: Redaction[] = [];
+    const padX = 4;
+    const padY = 2;
+
+    const pushBox = (x0: number, y0: number, x1: number, y1: number) => {
+      const x = Math.max(0, Math.round(x0 * scaleX - padX));
+      const y = Math.max(0, Math.round(y0 * scaleY - padY));
+      const width = Math.min(pageWidth - x, Math.round((x1 - x0) * scaleX + padX * 2));
+      const height = Math.min(pageHeight - y, Math.round((y1 - y0) * scaleY + padY * 2));
+      if (width > 4 && height > 4) {
+        matches.push({ x, y, width, height });
+      }
+    };
+
+    for (const term of rawTerms) {
+      const termClean = this.cleanToken(term);
+      if (termClean.length < 2) continue;
+      const termWords = term
+        .split(/\s+/)
+        .map((w) => this.cleanToken(w))
+        .filter((w) => w.length > 0);
+      if (!termWords.length) continue;
+
+      for (const line of lines) {
+        if (!line.words || !line.words.length) {
+          if (line.text && this.cleanToken(line.text).includes(termClean) && line.bbox) {
+            pushBox(line.bbox.x0, line.bbox.y0, line.bbox.x1, line.bbox.y1);
+          }
+          continue;
+        }
+
+        const words = line.words;
+        const k = termWords.length;
+
+        if (k > 1) {
+          for (let start = 0; start <= words.length - k; start++) {
+            let matched = true;
+            for (let j = 0; j < k; j++) {
+              const wClean = this.cleanToken(words[start + j].text);
+              if (wClean !== termWords[j] && !wClean.includes(termWords[j])) {
+                matched = false;
+                break;
+              }
+            }
+            if (matched) {
+              const slice = words.slice(start, start + k);
+              const x0 = Math.min(...slice.map((w) => w.bbox.x0));
+              const y0 = Math.min(...slice.map((w) => w.bbox.y0));
+              const x1 = Math.max(...slice.map((w) => w.bbox.x1));
+              const y1 = Math.max(...slice.map((w) => w.bbox.y1));
+              pushBox(x0, y0, x1, y1);
+            }
+          }
+          for (const w of words) {
+            const wClean = this.cleanToken(w.text);
+            if (wClean === termClean || (termClean.length >= 4 && wClean.includes(termClean))) {
+              pushBox(w.bbox.x0, w.bbox.y0, w.bbox.x1, w.bbox.y1);
+            }
+          }
+        } else {
+          const target = termWords[0];
+          for (const w of words) {
+            const wClean = this.cleanToken(w.text);
+            if (wClean === target || (target.length >= 3 && wClean.includes(target))) {
+              pushBox(w.bbox.x0, w.bbox.y0, w.bbox.x1, w.bbox.y1);
+            }
+          }
+        }
+      }
+    }
+
+    return matches;
+  }
   async findTerms(): Promise<void> {
     const terms = this.terms()
       .split(/[\n,;]+/)
@@ -754,11 +957,57 @@ export class PdfRedactionComponent implements OnChanges {
     this.busy.set(true);
     this.matches.set(0);
     let count = 0;
+    let ocrWorker: BrowserOcrWorker | null = null;
     try {
+      const pagesNeedingOcr: number[] = [];
+      for (let i = 1; i <= this.pdf.numPages; i++) {
+        if (!this.ocrPages[i - 1]) {
+          const page = await this.pdf.getPage(i);
+          const content = await page.getTextContent();
+          const pageText = content.items
+            .map((item: any) => ('str' in item ? item.str : ''))
+            .filter(Boolean)
+            .join(' ');
+          if (pageText.replace(/\s/g, '').length < 30) {
+            pagesNeedingOcr.push(i);
+          }
+        }
+      }
+
+      if (pagesNeedingOcr.length > 0) {
+        this.ocrAttempted.set(true);
+        this.ocrProgress.set('Avvio OCR sulle pagine scansionate per individuare i termini…');
+        ocrWorker = await this.createOcrWorker();
+        for (const pageNum of pagesNeedingOcr) {
+          this.ocrProgress.set(`Riconoscimento OCR della pagina ${pageNum} di ${this.pdf.numPages}…`);
+          const page = await this.pdf.getPage(pageNum);
+          const ocrResult = await this.recognizePage(page, ocrWorker);
+          if (ocrResult) {
+            this.ocrPages[pageNum - 1] = ocrResult;
+            this.ocrUsed.set(true);
+          }
+        }
+        if (!this.extractedText()) {
+          const allText: string[] = [];
+          for (let p = 1; p <= this.pdf.numPages; p++) {
+            const pageData = this.ocrPages[p - 1];
+            if (pageData?.text) {
+              allText.push(`Pagina ${p}\n${pageData.text}`);
+            }
+          }
+          if (allText.length && this.file) {
+            this.setTextForSaving(allText.join('\n\n'));
+          }
+        }
+      }
+
       for (let i = 1; i <= this.pdf.numPages; i++) {
         const page = await this.pdf.getPage(i);
         const viewport = page.getViewport({ scale: 1.4 });
         const content = await page.getTextContent();
+        const pageBoxes = this.boxes[i - 1];
+        const pageCanvas = this.pages[i - 1];
+
         for (const item of content.items) {
           if (!('str' in item) || !item.str.trim()) continue;
           const [, , , h, x, y] = item.transform;
@@ -773,12 +1022,35 @@ export class PdfRedactionComponent implements OnChanges {
               const end = start + match[0].length;
               const left = (measure.measureText(item.str.slice(0, start)).width / totalWidth) * pdfWidth;
               const right = (measure.measureText(item.str.slice(0, end)).width / totalWidth) * pdfWidth;
-              this.boxes[i - 1].push({
-                x: x * 1.4 + left,
-                y: viewport.height - y * 1.4 - h * 1.4,
-                width: Math.max(right - left, 3),
-                height: Math.max(h * 1.4, 10),
-              });
+              const candidate: Redaction = {
+                x: Math.round(x * 1.4 + left),
+                y: Math.round(viewport.height - y * 1.4 - h * 1.4),
+                width: Math.max(Math.round(right - left), 3),
+                height: Math.max(Math.round(h * 1.4), 10),
+              };
+              if (!this.isBoxDuplicate(pageBoxes, candidate)) {
+                pageBoxes.push(candidate);
+                count++;
+              }
+            }
+          }
+        }
+
+        const ocrData = this.ocrPages[i - 1];
+        if (ocrData && ocrData.lines?.length && pageCanvas) {
+          const scaleX = pageCanvas.width / ocrData.canvasWidth;
+          const scaleY = pageCanvas.height / ocrData.canvasHeight;
+          const ocrMatches = this.findOcrMatches(
+            ocrData.lines,
+            terms,
+            scaleX,
+            scaleY,
+            pageCanvas.width,
+            pageCanvas.height,
+          );
+          for (const box of ocrMatches) {
+            if (!this.isBoxDuplicate(pageBoxes, box)) {
+              pageBoxes.push(box);
               count++;
             }
           }
@@ -789,12 +1061,15 @@ export class PdfRedactionComponent implements OnChanges {
       this.draw();
       this.notice.set(
         count
-          ? `${count} elementi trovati; verifica le aree su ogni pagina.`
-          : 'Nessuna corrispondenza nel testo selezionabile.',
+          ? `${count} aree individuate (testo e OCR); verifica le aree su ogni pagina.`
+          : 'Nessuna corrispondenza trovata né nel testo né nella scansione OCR.',
       );
-    } catch {
+    } catch (err) {
+      console.warn('[PdfRedaction] findTerms failed', err);
       this.notice.set('Ricerca nel testo non riuscita.');
     } finally {
+      await ocrWorker?.terminate().catch(() => undefined);
+      this.ocrProgress.set('');
       this.busy.set(false);
     }
   }

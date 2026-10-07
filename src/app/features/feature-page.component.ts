@@ -17,6 +17,7 @@ import { AppDropdownComponent } from '../shared/app-dropdown.component';
 import { AppDatepickerComponent } from '../shared/app-datepicker.component';
 import { AppTimepickerComponent } from '../shared/app-timepicker.component';
 import { AppAutocompleteComponent } from '../shared/app-autocomplete.component';
+import { DocumentAssociationPickerComponent } from '../shared/document-association-picker.component';
 import { TooltipDirective } from '../shared/directives/tooltip.directive';
 import {
   DiaryRow,
@@ -49,6 +50,7 @@ interface MedicationScheduleDraft {
     AppDatepickerComponent,
     AppTimepickerComponent,
     AppAutocompleteComponent,
+    DocumentAssociationPickerComponent,
     TooltipDirective,
     PdfRedactionComponent,
   ],
@@ -367,6 +369,7 @@ interface MedicationScheduleDraft {
                 }
                 @if (
                   (section.id === 'documents' && value(row, 'storage_path')) ||
+                  (section.id === 'documents' && value(row, 'local_file_id')) ||
                   (section.id === 'expenses' && value(row, 'receipt_path'))
                 ) {
                   <button
@@ -615,6 +618,17 @@ interface MedicationScheduleDraft {
                   ></textarea>
                 </label>
               }
+              @if (section.id === 'medications' || section.id === 'orthoses') {
+                <tc-document-association-picker
+                  [documents]="documentSearchResults()"
+                  [selectedDocuments]="selectedDocuments()"
+                  (selectedDocumentsChange)="selectedDocuments.set($event)"
+                  (searchChange)="searchDocuments($event)"
+                  [searching]="documentSearchLoading()"
+                  [files]="associatedFiles"
+                  (filesChange)="associatedFiles = $event"
+                />
+              }
               @if (section.id === 'medications') {
                 <section class="space-y-4 rounded-2xl border border-slate-200 p-4 dark:border-slate-700" aria-labelledby="medication-schedule-title">
                   <div class="flex flex-wrap items-start justify-between gap-3">
@@ -705,7 +719,7 @@ interface MedicationScheduleDraft {
                 class="flex justify-end gap-2 border-t border-slate-100 pt-4 dark:border-slate-800"
               >
                 <button type="button" class="button-secondary" (click)="closeForm()">Annulla</button
-                ><button class="button-primary" type="submit" [disabled]="saving() || documentTextProcessing()">
+                ><button class="button-primary" type="submit" [disabled]="saving() || documentTextProcessing() || documentLinksLoading()">
                   {{
                     extracting()
                       ? 'Estrazione testo…'
@@ -869,13 +883,23 @@ interface MedicationScheduleDraft {
                   </form>
                 </section>
               }
+              @if ((section.id === 'medications' || section.id === 'orthoses') && detailDocuments().length) {
+                <section class="space-y-2 border-t border-slate-100 pt-4 dark:border-slate-800">
+                  <h3 class="font-semibold">Documenti collegati</h3>
+                  @for (doc of detailDocuments(); track doc.id) {
+                    <button type="button" class="block text-left text-sm text-teal-700 underline dark:text-teal-300" (click)="openDocument(doc)">
+                      {{ doc['title'] || 'Documento' }}
+                    </button>
+                  }
+                </section>
+              }
               @if (value(row, 'voice_note_data')) {
                 <audio controls preload="none" class="h-10 w-full max-w-sm" [src]="value(row, 'voice_note_data')" aria-label="Nota vocale"></audio>
               }
               @if (value(row, 'voice_note_path')) {
                 <button type="button" class="button-secondary" (click)="openVoice(row)">Ascolta nota vocale</button>
               }
-              @if ((section.id === 'documents' && value(row, 'storage_path')) || (section.id === 'expenses' && value(row, 'receipt_path'))) {
+              @if ((section.id === 'documents' && (value(row, 'storage_path') || value(row, 'local_file_id'))) || (section.id === 'expenses' && value(row, 'receipt_path'))) {
                 <button type="button" class="button-secondary" (click)="openDocument(row)">Visualizza allegato</button>
               }
             </div>
@@ -922,9 +946,14 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   private readonly confirmation = inject(ConfirmationService);
   readonly isFormOpen = signal(false);
   readonly detailRow = signal<DiaryRow | null>(null);
+  readonly documentSearchResults = signal<DiaryRow[]>([]);
+  readonly selectedDocuments = signal<DiaryRow[]>([]);
+  readonly documentSearchLoading = signal(false);
+  readonly detailDocuments = signal<DiaryRow[]>([]);
   readonly saving = signal(false);
   readonly extracting = signal(false);
   readonly documentTextProcessing = signal(false);
+  readonly documentLinksLoading = signal(false);
   readonly exporting = signal(false);
   readonly initialized = signal(false);
   readonly recording = signal(false);
@@ -958,6 +987,9 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   measurementForm: Record<string, string> = { date: new Date().toISOString().slice(0, 10) };
   readonly children: DiaryRow[] = [];
   form: Record<string, string> = {};
+  associatedFiles: File[] = [];
+  private documentSearchTimer?: ReturnType<typeof setTimeout>;
+  private documentSearchRequest = 0;
   readonly additionalMedicationSchedules = signal<MedicationScheduleDraft[]>([]);
   attachedFile: File | null = null;
   private pdfTextForSaving: { file: File; text: string } | null = null;
@@ -1158,6 +1190,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   }
   ngOnDestroy(): void {
     this.routeSubscription?.unsubscribe();
+    if (this.documentSearchTimer) clearTimeout(this.documentSearchTimer);
     if (this.isFormOpen()) this.closeForm();
     else this.ui.resetBodyScroll();
   }
@@ -1195,6 +1228,24 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       return;
     }
     await this.data.load(this.sectionId);
+  }
+  searchDocuments(query: string): void {
+    if (this.documentSearchTimer) clearTimeout(this.documentSearchTimer);
+    const request = ++this.documentSearchRequest;
+    const term = query.trim();
+    this.documentSearchResults.set([]);
+    if (term.length < 2 || !this.selectedChildId()) {
+      this.documentSearchLoading.set(false);
+      return;
+    }
+    this.documentSearchLoading.set(true);
+    this.documentSearchTimer = setTimeout(() => {
+      void this.data.searchDocuments(this.selectedChildId(), term).then((rows) => {
+        if (request !== this.documentSearchRequest) return;
+        this.documentSearchResults.set(rows);
+        this.documentSearchLoading.set(false);
+      });
+    }, 250);
   }
   value(row: DiaryRow, key: string): string {
     const value = row[key];
@@ -1300,9 +1351,14 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     if (value.file === this.attachedFile) this.documentTextProcessing.set(value.processing);
   }
   selectChild(name: string): void {
+    if (this.documentSearchTimer) clearTimeout(this.documentSearchTimer);
+    this.documentSearchRequest++;
+    this.documentSearchLoading.set(false);
     const child = this.children.find((item) => item['name'] === name);
     this.selectedChildName.set(name);
     this.selectedChildId.set(child?.id ?? '');
+    this.documentSearchResults.set([]);
+    this.selectedDocuments.set([]);
     void this.refresh();
     void this.loadMeasurements();
   }
@@ -1348,7 +1404,13 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     return values.map((value, index) => `${8 + index * (304 / (values.length - 1))},${80 - ((value - min) / spread) * 64}`).join(' ');
   }
   openForm(): void {
+    if (this.documentSearchTimer) clearTimeout(this.documentSearchTimer);
+    this.documentSearchRequest++;
+    this.documentSearchLoading.set(false);
     this.form = this.sectionId === 'medicine_cabinet' ? { expiry_precision: 'Data completa' } : {};
+    this.documentSearchResults.set([]);
+    this.selectedDocuments.set([]);
+    this.associatedFiles = [];
     this.additionalMedicationSchedules.set([]);
     this.attachedFile = null;
     this.pdfTextForSaving = null;
@@ -1385,9 +1447,15 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       void this.loadMeasurements();
     }
     this.ui.setModal(true);
+    if (['medications', 'orthoses'].includes(this.sectionId) && row['child_id']) {
+      void this.data.loadDocumentLinks(this.sectionId as 'medications' | 'orthoses', row.id, String(row['child_id']))
+        .then((ids) => this.data.loadDocumentsByIds(String(row['child_id']), ids))
+        .then((docs) => this.detailDocuments.set(docs));
+    } else this.detailDocuments.set([]);
   }
   closeDetails(): void {
     this.detailRow.set(null);
+    this.detailDocuments.set([]);
     this.ui.setModal(false);
   }
   editFromDetails(row: DiaryRow): void {
@@ -1406,6 +1474,10 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   }
   edit(row: DiaryRow): void {
     this.form = {};
+    this.documentSearchResults.set([]);
+    this.selectedDocuments.set([]);
+    this.documentLinksLoading.set(false);
+    this.associatedFiles = [];
     this.attachedFile = null;
     this.pdfTextForSaving = null;
     this.documentTextProcessing.set(false);
@@ -1445,13 +1517,25 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       })));
     } else this.additionalMedicationSchedules.set([]);
     this.editingId = row.id;
+    if (['medications', 'orthoses'].includes(this.sectionId) && row['child_id']) {
+      this.documentLinksLoading.set(true);
+      void this.data
+        .loadDocumentLinks(this.sectionId as 'medications' | 'orthoses', row.id, String(row['child_id']))
+        .then((ids) => this.data.loadDocumentsByIds(String(row['child_id']), ids))
+        .then((docs) => this.selectedDocuments.set(docs))
+        .finally(() => this.documentLinksLoading.set(false));
+    }
     this.isFormOpen.set(true);
     this.ui.setModal(true);
   }
   closeForm(): void {
+    if (this.documentSearchTimer) clearTimeout(this.documentSearchTimer);
+    this.documentSearchRequest++;
+    this.documentSearchLoading.set(false);
     this.stopRecording();
     this.clearVoice();
     this.attachedFile = null;
+    this.associatedFiles = [];
     this.pdfTextForSaving = null;
     this.documentTextProcessing.set(false);
     this.isFormOpen.set(false);
@@ -1598,6 +1682,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     return output;
   }
   async save(): Promise<void> {
+    if (this.documentLinksLoading()) return;
     if (this.sectionId === 'documents' && this.documentTextProcessing()) {
       this.data.error.set('Attendi che la lettura del PDF sia completata prima di salvare.');
       return;
@@ -1712,13 +1797,63 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     }
     if (this.sectionId === 'documents' && value['storage_path']) delete value['file'];
     if (this.sectionId === 'expenses' && value['receipt_path']) delete value['receipt'];
-    const ok = this.editingId
+    const targetId = this.editingId || crypto.randomUUID();
+    const targetChildId = this.selectedChildId();
+    let ok = this.editingId
       ? await this.data.update(this.sectionId, this.editingId, value)
-      : await this.data.save(
-        this.sectionId,
-        value,
-        this.sectionId === 'children' ? undefined : this.selectedChildId() || undefined,
+      : !!(await this.data.saveWithId(
+          this.sectionId,
+          { ...value, id: targetId },
+          this.sectionId === 'children' ? undefined : targetChildId || undefined,
+        ));
+    if (ok && !this.editingId && ['medications', 'orthoses'].includes(this.sectionId))
+      this.editingId = targetId;
+    if (ok && ['medications', 'orthoses'].includes(this.sectionId) && targetChildId) {
+      const documentIds = this.selectedDocuments().map((doc) => doc.id);
+      for (const file of this.associatedFiles) {
+        const documentId = crypto.randomUUID();
+        const storagePath = await this.storage.upload(file, targetChildId);
+        if (!storagePath && this.supabase.configured && this.auth.user()) {
+          this.data.error.set('Non è stato possibile caricare uno dei documenti allegati.');
+          ok = false;
+          break;
+        }
+        let localFileId = '';
+        if (!storagePath) {
+          try {
+            localFileId = await this.storage.saveLocalFile(file);
+          } catch {
+            this.data.error.set('Il browser non ha potuto conservare localmente il file allegato.');
+            ok = false;
+            break;
+          }
+        }
+        const savedId = await this.data.saveWithId('documents', {
+          id: documentId,
+          title: file.name,
+          category: 'Altro',
+          date: new Date().toISOString().slice(0, 10),
+          ...(storagePath ? { storage_path: storagePath } : { local_file_id: localFileId }),
+        }, targetChildId);
+        if (!savedId) {
+          ok = false;
+          break;
+        }
+        documentIds.push(savedId);
+        this.selectedDocuments.update((docs) => [...docs, {
+          id: savedId,
+          child_id: targetChildId,
+          title: file.name,
+          category: 'Altro',
+          date: new Date().toISOString().slice(0, 10),
+        } as DiaryRow]);
+        this.associatedFiles = this.associatedFiles.filter((pending) => pending !== file);
+      }
+      if (ok) ok = await this.data.setDocumentLinks(
+        this.sectionId as 'medications' | 'orthoses', targetId, targetChildId, documentIds,
       );
+      await this.refresh();
+    }
     this.saving.set(false);
     if (ok) this.closeForm();
   }
@@ -1757,8 +1892,12 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     if (await this.confirmation.confirm('Vuoi eliminare questa voce dal diario?', {
       title: 'Elimina voce',
       confirmLabel: 'Elimina',
-    }))
+    })) {
+      this.data.error.set('');
       await this.data.remove(this.sectionId, row);
+      if (this.sectionId === 'documents' && row['local_file_id'] && !this.data.error())
+        await this.storage.removeLocalFile(String(row['local_file_id']));
+    }
   }
   async shareContact(row: DiaryRow): Promise<void> {
     const lines = [
@@ -1813,6 +1952,15 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     else this.data.error.set('Impossibile aprire la nota vocale.');
   }
   async openDocument(row: DiaryRow): Promise<void> {
+    if (typeof row['local_file_id'] === 'string') {
+      if (!(await this.storage.openLocalFile(String(row['local_file_id']))))
+        this.data.error.set('Il file locale non è più disponibile in questo browser.');
+      return;
+    }
+    if (typeof row['file_data'] === 'string') {
+      window.open(String(row['file_data']), '_blank', 'noopener');
+      return;
+    }
     const path = row['storage_path'] ?? row['receipt_path'];
     const url = await this.storage.signedUrl(String(path));
     if (url) window.open(url, '_blank', 'noopener');

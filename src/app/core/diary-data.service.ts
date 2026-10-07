@@ -5,6 +5,12 @@ import { DiaryRow, SectionId } from '../models/diary.models';
 
 const STORAGE_KEY = 'trialcare-diary-v1';
 type LocalStore = Partial<Record<SectionId, DiaryRow[]>>;
+export type DocumentLinkTarget = 'calendar_events' | 'medications' | 'orthoses';
+const DOCUMENT_LINK_TABLE: Record<DocumentLinkTarget, string> = {
+  calendar_events: 'calendar_event_documents',
+  medications: 'medication_documents',
+  orthoses: 'orthosis_documents',
+};
 export interface SearchableDiaryItem {
   section: Exclude<SectionId, 'reports'>;
   row: DiaryRow;
@@ -22,7 +28,10 @@ const SEARCHABLE_SECTIONS: Exclude<SectionId, 'reports'>[] = [
   'documents',
   'expenses',
 ];
-export type DiaryExportData = Record<Exclude<SectionId, 'reports'>, DiaryRow[]> & { child_measurements: DiaryRow[] };
+export type DiaryExportData = Record<Exclude<SectionId, 'reports'>, DiaryRow[]> & {
+  child_measurements: DiaryRow[];
+  document_links: DiaryRow[];
+};
 
 const DOCUMENT_DATE_FIELD: Partial<Record<SectionId, string>> = {
   medications: 'start_date',
@@ -110,15 +119,55 @@ export class DiaryDataService {
     );
   }
 
+  async loadCalendarEntries(startDate: string, endDate: string): Promise<SearchableDiaryItem[]> {
+    const sections = SEARCHABLE_SECTIONS.filter((section) => section !== 'documents');
+    const client = this.supabase.client;
+    let entries: SearchableDiaryItem[];
+    if (client && this.auth.user()) {
+      const results = await Promise.all(sections.map((section) => {
+        const dateField = DOCUMENT_DATE_FIELD[section];
+        let query = client.from(section).select('*');
+        if (dateField) query = query.order(dateField, { ascending: false, nullsFirst: false });
+        return query;
+      }));
+      const failed = results.find((result) => result.error);
+      if (failed?.error) this.error.set(failed.error.message);
+      entries = results.flatMap((result, index) =>
+        (result.data ?? []).map((row) => ({ section: sections[index], row: row as DiaryRow })),
+      );
+      const { data, error } = await client
+        .from('documents')
+        .select('id,child_id,title,category,date')
+        .gte('date', startDate)
+        .lte('date', endDate);
+      if (error) this.error.set(error.message);
+      entries.push(...(data ?? []).map((row) => ({ section: 'documents' as const, row: row as DiaryRow })));
+      return entries;
+    }
+    entries = sections.flatMap((section) =>
+      newestFirst(this.local[section] ?? [], section).map((row) => ({ section, row })),
+    );
+    entries.push(...(this.local.documents ?? [])
+      .filter((row) => String(row['date'] ?? '').slice(0, 10) >= startDate && String(row['date'] ?? '').slice(0, 10) <= endDate)
+      .map((row) => ({ section: 'documents' as const, row })));
+    return entries;
+  }
+
   async loadAllForExport(): Promise<DiaryExportData> {
     const client = this.supabase.client;
     const output = Object.fromEntries(
       SEARCHABLE_SECTIONS.map((section) => [section, []]),
     ) as unknown as DiaryExportData;
     output.child_measurements = [];
+    output.document_links = [];
     if (!client || !this.auth.user()) {
       for (const section of SEARCHABLE_SECTIONS) output[section] = [...(this.local[section] ?? [])];
+      output.documents = output.documents.map(({ ...row }) => {
+        delete row['file_data'];
+        return row;
+      });
       output.child_measurements = this.localMeasurements();
+      output.document_links = this.localDocumentLinks();
       return output;
     }
     // Supabase caps each response page; walk every page so backups do not silently omit older rows.
@@ -141,6 +190,16 @@ export class DiaryDataService {
     const { data: measurements, error: measurementError } = await client.from('child_measurements').select('*').order('date', { ascending: true });
     if (measurementError) throw new Error(`Esportazione misurazioni: ${measurementError.message}`);
     output.child_measurements = (measurements ?? []) as DiaryRow[];
+    output.documents = output.documents.map(({ ...row }) => {
+      delete row['file_data'];
+      return row;
+    });
+    const links = await Promise.all(Object.entries(DOCUMENT_LINK_TABLE).map(async ([target, table]) => {
+      const { data, error } = await client.from(table).select('*');
+      if (error) throw new Error(`Esportazione collegamenti documenti: ${error.message}`);
+      return (data ?? []).map((row) => ({ ...row, target_type: target } as DiaryRow));
+    }));
+    output.document_links = links.flat();
     return output;
   }
 
@@ -327,6 +386,160 @@ export class DiaryDataService {
     return true;
   }
 
+  async saveWithId(
+    section: SectionId,
+    value: Record<string, unknown>,
+    childId?: string,
+  ): Promise<string | null> {
+    const id = String(value['id'] ?? crypto.randomUUID());
+    const payload = { ...value, id, ...(childId ? { child_id: childId } : {}) };
+    const client = this.supabase.client;
+    if (client && this.auth.user()) {
+      const { error } = await client.from(section).insert(payload);
+      if (error) {
+        this.error.set(error.message);
+        return null;
+      }
+    } else {
+      const item = { created_at: new Date().toISOString(), ...payload } as DiaryRow;
+      this.local[section] = [item, ...(this.local[section] ?? [])];
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.local));
+    }
+    await this.load(section);
+    return id;
+  }
+
+  async searchDocuments(childId: string, search: string, limit = 30): Promise<DiaryRow[]> {
+    const query = search.trim();
+    if (query.length < 2) return [];
+    const client = this.supabase.client;
+    if (client && this.auth.user()) {
+      const { data, error } = await client
+        .from('documents')
+        .select('id,child_id,title,category,date,storage_path')
+        .eq('child_id', childId)
+        .ilike('title', `%${query.replace(/[\\%_]/g, '\\$&')}%`)
+        .order('date', { ascending: false, nullsFirst: false })
+        .limit(limit);
+      if (error) {
+        this.error.set(error.message);
+        return [];
+      }
+      return (data ?? []) as DiaryRow[];
+    }
+    return [...(this.local.documents ?? [])]
+      .filter((row) => row['child_id'] === childId)
+      .filter((row) => String(row['title'] ?? '').toLocaleLowerCase('it').includes(query.toLocaleLowerCase('it')))
+      .sort((a, b) => String(b['date'] ?? '').localeCompare(String(a['date'] ?? '')))
+      .slice(0, limit);
+  }
+
+  async loadDocumentsByIds(childId: string, ids: string[]): Promise<DiaryRow[]> {
+    if (!ids.length) return [];
+    const client = this.supabase.client;
+    if (client && this.auth.user()) {
+      const { data, error } = await client
+        .from('documents')
+        .select('id,child_id,title,category,date,storage_path')
+        .eq('child_id', childId)
+        .in('id', ids);
+      if (error) {
+        this.error.set(error.message);
+        return [];
+      }
+      return (data ?? []) as DiaryRow[];
+    }
+    const allowedIds = new Set(ids);
+    return (this.local.documents ?? []).filter(
+      (row) => row['child_id'] === childId && allowedIds.has(row.id),
+    );
+  }
+
+  async loadDocumentLinks(
+    target: DocumentLinkTarget,
+    targetId: string,
+    childId: string,
+  ): Promise<string[]> {
+    const table = DOCUMENT_LINK_TABLE[target];
+    const client = this.supabase.client;
+    if (client && this.auth.user()) {
+      const { data, error } = await client
+        .from(table)
+        .select('document_id')
+        .eq('target_id', targetId)
+        .eq('child_id', childId);
+      if (error) {
+        this.error.set(error.message);
+        return [];
+      }
+      return (data ?? []).map((row) => String(row['document_id']));
+    }
+    const rows = this.localDocumentLinks();
+    return rows
+      .filter((row) => row['target_type'] === target && row['target_id'] === targetId && row['child_id'] === childId)
+      .map((row) => String(row['document_id']));
+  }
+
+  async setDocumentLinks(
+    target: DocumentLinkTarget,
+    targetId: string,
+    childId: string,
+    documentIds: string[],
+  ): Promise<boolean> {
+    const ids = [...new Set(documentIds)];
+    const table = DOCUMENT_LINK_TABLE[target];
+    const client = this.supabase.client;
+    if (client && this.auth.user()) {
+      const { data: existing, error: readError } = await client
+        .from(table)
+        .select('document_id')
+        .eq('target_id', targetId)
+        .eq('child_id', childId);
+      if (readError) {
+        this.error.set(readError.message);
+        return false;
+      }
+      if (ids.length) {
+        const { error } = await client.from(table).upsert(
+          ids.map((documentId) => ({ target_id: targetId, document_id: documentId, child_id: childId })),
+          { onConflict: 'target_id,document_id', ignoreDuplicates: true },
+        );
+        if (error) {
+          this.error.set(error.message);
+          return false;
+        }
+      }
+      const obsoleteIds = (existing ?? [])
+        .map((row) => String(row['document_id']))
+        .filter((documentId) => !ids.includes(documentId));
+      if (obsoleteIds.length) {
+        const { error } = await client.from(table).delete()
+          .eq('target_id', targetId).eq('child_id', childId).in('document_id', obsoleteIds);
+        if (error) {
+          this.error.set(error.message);
+          return false;
+        }
+      }
+    } else {
+      const rest = this.localDocumentLinks().filter(
+        (row) => !(row['target_type'] === target && row['target_id'] === targetId && row['child_id'] === childId),
+      );
+      rest.push(...ids.map((documentId) => ({
+        id: crypto.randomUUID(), target_type: target, target_id: targetId, document_id: documentId, child_id: childId,
+      } as DiaryRow)));
+      localStorage.setItem('trialcare-document-links-v1', JSON.stringify(rest));
+    }
+    return true;
+  }
+
+  private localDocumentLinks(): DiaryRow[] {
+    try {
+      return JSON.parse(localStorage.getItem('trialcare-document-links-v1') ?? '[]') as DiaryRow[];
+    } catch {
+      return [];
+    }
+  }
+
   async saveMany(
     section: SectionId,
     values: Record<string, unknown>[],
@@ -377,6 +590,18 @@ export class DiaryDataService {
     } else {
       this.local[section] = (this.local[section] ?? []).filter((item) => item.id !== row.id);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.local));
+      const target = section === 'calendar_events' || section === 'medications' || section === 'orthoses'
+        ? section
+        : null;
+      if (target) {
+        const links = this.localDocumentLinks().filter(
+          (item) => item['target_type'] !== target || item['target_id'] !== row.id,
+        );
+        localStorage.setItem('trialcare-document-links-v1', JSON.stringify(links));
+      } else if (section === 'documents') {
+        const links = this.localDocumentLinks().filter((item) => item['document_id'] !== row.id);
+        localStorage.setItem('trialcare-document-links-v1', JSON.stringify(links));
+      }
     }
     await this.load(section);
   }

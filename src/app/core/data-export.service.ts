@@ -35,7 +35,7 @@ export class DataExportService {
   private toMarkdown(data: DiaryExportData, date: string): string {
     const sections = Object.entries(data).map(([id, rows]) => {
       const definition = SECTIONS.find((item) => item.id === id);
-      const label = definition?.label ?? 'Misurazioni di crescita';
+      const label = definition?.label ?? (id === 'document_links' ? 'Collegamenti documenti' : 'Misurazioni di crescita');
       const content = rows.length
         ? rows.map((row) => this.rowMarkdown(row)).join('\n\n')
         : '_Nessuna voce._';
@@ -55,7 +55,7 @@ export class DataExportService {
   private toWord(data: DiaryExportData, date: string): string {
     const sections = Object.entries(data)
       .map(([id, rows]) => {
-        const label = SECTIONS.find((item) => item.id === id)?.label ?? 'Misurazioni di crescita';
+        const label = SECTIONS.find((item) => item.id === id)?.label ?? (id === 'document_links' ? 'Collegamenti documenti' : 'Misurazioni di crescita');
         const records = rows.length
           ? rows
               .map(

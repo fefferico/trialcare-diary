@@ -1,6 +1,6 @@
 # API Catalog
 
-> Generato da `npm run update-context` il 07/10/2026, 11:21:54.
+> Generato da `npm run update-context` il 07/10/2026, 17:29:50.
 
 ## Servizi
 
@@ -40,6 +40,7 @@ File: [src/app/core/diary-data.service.ts](../src/app/core/diary-data.service.ts
 
 - `load(section: SectionId)`: `Promise<void>`
 - `loadAllForSearch()`: `Promise<SearchableDiaryItem[]>`
+- `loadCalendarEntries(startDate: string, endDate: string)`: `Promise<SearchableDiaryItem[]>`
 - `loadAllForExport()`: `Promise<DiaryExportData>`
 - `localMeasurements(childId?: string)`: `DiaryRow[]`
 - `saveMeasurement(childId: string, value: Record<string, unknown>)`: `Promise<boolean>`
@@ -63,6 +64,24 @@ File: [src/app/core/diary-data.service.ts](../src/app/core/diary-data.service.ts
     value: Record<string, unknown>,
     childId?: string,
   )`: `Promise<boolean>`
+- `saveWithId(
+    section: SectionId,
+    value: Record<string, unknown>,
+    childId?: string,
+  )`: `Promise<string | null>`
+- `searchDocuments(childId: string, search: string, limit = 30)`: `Promise<DiaryRow[]>`
+- `loadDocumentsByIds(childId: string, ids: string[])`: `Promise<DiaryRow[]>`
+- `loadDocumentLinks(
+    target: DocumentLinkTarget,
+    targetId: string,
+    childId: string,
+  )`: `Promise<string[]>`
+- `setDocumentLinks(
+    target: DocumentLinkTarget,
+    targetId: string,
+    childId: string,
+    documentIds: string[],
+  )`: `Promise<boolean>`
 - `saveMany(
     section: SectionId,
     values: Record<string, unknown>[],
@@ -82,6 +101,9 @@ File: [src/app/core/pdf-export.service.ts](../src/app/core/pdf-export.service.ts
 File: [src/app/core/storage.service.ts](../src/app/core/storage.service.ts)
 
 - `upload(file: File, childId: string)`: `Promise<string | null>`
+- `saveLocalFile(file: File)`: `Promise<string>`
+- `openLocalFile(id: string)`: `Promise<boolean>`
+- `removeLocalFile(id: string)`: `Promise<void>`
 - `signedUrl(path: string)`: `Promise<string | null>`
 - `uploadVoice(file: File, childId: string)`: `Promise<string | null>`
 - `saveAvatar(file: File)`: `Promise<string | null>`
@@ -117,3 +139,4 @@ File: [src/app/core/ui-state.service.ts](../src/app/core/ui-state.service.ts)
 - [AppDatepickerComponent](../src/app/shared/app-datepicker.component.ts)
 - [AppDropdownComponent](../src/app/shared/app-dropdown.component.ts)
 - [AppTimepickerComponent](../src/app/shared/app-timepicker.component.ts)
+- [DocumentAssociationPickerComponent](../src/app/shared/document-association-picker.component.ts)

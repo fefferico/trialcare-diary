@@ -15,9 +15,12 @@ import { ConfirmationService } from '../../core/confirmation.service';
 import { DiaryDataService, SearchableDiaryItem } from '../../core/diary-data.service';
 import { DiaryRow } from '../../models/diary.models';
 import { AppAutocompleteComponent } from '../../shared/app-autocomplete.component';
+import { DocumentAssociationPickerComponent } from '../../shared/document-association-picker.component';
 import { AppDatepickerComponent } from '../../shared/app-datepicker.component';
 import { AppTimepickerComponent } from '../../shared/app-timepicker.component';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+import { StorageService } from '../../core/storage.service';
+import { SupabaseClientService } from '../../core/supabase-client.service';
 import { Subscription } from 'rxjs';
 
 interface CalendarEvent {
@@ -42,7 +45,7 @@ interface CalendarEvent {
 @Component({
   selector: 'tc-calendar',
   standalone: true,
-  imports: [CommonModule, RouterLink, AppAutocompleteComponent, AppDatepickerComponent, AppTimepickerComponent, TooltipDirective],
+  imports: [CommonModule, RouterLink, AppAutocompleteComponent, AppDatepickerComponent, AppTimepickerComponent, TooltipDirective, DocumentAssociationPickerComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './calendar.component.html',
 })
@@ -76,6 +79,16 @@ export class CalendarComponent implements OnInit, OnDestroy {
   readonly editingEvent = signal<CalendarEvent | null>(null);
   readonly skipReason = signal('');
   readonly doseTimes = signal<Record<string, string>>({});
+  readonly documentSearchResults = signal<DiaryRow[]>([]);
+  readonly selectedDocuments = signal<DiaryRow[]>([]);
+  readonly documentSearchLoading = signal(false);
+  readonly associatedFiles = signal<File[]>([]);
+  readonly focusedDocuments = signal<DiaryRow[]>([]);
+  private pendingDocumentTargetIds: string[] = [];
+  private readonly storage = inject(StorageService);
+  private readonly supabase = inject(SupabaseClientService);
+  private documentSearchTimer?: ReturnType<typeof setTimeout>;
+  private documentSearchRequest = 0;
   private routeSubscription?: Subscription;
   readonly children = computed(() =>
     this.entries()
@@ -147,35 +160,42 @@ export class CalendarComponent implements OnInit, OnDestroy {
   );
   async ngOnInit(): Promise<void> {
     await this.auth.ready;
-    this.entries.set(await this.data.loadAllForSearch());
+    await this.refreshEntries();
     this.loading.set(false);
     this.routeSubscription = this.route.queryParamMap.subscribe((params) => {
       const requestedDate = params.get('date') ?? '';
       const highlight = params.get('highlight') ?? '';
       if (validDate(requestedDate)) {
+        const previousMonth = `${this.month().getFullYear()}-${this.month().getMonth()}`;
         this.selectedDate.set(requestedDate);
         const [year, month] = requestedDate.split('-').map(Number);
         this.month.set(new Date(year, month - 1, 1));
+        if (previousMonth !== `${year}-${month - 1}`) void this.refreshEntries();
       }
       if (highlight) {
         const event = this.events().find((item) => item.id === `calendar_events-${highlight}`);
         this.focusedEvent.set(event ?? null);
+        if (event) void this.loadFocusedDocuments(event);
       } else {
         this.focusedEvent.set(null);
+        this.focusedDocuments.set([]);
         this.scrollToFirstUpcomingEvent();
       }
     });
   }
   ngOnDestroy(): void {
     this.routeSubscription?.unsubscribe();
+    if (this.documentSearchTimer) clearTimeout(this.documentSearchTimer);
   }
   closeFocusedEvent(): void {
     this.focusedEvent.set(null);
+    this.focusedDocuments.set([]);
   }
   openSectionEvent(event: CalendarEvent): void {
     this.focusedEvent.set(event);
+    void this.loadFocusedDocuments(event);
   }
-  editCalendarEvent(event: CalendarEvent): void {
+  async editCalendarEvent(event: CalendarEvent): Promise<void> {
     this.editingEvent.set(event);
     this.repeat.set('none');
     this.title.set(event.title);
@@ -186,6 +206,15 @@ export class CalendarComponent implements OnInit, OnDestroy {
     this.eventTime.set(event.time);
     this.notes.set(event.detail);
     this.childId.set(event.childId ?? this.children()[0]?.id ?? '');
+    this.documentSearchResults.set([]);
+    this.selectedDocuments.set([]);
+    this.associatedFiles.set([]);
+    if (event.childId) {
+      const ids = await this.data.loadDocumentLinks(
+        'calendar_events', event.id.replace('calendar_events-', ''), event.childId,
+      );
+      this.selectedDocuments.set(await this.data.loadDocumentsByIds(event.childId, ids));
+    }
     this.saveError.set('');
     this.formOpen.set(true);
     this.closeFocusedEvent();
@@ -203,12 +232,17 @@ export class CalendarComponent implements OnInit, OnDestroy {
     await this.data.remove('calendar_events', { id: event.id.replace('calendar_events-', '') } as DiaryRow);
     this.saving.set(false);
     if (this.data.error()) return;
-    this.entries.set(await this.data.loadAllForSearch());
+    await this.refreshEntries();
     this.closeFocusedEvent();
   }
   selectDate(date: string): void {
     this.selectedDate.set(date);
     this.scrollToFirstUpcomingEvent();
+  }
+  moveMonth(delta: number): void {
+    const current = this.month();
+    this.month.set(new Date(current.getFullYear(), current.getMonth() + delta, 1));
+    void this.refreshEntries();
   }
   private scrollToFirstUpcomingEvent(): void {
     const now = new Date();
@@ -229,10 +263,6 @@ export class CalendarComponent implements OnInit, OnDestroy {
       ).find((element) => element.dataset['calendarEventId'] === event.id);
       target?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
     });
-  }
-  moveMonth(delta: number): void {
-    const current = this.month();
-    this.month.set(new Date(current.getFullYear(), current.getMonth() + delta, 1));
   }
   dayLabel(date: string): string {
     return new Date(`${date}T12:00:00`).toLocaleDateString('it-IT', {
@@ -308,6 +338,10 @@ export class CalendarComponent implements OnInit, OnDestroy {
     );
   }
   openForm(date = this.selectedDate()): void {
+    if (this.documentSearchTimer) clearTimeout(this.documentSearchTimer);
+    this.documentSearchRequest++;
+    this.documentSearchLoading.set(false);
+    this.documentSearchResults.set([]);
     this.editingEvent.set(null);
     this.title.set('');
     this.eventCategory.set('');
@@ -319,16 +353,49 @@ export class CalendarComponent implements OnInit, OnDestroy {
     this.repeat.set('none');
     this.repeatUntil.set(date);
     this.childId.set(this.children()[0]?.id ?? '');
+    this.documentSearchResults.set([]);
+    this.selectedDocuments.set([]);
+    this.associatedFiles.set([]);
     this.saveError.set('');
     this.formOpen.set(true);
   }
   closeForm(): void {
+    if (this.documentSearchTimer) clearTimeout(this.documentSearchTimer);
+    this.documentSearchRequest++;
+    this.documentSearchLoading.set(false);
     this.formOpen.set(false);
     this.editingEvent.set(null);
+    this.associatedFiles.set([]);
+    this.documentSearchResults.set([]);
+    this.selectedDocuments.set([]);
+    this.pendingDocumentTargetIds = [];
+  }
+  changeChild(childId: string): void {
+    if (this.documentSearchTimer) clearTimeout(this.documentSearchTimer);
+    this.documentSearchRequest++;
+    this.documentSearchLoading.set(false);
+    this.childId.set(childId);
+    this.documentSearchResults.set([]);
+    this.selectedDocuments.set([]);
+    this.associatedFiles.set([]);
   }
   async saveEvent(): Promise<void> {
     if (!this.title().trim() || !this.eventDate()) return;
     const editing = this.editingEvent();
+    if (!editing && this.pendingDocumentTargetIds.length) {
+      this.saving.set(true);
+      this.saveError.set('');
+      const ok = await this.saveEventDocuments(this.pendingDocumentTargetIds);
+      this.saving.set(false);
+      if (!ok) {
+        this.saveError.set(this.data.error() || 'L’evento è stato salvato, ma non è stato possibile collegare tutti i documenti.');
+        return;
+      }
+      this.pendingDocumentTargetIds = [];
+      this.selectedDate.set(this.eventDate());
+      this.closeForm();
+      return;
+    }
     if (editing) {
       this.saving.set(true);
       this.saveError.set('');
@@ -342,11 +409,17 @@ export class CalendarComponent implements OnInit, OnDestroy {
         notes: this.notes().trim() || null,
         child_id: this.childId() || null,
       });
-      this.saving.set(false);
       if (!ok) {
+        this.saving.set(false);
         this.saveError.set(this.data.error() || 'Non è stato possibile salvare le modifiche.');
         return;
       }
+      if (!(await this.saveEventDocuments([editing.id.replace('calendar_events-', '')]))) {
+        this.saveError.set(this.data.error() || 'Non è stato possibile salvare i documenti collegati.');
+        this.saving.set(false);
+        return;
+      }
+      this.saving.set(false);
       this.selectedDate.set(this.eventDate());
       const [year, month] = this.eventDate().split('-').map(Number);
       this.month.set(new Date(year, month - 1, 1));
@@ -369,6 +442,7 @@ export class CalendarComponent implements OnInit, OnDestroy {
     this.saveError.set('');
     const groupId = dates.length > 1 ? crypto.randomUUID() : null;
     const values = dates.map((date) => ({
+      id: crypto.randomUUID(),
       title: this.title().trim(),
       category: this.eventCategory().trim() || null,
       specialist: this.specialist().trim() || null,
@@ -381,12 +455,20 @@ export class CalendarComponent implements OnInit, OnDestroy {
       recurrence_group_id: groupId,
     }));
     const ok = await this.data.saveMany('calendar_events', values, this.childId() || undefined);
-    this.saving.set(false);
     if (!ok) {
+      this.saving.set(false);
       this.saveError.set(this.data.error() || 'Non è stato possibile salvare l’evento.');
       return;
     }
-    this.entries.set(await this.data.loadAllForSearch());
+    this.pendingDocumentTargetIds = values.map((value) => String(value.id));
+    if (!(await this.saveEventDocuments(this.pendingDocumentTargetIds))) {
+      this.saveError.set(this.data.error() || 'L’evento è stato salvato, ma non è stato possibile collegare tutti i documenti.');
+      this.saving.set(false);
+      return;
+    }
+    this.pendingDocumentTargetIds = [];
+    this.saving.set(false);
+    await this.refreshEntries();
     this.selectedDate.set(this.eventDate());
     const [year, month] = this.eventDate().split('-').map(Number);
     this.month.set(new Date(year, month - 1, 1));
@@ -442,7 +524,7 @@ export class CalendarComponent implements OnInit, OnDestroy {
       this.saveError.set(this.data.error() || 'Non è stato possibile registrare la dose.');
       return;
     }
-    this.entries.set(await this.data.loadAllForSearch());
+    await this.refreshEntries();
   }
   async saveSkipped(): Promise<void> {
     const event = this.skipEvent();
@@ -466,7 +548,7 @@ export class CalendarComponent implements OnInit, OnDestroy {
         skipped_reason: this.skipReason().trim(),
       });
     }
-    if (skipped && event.medicationId) this.entries.set(await this.data.loadAllForSearch());
+    if (skipped && event.medicationId) await this.refreshEntries();
     if (skipped)
       this.skipEvent.set(null);
   }
@@ -486,7 +568,88 @@ export class CalendarComponent implements OnInit, OnDestroy {
       this.saveError.set(this.data.error() || 'Non è stato possibile aggiornare l’evento.');
       return false;
     }
-    this.entries.set(await this.data.loadAllForSearch());
+    await this.refreshEntries();
+    return true;
+  }
+  documentsForSelectedChild(): DiaryRow[] {
+    return this.documentSearchResults();
+  }
+  searchDocuments(query: string): void {
+    if (this.documentSearchTimer) clearTimeout(this.documentSearchTimer);
+    const request = ++this.documentSearchRequest;
+    const term = query.trim();
+    this.documentSearchResults.set([]);
+    if (term.length < 2 || !this.childId()) {
+      this.documentSearchLoading.set(false);
+      return;
+    }
+    this.documentSearchLoading.set(true);
+    this.documentSearchTimer = setTimeout(() => {
+      void this.data.searchDocuments(this.childId(), term).then((rows) => {
+        if (request !== this.documentSearchRequest) return;
+        this.documentSearchResults.set(rows);
+        this.documentSearchLoading.set(false);
+      });
+    }, 250);
+  }
+  private async refreshEntries(): Promise<void> {
+    const current = this.month();
+    const startDate = dateKey(new Date(current.getFullYear(), current.getMonth(), 1));
+    const endDate = dateKey(new Date(current.getFullYear(), current.getMonth() + 1, 0));
+    this.entries.set(await this.data.loadCalendarEntries(startDate, endDate));
+  }
+  private async loadFocusedDocuments(event: CalendarEvent): Promise<void> {
+    if (event.section !== 'calendar_events' || !event.childId) {
+      this.focusedDocuments.set([]);
+      return;
+    }
+    const ids = await this.data.loadDocumentLinks(
+      'calendar_events', event.id.replace('calendar_events-', ''), event.childId,
+    );
+    this.focusedDocuments.set(await this.data.loadDocumentsByIds(event.childId, ids));
+  }
+  private async saveEventDocuments(targetIds: string[]): Promise<boolean> {
+    const childId = this.childId();
+    if (!childId) return false;
+    const documentIds = this.selectedDocuments().map((doc) => doc.id);
+    for (const file of this.associatedFiles()) {
+      const documentId = crypto.randomUUID();
+      const storagePath = await this.storage.upload(file, childId);
+      if (!storagePath && this.supabase.configured && this.auth.user()) {
+        this.data.error.set('Non è stato possibile caricare uno dei documenti allegati.');
+        return false;
+      }
+      let localFileId = '';
+      if (!storagePath) {
+        try {
+          localFileId = await this.storage.saveLocalFile(file);
+        } catch {
+          this.data.error.set('Il browser non ha potuto conservare localmente il file allegato.');
+          return false;
+        }
+      }
+      const savedId = await this.data.saveWithId('documents', {
+        id: documentId,
+        title: file.name,
+        category: 'Altro',
+        date: dateKey(new Date()),
+        ...(storagePath ? { storage_path: storagePath } : { local_file_id: localFileId }),
+      }, childId);
+      if (!savedId) return false;
+      documentIds.push(savedId);
+      this.selectedDocuments.update((docs) => [...docs, {
+        id: savedId,
+        child_id: childId,
+        title: file.name,
+        category: 'Altro',
+        date: dateKey(new Date()),
+      } as DiaryRow]);
+      this.associatedFiles.set(this.associatedFiles().filter((pending) => pending !== file));
+    }
+    for (const targetId of targetIds) {
+      if (!(await this.data.setDocumentLinks('calendar_events', targetId, childId, documentIds)))
+        return false;
+    }
     return true;
   }
   private selectedChildRows(section: string): DiaryRow[] {

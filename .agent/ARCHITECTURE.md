@@ -1,6 +1,6 @@
 # Architecture Map
 
-> Aggiornato automaticamente il 07/10/2026, 11:21:54.
+> Aggiornato automaticamente il 07/10/2026, 17:29:50.
 
 ## Struttura
 
@@ -42,3 +42,4 @@
 - [App Dropdown Component](../src/app/shared/app-dropdown.component.ts)
 - [App Timepicker Component](../src/app/shared/app-timepicker.component.ts)
 - [Tooltip Directive](../src/app/shared/directives/tooltip.directive.ts)
+- [Document Association Picker Component](../src/app/shared/document-association-picker.component.ts)

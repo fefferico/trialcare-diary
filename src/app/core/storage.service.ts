@@ -5,6 +5,7 @@ import { AuthService } from './auth.service';
 @Injectable({ providedIn: 'root' })
 export class StorageService {
   private readonly avatarBucket = 'profile-avatars';
+  private readonly localFileDatabase = 'trialcare-local-files-v1';
   constructor(
     private readonly supabase: SupabaseClientService,
     private readonly auth: AuthService,
@@ -22,6 +23,75 @@ export class StorageService {
       .from('clinical-documents')
       .upload(path, file, { upsert: false, contentType: file.type || undefined });
     return error ? null : path;
+  }
+  async saveLocalFile(file: File): Promise<string> {
+    const id = crypto.randomUUID();
+    const database = await this.openLocalFileDatabase();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const transaction = database.transaction('files', 'readwrite');
+        transaction.objectStore('files').put({ id, name: file.name, type: file.type, blob: file });
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+      });
+    } finally {
+      database.close();
+    }
+    return id;
+  }
+  async openLocalFile(id: string): Promise<boolean> {
+    const tab = window.open('', '_blank');
+    if (!tab) return false;
+    tab.opener = null;
+    let entry: { blob: Blob } | undefined;
+    let database: IDBDatabase | undefined;
+    try {
+      database = await this.openLocalFileDatabase();
+      entry = await new Promise<{ blob: Blob } | undefined>((resolve, reject) => {
+        const request = database!.transaction('files', 'readonly').objectStore('files').get(id);
+        request.onsuccess = () => resolve(request.result as { blob: Blob } | undefined);
+        request.onerror = () => reject(request.error);
+      });
+    } catch {
+      tab.close();
+      return false;
+    } finally {
+      database?.close();
+    }
+    if (!entry?.blob) {
+      tab.close();
+      return false;
+    }
+    const url = URL.createObjectURL(entry.blob);
+    tab.location.href = url;
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return true;
+  }
+  async removeLocalFile(id: string): Promise<void> {
+    const database = await this.openLocalFileDatabase();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const transaction = database.transaction('files', 'readwrite');
+        transaction.objectStore('files').delete(id);
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+      });
+    } finally {
+      database.close();
+    }
+  }
+  private openLocalFileDatabase(): Promise<IDBDatabase> {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(this.localFileDatabase, 1);
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains('files'))
+          request.result.createObjectStore('files', { keyPath: 'id' });
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
   }
   async signedUrl(path: string): Promise<string | null> {
     const client = this.supabase.client;
