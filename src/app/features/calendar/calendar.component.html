@@ -377,8 +377,8 @@
         <section class="space-y-2 border-t border-slate-100 pt-4 dark:border-slate-800">
           <h3 class="text-sm font-semibold">Documenti collegati</h3>
           @for (doc of focusedDocuments(); track doc.id) {
-          <a class="block text-sm text-teal-700 underline dark:text-teal-300"
-            [routerLink]="'/documents'" [queryParams]="{ highlight: doc.id, child: event.childId }">{{ doc['title'] || 'Documento' }}</a>
+          <button type="button" class="block text-left text-sm text-teal-700 underline dark:text-teal-300"
+            (click)="openAssociatedDocument(doc)">{{ doc['title'] || 'Documento' }}</button>
           }
         </section>
         }

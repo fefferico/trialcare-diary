@@ -608,6 +608,26 @@ export class CalendarComponent implements OnInit, OnDestroy {
     );
     this.focusedDocuments.set(await this.data.loadDocumentsByIds(event.childId, ids));
   }
+
+  async openAssociatedDocument(doc: DiaryRow): Promise<void> {
+    if (typeof doc['local_file_id'] === 'string') {
+      if (!(await this.storage.openLocalFile(doc['local_file_id'])))
+        this.data.error.set('Il file locale non è più disponibile in questo browser.');
+      return;
+    }
+    if (typeof doc['file_data'] === 'string') {
+      window.open(doc['file_data'], '_blank', 'noopener');
+      return;
+    }
+    const path = doc['storage_path'];
+    if (typeof path !== 'string' || !path) {
+      this.data.error.set('Il documento non contiene un file allegato.');
+      return;
+    }
+    const url = await this.storage.signedUrl(path);
+    if (url) window.open(url, '_blank', 'noopener');
+    else this.data.error.set('Impossibile aprire il file. Accedi al tuo account e riprova.');
+  }
   private async saveEventDocuments(targetIds: string[]): Promise<boolean> {
     const childId = this.childId();
     if (!childId) return false;
