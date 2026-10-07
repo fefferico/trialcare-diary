@@ -45,6 +45,15 @@ interface OcrPageData {
   canvasHeight: number;
 }
 
+interface NativeWordItem {
+  text: string;
+  box: Redaction;
+}
+
+interface NativeLineItem {
+  words: NativeWordItem[];
+}
+
 interface BrowserOcrWorker {
   recognize(
     image: HTMLCanvasElement,
@@ -77,7 +86,7 @@ type ResizeCorner = 'nw' | 'ne' | 'sw' | 'se';
       testo selezionabile verrà rimosso dalla copia.
     </p>
     <label class="form-field mt-3"
-      ><span>Parole da cercare (testo selezionabile o scansioni OCR)</span><input
+      ><span>Parole da cercare (testo selezionabile o scansioni con OCR già estratto)</span><input
         class="field-control"
         [value]="terms()"
         (input)="terms.set($any($event.target).value)"
@@ -250,23 +259,25 @@ type ResizeCorner = 'nw' | 'ne' | 'sw' | 'se';
         class="mt-4 rounded-xl border border-slate-200 p-3 dark:border-slate-700 sm:p-4"
         aria-labelledby="pdf-extracted-text-title"
       >
-        <h4 id="pdf-extracted-text-title" class="font-semibold">Testo estratto dal documento</h4>
-        <button
-          type="button"
-          class="button-secondary mt-2"
-          [disabled]="busy()"
-          (click)="runOcr()"
-        >
-          {{ ocrAttempted() ? 'Riprova OCR su tutte le pagine' : 'Riconosci testo con OCR' }}
-        </button>
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <h4 id="pdf-extracted-text-title" class="font-semibold">Testo estratto dal documento</h4>
+          <button
+            type="button"
+            class="button-secondary text-sm"
+            [disabled]="busy()"
+            (click)="runOcr()"
+          >
+            {{ ocrAttempted() ? 'Riprova OCR su tutte le pagine' : 'Estrai testo con OCR (facoltativo)' }}
+          </button>
+        </div>
         @if (busy()) {
           <p class="mt-2 text-sm text-slate-500 dark:text-slate-400" role="status">
-            {{ ocrProgress() || 'Lettura del documento in corso…' }}
+            {{ ocrProgress() || 'Elaborazione in corso…' }}
           </p>
         }
         @if (!busy()) {
           <label class="form-field mt-3">
-            <span>Testo da salvare con il documento</span>
+            <span>Testo da salvare con il documento (le aree oscurate sono escluse automaticamente)</span>
             <textarea
               class="field-control min-h-64 resize-y font-mono text-sm leading-6"
               rows="12"
@@ -276,12 +287,11 @@ type ResizeCorner = 'nw' | 'ne' | 'sw' | 'se';
             ></textarea>
           </label>
           <p class="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            Correggi nomi, date e dosaggi prima di salvare. Questo testo sarà associato al documento
-            e usato per la ricerca.
+            Il testo sotto le zone oscurate viene escluso automaticamente dal salvataggio. Correggi nomi, date e dosaggi prima di salvare.
           </p>
           @if (textEdited()) {
             <p class="mt-1 text-xs text-amber-700 dark:text-amber-300">
-              Riprova OCR sostituirà le modifiche scritte qui.
+              Hai modificato manualmente il testo. L’esecuzione dell’OCR sostituirà le modifiche scritte qui.
             </p>
           }
         }
@@ -291,18 +301,17 @@ type ResizeCorner = 'nw' | 'ne' | 'sw' | 'se';
           </p>
         } @else if (!busy() && !extractedText() && ocrAttempted()) {
           <p class="mt-2 text-sm text-amber-700 dark:text-amber-300">
-            L’OCR non ha restituito testo per questo documento. Puoi riprovare oppure controllare
-            manualmente la scansione.
+            L’OCR non ha restituito testo per questo documento. Puoi riprovare oppure controllare manualmente la scansione.
           </p>
         } @else if (!busy() && !extractedText()) {
           <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
-            Nessun testo selezionabile rilevato automaticamente. Puoi avviare l’OCR o digitarlo a mano.
+            Nessun testo selezionabile rilevato nel PDF (possibile scansione). L’estrazione OCR è facoltativa: premi "Estrai testo con OCR (facoltativo)" se desideri renderlo ricercabile, oppure digita il testo a mano.
           </p>
         }
       </section>
       <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
-        Trascina sull’anteprima per aggiungere aree nere. La ricerca automatica individua le parole sia
-        nel testo selezionabile sia nelle scansioni tramite OCR. Controlla tutte le pagine prima di procedere.
+        Trascina sull’anteprima per aggiungere aree nere. Le zone oscurate non vengono incluse nel testo salvato.
+        Controlla tutte le pagine prima di procedere.
       </p>
     }
   </div>`,
@@ -331,12 +340,21 @@ export class PdfRedactionComponent implements OnChanges {
   private pages: HTMLCanvasElement[] = [];
   private boxes: Redaction[][] = [];
   private ocrPages: (OcrPageData | null)[] = [];
+  private nativePages: NativeLineItem[][] = [];
+  private lastAppliedFile?: File;
+  private lastAppliedText = '';
   private dragStart?: { x: number; y: number };
   private resizeDrag?: { index: number; corner: ResizeCorner };
   private moveDrag?: { index: number; startX: number; startY: number; boxX: number; boxY: number };
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['initialTerms']) this.terms.set(this.initialTerms);
-    if (changes['file']) void this.load();
+    if (changes['file']) {
+      if (this.file === this.lastAppliedFile) {
+        void this.loadAppliedRedactedFile();
+      } else {
+        void this.load();
+      }
+    }
   }
   get redactionCount(): number {
     return this.boxes.reduce((sum, boxes) => sum + boxes.length, 0);
@@ -398,6 +416,7 @@ export class PdfRedactionComponent implements OnChanges {
   endZoneDrags(event: PointerEvent): void {
     this.endResize(event);
     this.endZoneMove(event);
+    this.recomputeExtractedText();
   }
   startZoneMove(event: PointerEvent, index: number): void {
     event.preventDefault();
@@ -425,6 +444,7 @@ export class PdfRedactionComponent implements OnChanges {
     event.preventDefault();
     event.stopPropagation();
     this.moveDrag = undefined;
+    this.recomputeExtractedText();
   }
   moveBoxOnKey(event: KeyboardEvent, index: number): void {
     const deltas: Record<string, [number, number]> = {
@@ -440,12 +460,14 @@ export class PdfRedactionComponent implements OnChanges {
     box.x = Math.max(0, Math.min(box.x + delta[0], this.pageWidth() - box.width));
     box.y = Math.max(0, Math.min(box.y + delta[1], this.pageHeight() - box.height));
     this.draw();
+    this.recomputeExtractedText();
   }
   endResize(event: PointerEvent): void {
     if (!this.resizeDrag) return;
     event.preventDefault();
     event.stopPropagation();
     this.resizeDrag = undefined;
+    this.recomputeExtractedText();
   }
   resizeOnKey(event: KeyboardEvent, index: number, corner: ResizeCorner): void {
     const deltas: Record<string, [number, number]> = {
@@ -460,6 +482,7 @@ export class PdfRedactionComponent implements OnChanges {
     const box = this.pageBoxes()[index];
     if (!box) return;
     this.resizeTo(index, corner, this.cornerX(box, corner) + delta[0], this.cornerY(box, corner) + delta[1]);
+    this.recomputeExtractedText();
   }
   private pagePoint(event: PointerEvent): { x: number; y: number } {
     const rect = this.preview?.nativeElement.getBoundingClientRect();
@@ -489,11 +512,43 @@ export class PdfRedactionComponent implements OnChanges {
     this.pageBoxes().splice(index, 1);
     this.matches.set(0);
     this.draw();
+    this.recomputeExtractedText();
   }
   deleteBoxOnKey(event: KeyboardEvent, index: number): void {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
     this.deleteBox(index, event);
+  }
+  private async loadAppliedRedactedFile(): Promise<void> {
+    const file = this.file;
+    this.busy.set(true);
+    this.processingChange.emit({ file, processing: true });
+    try {
+      this.pdf = await getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+      this.pageCount.set(this.pdf.numPages);
+      this.pages = [];
+      this.boxes = Array.from({ length: this.pdf.numPages }, () => []);
+      this.ocrPages = Array.from({ length: this.pdf.numPages }, () => null);
+      this.nativePages = Array.from({ length: this.pdf.numPages }, () => []);
+      for (let n = 1; n <= this.pdf.numPages; n++) {
+        const page = await this.pdf.getPage(n);
+        const viewport = page.getViewport({ scale: 1.4 });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        await page.render({ canvas, canvasContext: canvas.getContext('2d')!, viewport }).promise;
+        this.pages.push(canvas);
+      }
+      this.page.set(1);
+      this.draw();
+      this.setTextForSaving(this.lastAppliedText);
+      this.notice.set('PDF oscurato pronto per il salvataggio. Il testo memorizzato esclude le zone oscurate.');
+    } catch {
+      this.notice.set('Impossibile visualizzare il PDF oscurato.');
+    } finally {
+      this.busy.set(false);
+      this.processingChange.emit({ file, processing: false });
+    }
   }
   async load(): Promise<void> {
     const file = this.file;
@@ -506,8 +561,6 @@ export class PdfRedactionComponent implements OnChanges {
     this.ocrAttempted.set(false);
     this.ocrError.set('');
     this.ocrProgress.set('');
-    let ocrWorker: BrowserOcrWorker | null = null;
-    let ocrFailed = false;
     try {
       GlobalWorkerOptions.workerSrc = new URL(
         'assets/pdfjs/pdf.worker.min.mjs',
@@ -518,53 +571,29 @@ export class PdfRedactionComponent implements OnChanges {
       this.pages = [];
       this.boxes = Array.from({ length: this.pdf.numPages }, () => []);
       this.ocrPages = Array.from({ length: this.pdf.numPages }, () => null);
-      const textPages: string[] = [];
+      this.nativePages = [];
       for (let n = 1; n <= this.pdf.numPages; n++) {
         const page = await this.pdf.getPage(n);
-        const textContent = await page.getTextContent();
-        const pageText = textContent.items
-          .map((item: { str?: string }) => item.str ?? '')
-          .filter(Boolean)
-          .join(' ');
         const viewport = page.getViewport({ scale: 1.4 });
         const canvas = document.createElement('canvas');
         canvas.width = Math.ceil(viewport.width);
         canvas.height = Math.ceil(viewport.height);
         await page.render({ canvas, canvasContext: canvas.getContext('2d')!, viewport }).promise;
         this.pages.push(canvas);
-        let recognizedText = pageText;
-        if (pageText.replace(/\s/g, '').length < 30) {
-          this.ocrAttempted.set(true);
-          try {
-            this.ocrProgress.set(`Avvio del motore OCR per la pagina ${n} di ${this.pdf.numPages}…`);
-            ocrWorker ??= await this.createOcrWorker();
-            this.ocrProgress.set(`Riconoscimento OCR della pagina ${n} di ${this.pdf.numPages}…`);
-            const ocrResult = await this.recognizePage(page, ocrWorker);
-            if (ocrResult?.text) {
-              this.ocrPages[n - 1] = ocrResult;
-              this.ocrUsed.set(true);
-              recognizedText = ocrResult.text;
-            }
-          } catch (err) {
-            console.warn('[PdfRedaction] OCR failed in load for page', n, err);
-            ocrFailed = true;
-          }
-        }
-        if (recognizedText.trim()) textPages.push(`Pagina ${n}\n${recognizedText.trim()}`);
+
+        const textContent = await page.getTextContent();
+        const pageLines = this.extractNativeLines(textContent, viewport);
+        this.nativePages.push(pageLines);
       }
-      if (this.file === file)
-        this.setTextForSaving(textPages.join('\n\n').replace(/[ \t]+/g, ' ').trim());
-      if (ocrFailed) {
-        this.ocrError.set('Il motore OCR non è riuscito a elaborare alcune pagine. Puoi riprovare.');
-        this.notice.set('OCR non riuscito su alcune pagine. Puoi riprovare con il pulsante nella sezione del testo.');
+      const initialText = this.buildExtractedText();
+      if (this.file === file) {
+        this.setTextForSaving(initialText);
       }
       this.page.set(1);
       this.draw();
     } catch {
       this.notice.set('Impossibile leggere il PDF in questo browser.');
     } finally {
-      await ocrWorker?.terminate().catch(() => undefined);
-      this.ocrProgress.set('');
       this.busy.set(false);
       this.processingChange.emit({ file, processing: false });
     }
@@ -578,7 +607,6 @@ export class PdfRedactionComponent implements OnChanges {
     this.ocrUsed.set(false);
     this.ocrAttempted.set(true);
     this.ocrError.set('');
-    const textPages: string[] = [];
     let worker: BrowserOcrWorker | null = null;
     try {
       this.ocrProgress.set('Avvio del motore OCR…');
@@ -586,18 +614,19 @@ export class PdfRedactionComponent implements OnChanges {
       for (let n = 1; n <= this.pdf.numPages; n++) {
         this.ocrProgress.set(`Riconoscimento OCR della pagina ${n} di ${this.pdf.numPages}…`);
         const page = await this.pdf.getPage(n);
-        const ocrResult = await this.recognizePage(page, worker);
-        if (ocrResult?.text) {
+        const ocrResult = await this.recognizePage(page, worker, n - 1);
+        if (ocrResult) {
           this.ocrPages[n - 1] = ocrResult;
-          textPages.push(`Pagina ${n}\n${ocrResult.text}`);
           this.ocrUsed.set(true);
         }
       }
-      if (textPages.length && this.file === file) {
-        this.textEdited.set(false);
-        this.setTextForSaving(textPages.join('\n\n'));
-      } else if (!textPages.length) {
-        this.notice.set('Non è stato possibile riconoscere testo nelle pagine.');
+      this.textEdited.set(false);
+      const recomputed = this.buildExtractedText();
+      if (recomputed && this.file === file) {
+        this.setTextForSaving(recomputed);
+        this.notice.set('OCR completato: il testo estratto esclude le parti oscurate.');
+      } else if (!recomputed) {
+        this.notice.set('L’OCR non ha riconosciuto testo nelle pagine.');
       }
     } catch (err) {
       console.warn('[PdfRedaction] runOcr failed', err);
@@ -609,32 +638,217 @@ export class PdfRedactionComponent implements OnChanges {
       this.processingChange.emit({ file, processing: false });
     }
   }
+  private extractNativeLines(textContent: any, viewport: any): NativeLineItem[] {
+    const lines: NativeLineItem[] = [];
+    if (!textContent || !Array.isArray(textContent.items)) return lines;
+
+    const measure = document.createElement('canvas').getContext('2d')!;
+    let currentLine: NativeWordItem[] = [];
+    let lastY: number | null = null;
+
+    for (const item of textContent.items) {
+      if (!('str' in item) || !item.str || !item.str.trim()) {
+        if (item.hasEOL && currentLine.length) {
+          lines.push({ words: currentLine });
+          currentLine = [];
+          lastY = null;
+        }
+        continue;
+      }
+
+      const [, , , h, tx, ty] = item.transform;
+      const fontH = Math.max(Math.abs(h || item.height || 10) * 1.4, 8);
+      const itemCanvasY = Math.round(viewport.height - ty * 1.4 - fontH);
+      const itemCanvasX = Math.round(tx * 1.4);
+      const itemCanvasWidth = Math.max(Math.round(item.width * 1.4), 1);
+
+      if (lastY !== null && Math.abs(itemCanvasY - lastY) > 6) {
+        if (currentLine.length) {
+          lines.push({ words: currentLine });
+          currentLine = [];
+        }
+      }
+      lastY = itemCanvasY;
+
+      const itemStr = item.str;
+      const totalMeasured = measure.measureText(itemStr).width || 1;
+      const wordRegex = /\S+/g;
+      let match: RegExpExecArray | null;
+
+      while ((match = wordRegex.exec(itemStr)) !== null) {
+        const start = match.index;
+        const end = start + match[0].length;
+        const leftFrac = measure.measureText(itemStr.slice(0, start)).width / totalMeasured;
+        const rightFrac = measure.measureText(itemStr.slice(0, end)).width / totalMeasured;
+        const wordX = Math.round(itemCanvasX + leftFrac * itemCanvasWidth);
+        const wordWidth = Math.max(Math.round((rightFrac - leftFrac) * itemCanvasWidth), 4);
+
+        currentLine.push({
+          text: match[0],
+          box: {
+            x: wordX,
+            y: itemCanvasY,
+            width: wordWidth,
+            height: Math.round(fontH),
+          },
+        });
+      }
+
+      if (item.hasEOL && currentLine.length) {
+        lines.push({ words: currentLine });
+        currentLine = [];
+        lastY = null;
+      }
+    }
+
+    if (currentLine.length) {
+      lines.push({ words: currentLine });
+    }
+
+    return lines;
+  }
+  private boxIntersects(item: Redaction, redaction: Redaction): boolean {
+    const overlapX = Math.max(
+      0,
+      Math.min(item.x + item.width, redaction.x + redaction.width) - Math.max(item.x, redaction.x),
+    );
+    const overlapY = Math.max(
+      0,
+      Math.min(item.y + item.height, redaction.y + redaction.height) - Math.max(item.y, redaction.y),
+    );
+    const overlapArea = overlapX * overlapY;
+    if (overlapArea <= 0) return false;
+    const itemArea = Math.max(1, item.width * item.height);
+    return overlapArea / itemArea >= 0.15 || overlapArea >= 25;
+  }
+  private isWordRedacted(wordBox: Redaction, pageIndex: number): boolean {
+    const boxes = this.boxes[pageIndex] ?? [];
+    return boxes.some((box) => this.boxIntersects(wordBox, box));
+  }
+  private buildExtractedText(): string {
+    const textPages: string[] = [];
+    for (let p = 0; p < this.pageCount(); p++) {
+      const ocrData = this.ocrPages[p];
+      const pageCanvas = this.pages[p];
+      const pageNum = p + 1;
+
+      if (ocrData && ocrData.lines?.length && pageCanvas) {
+        const scaleX = pageCanvas.width / ocrData.canvasWidth;
+        const scaleY = pageCanvas.height / ocrData.canvasHeight;
+        const linesText: string[] = [];
+
+        for (const line of ocrData.lines) {
+          if (line.words?.length) {
+            const keptWords: string[] = [];
+            for (const w of line.words) {
+              const wordBox: Redaction = {
+                x: Math.round(w.bbox.x0 * scaleX),
+                y: Math.round(w.bbox.y0 * scaleY),
+                width: Math.max(Math.round((w.bbox.x1 - w.bbox.x0) * scaleX), 4),
+                height: Math.max(Math.round((w.bbox.y1 - w.bbox.y0) * scaleY), 4),
+              };
+              if (!this.isWordRedacted(wordBox, p)) {
+                keptWords.push(w.text);
+              }
+            }
+            if (keptWords.length) {
+              linesText.push(keptWords.join(' '));
+            }
+          } else if (line.text) {
+            const lineBox: Redaction = {
+              x: Math.round(line.bbox.x0 * scaleX),
+              y: Math.round(line.bbox.y0 * scaleY),
+              width: Math.max(Math.round((line.bbox.x1 - line.bbox.x0) * scaleX), 4),
+              height: Math.max(Math.round((line.bbox.y1 - line.bbox.y0) * scaleY), 4),
+            };
+            if (!this.isWordRedacted(lineBox, p)) {
+              linesText.push(line.text);
+            }
+          }
+        }
+
+        const pageStr = linesText.join('\n').trim();
+        if (pageStr) {
+          textPages.push(`Pagina ${pageNum}\n${pageStr}`);
+        }
+      } else if (this.nativePages[p]?.length) {
+        const linesText: string[] = [];
+        for (const line of this.nativePages[p]) {
+          const keptWords = line.words
+            .filter((w) => !this.isWordRedacted(w.box, p))
+            .map((w) => w.text);
+          if (keptWords.length) {
+            linesText.push(keptWords.join(' '));
+          }
+        }
+        const pageStr = linesText.join('\n').trim();
+        if (pageStr) {
+          textPages.push(`Pagina ${pageNum}\n${pageStr}`);
+        }
+      }
+    }
+
+    return textPages.join('\n\n').replace(/[ \t]+/g, ' ').trim();
+  }
+  private recomputeExtractedText(): void {
+    if (this.textEdited()) return;
+    const text = this.buildExtractedText();
+    this.setTextForSaving(text);
+  }
   private async createOcrWorker(): Promise<BrowserOcrWorker> {
     const imported = await import('tesseract.js');
     // Angular bundles this CommonJS dependency as a module with a default export.
     const tesseract = (imported as unknown as { default?: typeof imported }).default ?? imported;
     const assetUrl = (path: string) => new URL(path, document.baseURI).toString();
+    const localWorkerUrl = assetUrl('assets/tesseract/worker.min.js');
+    const localCoreUrl = assetUrl('assets/tesseract/core/');
+    const localLangUrl = assetUrl('assets/tesseract/lang/');
+
+    let useLocal = true;
+    try {
+      const probe = await fetch(localWorkerUrl, { method: 'HEAD', cache: 'no-cache' });
+      useLocal = probe.ok;
+    } catch {
+      useLocal = false;
+    }
+
+    const logger = ({ status, progress }: OcrWorkerProgress) => {
+      const percent = Math.round(progress * 100);
+      const labels: Record<string, string> = {
+        'loading tesseract core': 'Caricamento del motore OCR locale',
+        'loading language traineddata': 'Caricamento dei modelli linguistici',
+        'initializing tesseract': 'Preparazione del motore OCR',
+        'initializing api': 'Preparazione del riconoscimento',
+        'recognizing text': 'Lettura del testo della scansione',
+      };
+      this.ocrProgress.set(`${labels[status] ?? 'Elaborazione OCR'}… ${percent}%`);
+    };
+
+    if (useLocal) {
+      return tesseract.createWorker('ita+eng', undefined, {
+        workerPath: localWorkerUrl,
+        corePath: localCoreUrl,
+        langPath: localLangUrl,
+        workerBlobURL: false,
+        logger,
+      }) as unknown as BrowserOcrWorker;
+    }
+
+    console.warn(
+      '[PdfRedaction] Gli asset locali di Tesseract non sono raggiungibili (HTTP 404). ' +
+      'Se il dev server (ng serve) è stato avviato prima di configurare angular.json, riavvialo con "npm start". ' +
+      'Uso del worker standard per non bloccare l’elaborazione.',
+    );
+
     return tesseract.createWorker('ita+eng', undefined, {
-      workerPath: assetUrl('assets/tesseract/worker.min.js'),
-      corePath: assetUrl('assets/tesseract/core/'),
-      langPath: assetUrl('assets/tesseract/lang/'),
-      workerBlobURL: false,
-      logger: ({ status, progress }: OcrWorkerProgress) => {
-        const percent = Math.round(progress * 100);
-        const labels: Record<string, string> = {
-          'loading tesseract core': 'Caricamento del motore OCR locale',
-          'loading language traineddata': 'Caricamento dei modelli linguistici locali',
-          'initializing tesseract': 'Preparazione del motore OCR',
-          'initializing api': 'Preparazione del riconoscimento',
-          'recognizing text': 'Lettura del testo della scansione',
-        };
-        this.ocrProgress.set(`${labels[status] ?? 'Elaborazione OCR'}… ${percent}%`);
-      },
+      workerBlobURL: true,
+      logger,
     }) as unknown as BrowserOcrWorker;
   }
   private async recognizePage(
     page: any,
     worker: BrowserOcrWorker,
+    pageIndex: number,
   ): Promise<OcrPageData | null> {
     const baseViewport = page.getViewport({ scale: 1.0 });
     const longest = Math.max(baseViewport.width, baseViewport.height);
@@ -648,7 +862,25 @@ export class PdfRedactionComponent implements OnChanges {
     const canvas = document.createElement('canvas');
     canvas.width = Math.ceil(viewport.width);
     canvas.height = Math.ceil(viewport.height);
-    await page.render({ canvas, canvasContext: canvas.getContext('2d')!, viewport }).promise;
+    const ctx = canvas.getContext('2d')!;
+    await page.render({ canvas, canvasContext: ctx, viewport }).promise;
+
+    // Mask existing redaction boxes in solid black on the OCR canvas
+    const pageBoxes = this.boxes[pageIndex] ?? [];
+    if (pageBoxes.length > 0 && this.pages[pageIndex]) {
+      const previewCanvas = this.pages[pageIndex];
+      const scaleX = canvas.width / previewCanvas.width;
+      const scaleY = canvas.height / previewCanvas.height;
+      ctx.fillStyle = '#000';
+      for (const box of pageBoxes) {
+        ctx.fillRect(
+          Math.round(box.x * scaleX),
+          Math.round(box.y * scaleY),
+          Math.round(box.width * scaleX),
+          Math.round(box.height * scaleY),
+        );
+      }
+    }
     let enhanced: HTMLCanvasElement | null = null;
     try {
       const res = await worker.recognize(canvas, {}, { text: true, blocks: true });
@@ -837,6 +1069,7 @@ export class PdfRedactionComponent implements OnChanges {
     if (box.width > 4 && box.height > 4) {
       this.boxes[this.page() - 1].push(box);
       this.draw();
+      this.recomputeExtractedText();
     }
   }
   cancelDrag(event: PointerEvent): void {
@@ -847,6 +1080,7 @@ export class PdfRedactionComponent implements OnChanges {
     this.boxes[this.page() - 1] = [];
     this.matches.set(0);
     this.draw();
+    this.recomputeExtractedText();
   }
   private cleanToken(s: string): string {
     return s
@@ -957,50 +1191,7 @@ export class PdfRedactionComponent implements OnChanges {
     this.busy.set(true);
     this.matches.set(0);
     let count = 0;
-    let ocrWorker: BrowserOcrWorker | null = null;
     try {
-      const pagesNeedingOcr: number[] = [];
-      for (let i = 1; i <= this.pdf.numPages; i++) {
-        if (!this.ocrPages[i - 1]) {
-          const page = await this.pdf.getPage(i);
-          const content = await page.getTextContent();
-          const pageText = content.items
-            .map((item: any) => ('str' in item ? item.str : ''))
-            .filter(Boolean)
-            .join(' ');
-          if (pageText.replace(/\s/g, '').length < 30) {
-            pagesNeedingOcr.push(i);
-          }
-        }
-      }
-
-      if (pagesNeedingOcr.length > 0) {
-        this.ocrAttempted.set(true);
-        this.ocrProgress.set('Avvio OCR sulle pagine scansionate per individuare i termini…');
-        ocrWorker = await this.createOcrWorker();
-        for (const pageNum of pagesNeedingOcr) {
-          this.ocrProgress.set(`Riconoscimento OCR della pagina ${pageNum} di ${this.pdf.numPages}…`);
-          const page = await this.pdf.getPage(pageNum);
-          const ocrResult = await this.recognizePage(page, ocrWorker);
-          if (ocrResult) {
-            this.ocrPages[pageNum - 1] = ocrResult;
-            this.ocrUsed.set(true);
-          }
-        }
-        if (!this.extractedText()) {
-          const allText: string[] = [];
-          for (let p = 1; p <= this.pdf.numPages; p++) {
-            const pageData = this.ocrPages[p - 1];
-            if (pageData?.text) {
-              allText.push(`Pagina ${p}\n${pageData.text}`);
-            }
-          }
-          if (allText.length && this.file) {
-            this.setTextForSaving(allText.join('\n\n'));
-          }
-        }
-      }
-
       for (let i = 1; i <= this.pdf.numPages; i++) {
         const page = await this.pdf.getPage(i);
         const viewport = page.getViewport({ scale: 1.4 });
@@ -1059,17 +1250,23 @@ export class PdfRedactionComponent implements OnChanges {
       this.matches.set(count);
       this.page.set(1);
       this.draw();
-      this.notice.set(
-        count
-          ? `${count} aree individuate (testo e OCR); verifica le aree su ogni pagina.`
-          : 'Nessuna corrispondenza trovata né nel testo né nella scansione OCR.',
-      );
+      if (count) {
+        this.recomputeExtractedText();
+        this.notice.set(
+          `${count} aree individuate; verifica le aree su ogni pagina e premi "Oscura risultati" per confermare.`,
+        );
+      } else {
+        const hasText = this.extractedText().length > 0;
+        this.notice.set(
+          hasText
+            ? 'Nessuna corrispondenza trovata per i termini cercati.'
+            : 'Nessun testo trovato. Se il documento è una scansione, estrai prima il testo con il pulsante OCR facoltativo.',
+        );
+      }
     } catch (err) {
       console.warn('[PdfRedaction] findTerms failed', err);
       this.notice.set('Ricerca nel testo non riuscita.');
     } finally {
-      await ocrWorker?.terminate().catch(() => undefined);
-      this.ocrProgress.set('');
       this.busy.set(false);
     }
   }
@@ -1079,6 +1276,7 @@ export class PdfRedactionComponent implements OnChanges {
     );
     this.matches.set(0);
     this.draw();
+    this.recomputeExtractedText();
   }
   async apply(): Promise<void> {
     const file = this.file;
@@ -1107,11 +1305,12 @@ export class PdfRedactionComponent implements OnChanges {
         );
       }
       const blob = output.output('blob');
-      this.redacted.emit(
-        new File([blob], this.file.name.replace(/\.pdf$/i, '-oscurato.pdf'), {
-          type: 'application/pdf',
-        }),
-      );
+      const redactedFile = new File([blob], this.file.name.replace(/\.pdf$/i, '-oscurato.pdf'), {
+        type: 'application/pdf',
+      });
+      this.lastAppliedFile = redactedFile;
+      this.lastAppliedText = this.extractedText();
+      this.redacted.emit(redactedFile);
       this.notice.set('PDF oscurato pronto per il salvataggio.');
     } catch {
       this.notice.set('Creazione del PDF oscurato non riuscita.');

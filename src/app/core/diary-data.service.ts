@@ -623,6 +623,40 @@ export class DiaryDataService {
     await this.load(section);
     return true;
   }
+
+  async updateCalendarEventSeries(
+    recurrenceGroupId: string,
+    childId: string,
+    value: Record<string, unknown>,
+    fromDate?: string,
+  ): Promise<boolean> {
+    this.error.set('');
+    const client = this.supabase.client;
+    if (client && this.auth.user()) {
+      let query = client
+        .from('calendar_events')
+        .update(value)
+        .eq('recurrence_group_id', recurrenceGroupId)
+        .eq('child_id', childId);
+      if (fromDate) query = query.gte('date', fromDate);
+      const { error } = await query;
+      if (error) {
+        this.error.set(error.message);
+        return false;
+      }
+    } else {
+      this.local['calendar_events'] = (this.local['calendar_events'] ?? []).map((row) =>
+        row['recurrence_group_id'] === recurrenceGroupId &&
+        row['child_id'] === childId &&
+        (!fromDate || String(row['date'] ?? '') >= fromDate)
+          ? { ...row, ...value }
+          : row,
+      );
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.local));
+    }
+    await this.load('calendar_events');
+    return true;
+  }
 }
 
 function isLegacyCalendarEvent(row: DiaryRow): boolean {

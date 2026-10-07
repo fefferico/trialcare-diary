@@ -17,6 +17,7 @@ import { DiaryRow } from '../../models/diary.models';
 import { AppAutocompleteComponent } from '../../shared/app-autocomplete.component';
 import { DocumentAssociationPickerComponent } from '../../shared/document-association-picker.component';
 import { AppDatepickerComponent } from '../../shared/app-datepicker.component';
+import { AppDropdownComponent } from '../../shared/app-dropdown.component';
 import { AppTimepickerComponent } from '../../shared/app-timepicker.component';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { StorageService } from '../../core/storage.service';
@@ -31,6 +32,7 @@ interface CalendarEvent {
   date: string;
   time: string;
   category: string;
+  recurrenceGroupId?: string;
   specialist: string;
   location: string;
   detail: string;
@@ -45,7 +47,7 @@ interface CalendarEvent {
 @Component({
   selector: 'tc-calendar',
   standalone: true,
-  imports: [CommonModule, RouterLink, AppAutocompleteComponent, AppDatepickerComponent, AppTimepickerComponent, TooltipDirective, DocumentAssociationPickerComponent],
+  imports: [CommonModule, RouterLink, AppAutocompleteComponent, AppDatepickerComponent, AppDropdownComponent, AppTimepickerComponent, TooltipDirective, DocumentAssociationPickerComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './calendar.component.html',
 })
@@ -61,6 +63,10 @@ export class CalendarComponent implements OnInit, OnDestroy {
   readonly month = signal(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   readonly today = dateKey(new Date());
   readonly selectedDate = signal(dateKey(new Date()));
+  readonly historyCategory = signal('');
+  readonly historyQuery = signal('');
+  readonly historyFrom = signal('');
+  readonly historyTo = signal(dateKey(new Date()));
   readonly formOpen = signal(false);
   readonly title = signal('');
   readonly eventCategory = signal('');
@@ -77,6 +83,7 @@ export class CalendarComponent implements OnInit, OnDestroy {
   readonly skipEvent = signal<CalendarEvent | null>(null);
   readonly focusedEvent = signal<CalendarEvent | null>(null);
   readonly editingEvent = signal<CalendarEvent | null>(null);
+  readonly recurrenceScopePrompt = signal(false);
   readonly skipReason = signal('');
   readonly doseTimes = signal<Record<string, string>>({});
   readonly documentSearchResults = signal<DiaryRow[]>([]);
@@ -113,6 +120,26 @@ export class CalendarComponent implements OnInit, OnDestroy {
     ]),
   );
   readonly events = computed(() => toEvents(this.entries(), this.month()));
+  readonly historyCategories = computed(() => [...new Set(this.entries()
+    .filter((item) => item.section === 'calendar_events')
+    .map((item) => String(item.row['category'] ?? '').trim())
+    .filter(Boolean))].sort((a, b) => a.localeCompare(b, 'it')));
+  readonly historyEvents = computed(() => {
+    const query = this.historyQuery().trim().toLocaleLowerCase('it');
+    return this.entries()
+      .filter((item) => item.section === 'calendar_events')
+      .map(({ row }) => {
+        const date = String(row['date'] ?? '').slice(0, 10);
+        return { ...makeEvent(row, 'calendar_events', date), status: String(row['status'] ?? '') };
+      })
+      .filter((event) => validDate(event.date))
+      .filter((event) => !this.historyCategory() || event.category === this.historyCategory())
+      .filter((event) => !this.historyFrom() || event.date >= this.historyFrom())
+      .filter((event) => !this.historyTo() || event.date <= this.historyTo())
+      .filter((event) => !query || [event.title, event.category, event.specialist, event.location, event.detail]
+        .some((value) => value.toLocaleLowerCase('it').includes(query)))
+      .sort((a, b) => b.date.localeCompare(a.date) || a.time.localeCompare(b.time));
+  });
   readonly monthLabel = computed(() =>
     this.month().toLocaleDateString('it-IT', { month: 'long', year: 'numeric' }),
   );
@@ -191,12 +218,19 @@ export class CalendarComponent implements OnInit, OnDestroy {
     this.focusedEvent.set(null);
     this.focusedDocuments.set([]);
   }
+  scrollToEventHistory(): void {
+    this.host.nativeElement.querySelector('#event-history-title')?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    });
+  }
   openSectionEvent(event: CalendarEvent): void {
     this.focusedEvent.set(event);
     void this.loadFocusedDocuments(event);
   }
   async editCalendarEvent(event: CalendarEvent): Promise<void> {
     this.editingEvent.set(event);
+    this.recurrenceScopePrompt.set(false);
     this.repeat.set('none');
     this.title.set(event.title);
     this.eventCategory.set(event.category);
@@ -343,6 +377,7 @@ export class CalendarComponent implements OnInit, OnDestroy {
     this.documentSearchLoading.set(false);
     this.documentSearchResults.set([]);
     this.editingEvent.set(null);
+    this.recurrenceScopePrompt.set(false);
     this.title.set('');
     this.eventCategory.set('');
     this.specialist.set('');
@@ -365,6 +400,7 @@ export class CalendarComponent implements OnInit, OnDestroy {
     this.documentSearchLoading.set(false);
     this.formOpen.set(false);
     this.editingEvent.set(null);
+    this.recurrenceScopePrompt.set(false);
     this.associatedFiles.set([]);
     this.documentSearchResults.set([]);
     this.selectedDocuments.set([]);
@@ -379,9 +415,17 @@ export class CalendarComponent implements OnInit, OnDestroy {
     this.selectedDocuments.set([]);
     this.associatedFiles.set([]);
   }
-  async saveEvent(): Promise<void> {
+  async saveEvent(recurrenceScope?: 'single' | 'following' | 'all'): Promise<void> {
     if (!this.title().trim() || !this.eventDate()) return;
     const editing = this.editingEvent();
+    if (
+      editing?.recurrenceGroupId &&
+      this.eventCategory().trim() !== editing.category &&
+      !recurrenceScope
+    ) {
+      this.recurrenceScopePrompt.set(true);
+      return;
+    }
     if (!editing && this.pendingDocumentTargetIds.length) {
       this.saving.set(true);
       this.saveError.set('');
@@ -397,8 +441,24 @@ export class CalendarComponent implements OnInit, OnDestroy {
       return;
     }
     if (editing) {
+      this.recurrenceScopePrompt.set(false);
       this.saving.set(true);
       this.saveError.set('');
+      if (
+        editing.recurrenceGroupId &&
+        recurrenceScope &&
+        recurrenceScope !== 'single' &&
+        !(await this.data.updateCalendarEventSeries(
+          editing.recurrenceGroupId,
+          editing.childId ?? '',
+          { category: this.eventCategory().trim() || null },
+          recurrenceScope === 'following' ? editing.date : undefined,
+        ))
+      ) {
+        this.saving.set(false);
+        this.saveError.set(this.data.error() || 'Non è stato possibile aggiornare la categoria della serie.');
+        return;
+      }
       const ok = await this.updateEvent(editing, {
         title: this.title().trim(),
         category: this.eventCategory().trim() || null,
@@ -838,6 +898,7 @@ function makeEvent(row: DiaryRow, section: string, date: string): CalendarEvent 
     date,
     time,
     category: String(row['category'] ?? ''),
+    recurrenceGroupId: row['recurrence_group_id'] ? String(row['recurrence_group_id']) : undefined,
     specialist: String(row['specialist'] ?? ''),
     location: String(row['location'] ?? ''),
     detail: String(row['notes'] ?? ''),

@@ -1,6 +1,6 @@
 # API Catalog
 
-> Generato da `npm run update-context` il 07/10/2026, 17:33:24.
+> Generato da `npm run update-context` il 07/10/2026, 18:37:03.
 
 ## Servizi
 
@@ -89,6 +89,12 @@ File: [src/app/core/diary-data.service.ts](../src/app/core/diary-data.service.ts
   )`: `Promise<boolean>`
 - `remove(section: SectionId, row: DiaryRow)`: `Promise<void>`
 - `update(section: SectionId, id: string, value: Record<string, unknown>)`: `Promise<boolean>`
+- `updateCalendarEventSeries(
+    recurrenceGroupId: string,
+    childId: string,
+    value: Record<string, unknown>,
+    fromDate?: string,
+  )`: `Promise<boolean>`
 
 ### PdfExportService
 

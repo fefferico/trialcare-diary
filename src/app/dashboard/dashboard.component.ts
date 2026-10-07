@@ -16,6 +16,7 @@ import { CalendarPreviewComponent } from '../components/calendar-preview/calenda
 
 interface SearchResult {
   section: Exclude<SectionId, 'reports'>;
+  route: string;
   title: string;
   detail: string;
   path: string;
@@ -89,7 +90,7 @@ interface SearchResult {
               @for (result of results(); track result.section + result.path) {
                 <a
                   role="option"
-                  [routerLink]="'/' + result.section"
+                  [routerLink]="'/' + result.route"
                   [queryParams]="{ highlight: result.path, child: result.childId || null }"
                   (click)="isOpen.set(false)"
                   class="block rounded-xl px-3 py-3 hover:bg-teal-50 focus:bg-teal-50 focus:outline-none dark:hover:bg-slate-800 dark:focus:bg-slate-800"
@@ -326,6 +327,7 @@ export class DashboardComponent implements OnInit {
         .join(' · ');
       ranked.push({
         section: item.section,
+        route: item.section === 'calendar_events' ? 'calendar' : item.section,
         title,
         detail,
         path: item.row.id,
