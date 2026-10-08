@@ -26,6 +26,13 @@ interface PreviewItem {
   kind: string;
   path: string;
   monthOnly?: boolean;
+  isMedicationDose?: boolean;
+}
+interface MedicationSchedulePeriod {
+  start_date: string;
+  end_date: string;
+  dosage: string;
+  schedule_times: string;
 }
 @Component({
   selector: 'tc-calendar-preview',
@@ -41,6 +48,9 @@ export class CalendarPreviewComponent implements OnInit {
   private readonly data = inject(DiaryDataService);
   readonly entries = signal<SearchableDiaryItem[]>([]);
   readonly loading = signal(true);
+  readonly savingDose = signal(false);
+  readonly doseError = signal('');
+  readonly selectedView = signal<'today' | 'upcoming'>('today');
   private readonly windowEnd = addDays(dateKey(new Date()), 30);
   private readonly today = dateKey(new Date());
   readonly upcoming = computed(() =>
@@ -71,50 +81,72 @@ export class CalendarPreviewComponent implements OnInit {
     ...this.entries()
       .filter((item) => item.section === 'medications')
       .flatMap((item) => {
-        const start = String(item.row['start_date'] ?? '');
-        const end = String(item.row['end_date'] ?? '');
-        const from = start && start > this.today ? start : this.today;
-        const until = end && end < this.windowEnd ? end : this.windowEnd;
-        const times = parseScheduleTimes(String(item.row['schedule_times'] ?? ''));
-        if (from > until) return [];
+        const periods = medicationSchedulePeriods(item.row);
         const doses = this.entries().filter((dose) => dose.section === 'medication_doses' && dose.row['medication_id'] === item.row.id);
         const output: PreviewItem[] = [];
-        for (let cursor = parseDate(from); cursor && dateKey(cursor) <= until; cursor.setDate(cursor.getDate() + 1)) {
-          const date = dateKey(cursor);
-          for (const slot of times) {
-            const time = slot.start;
-            const dose = doses.find((candidate) => candidate.row['scheduled_date'] === date && String(candidate.row['scheduled_time'] ?? '').slice(0, 5) === time);
-            const taken = !!dose;
-            output.push({
-              id: `dose-${item.row.id}-${date}-${time}`,
-              highlightId: String(item.row.id),
-              childId: item.row['child_id'] ? String(item.row['child_id']) : undefined,
-              title: `${String(item.row['name'] ?? 'Farmaco')} · ${String(item.row['dosage'] ?? '')}`.trim(),
-              date,
-              time,
-              status: taken ? 'Fatto' : (slot.end ? `Fascia ${slot.start}–${slot.end}` : `Orario ${slot.start}`),
-              doseTaken: taken,
-              kind: [slot.end ? `Fascia ${slot.start}–${slot.end}` : `Orario ${slot.start}`,
-                dose?.row['taken_at'] ? `somministrata alle ${new Date(String(dose.row['taken_at'])).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : ''].filter(Boolean).join(' · '),
-              path: '/calendar',
-            });
+        for (const period of periods) {
+          const periodStart = period.start_date || String(item.row['start_date'] ?? '');
+          const periodEnd = period.end_date || (periods.length === 1 ? String(item.row['end_date'] ?? '') : '');
+          const from = periodStart && periodStart > this.today ? periodStart : this.today;
+          const until = periodEnd && periodEnd < this.windowEnd ? periodEnd : this.windowEnd;
+          if (from > until) continue;
+          const times = parseScheduleTimes(period.schedule_times);
+          for (let cursor = parseDate(from); cursor && dateKey(cursor) <= until; cursor.setDate(cursor.getDate() + 1)) {
+            const date = dateKey(cursor);
+            for (const slot of times) {
+              const time = slot.start;
+              const dose = doses.find((candidate) => candidate.row['scheduled_date'] === date && String(candidate.row['scheduled_time'] ?? '').slice(0, 5) === time);
+              const taken = !!dose;
+              output.push({
+                id: `dose-${item.row.id}-${date}-${time}`,
+                highlightId: String(item.row.id),
+                childId: item.row['child_id'] ? String(item.row['child_id']) : undefined,
+                title: `${String(item.row['name'] ?? 'Farmaco')} · ${period.dosage}`.trim(),
+                date,
+                time,
+                status: taken ? 'Fatto' : (slot.end ? `Fascia ${slot.start}–${slot.end}` : `Orario ${slot.start}`),
+                doseTaken: taken,
+                isMedicationDose: true,
+                kind: [slot.end ? `Fascia ${slot.start}–${slot.end}` : `Orario ${slot.start}`,
+                  dose?.row['taken_at'] ? `somministrata alle ${new Date(String(dose.row['taken_at'])).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : ''].filter(Boolean).join(' · '),
+                path: '/calendar',
+              });
+            }
           }
         }
         return output;
       }),
     ].sort(byDateAndTime),
   );
+  readonly todayItems = computed(() => this.upcoming().filter((item) => item.date === this.today));
+  readonly futureItems = computed(() => this.upcoming().filter((item) => item.date > this.today));
+  readonly todayCalendarEvents = computed(() => this.todayItems().filter((item) => !item.isMedicationDose));
+  readonly futureCalendarEvents = computed(() => this.futureItems().filter((item) => !item.isMedicationDose));
+  readonly futureMedicationDoses = computed(() => this.futureItems().filter((item) => item.isMedicationDose));
   readonly activeTherapies = computed(() =>
     this.entries()
       .filter((item) => item.section === 'therapies' || item.section === 'medications')
       .filter((item) => {
+        if (item.section === 'medications') {
+          return medicationSchedulePeriods(item.row).some((period, index, periods) => {
+            const start = period.start_date || String(item.row['start_date'] ?? '');
+            const end = period.end_date || (periods.length === 1 ? String(item.row['end_date'] ?? '') : '');
+            return (!start || start <= this.today) && (!end || end >= this.today);
+          });
+        }
         const start = String(item.row['start_date'] ?? '');
         const end = String(item.row['end_date'] ?? '');
         return (!start || start <= this.today) && (!end || end >= this.today);
       })
       .map((item) => {
         const dosesToday = item.section === 'medications'
-          ? parseScheduleTimes(String(item.row['schedule_times'] ?? '')).map((slot) => {
+          ? medicationSchedulePeriods(item.row)
+            .filter((period, index, periods) => {
+              const start = period.start_date || String(item.row['start_date'] ?? '');
+              const end = period.end_date || (periods.length === 1 ? String(item.row['end_date'] ?? '') : '');
+              return (!start || start <= this.today) && (!end || end >= this.today);
+            })
+            .flatMap((period) => parseScheduleTimes(period.schedule_times).map((slot) => {
             const dose = this.entries().find((entry) => entry.section === 'medication_doses' &&
               entry.row['medication_id'] === item.row.id && entry.row['scheduled_date'] === this.today &&
               String(entry.row['scheduled_time'] ?? '').slice(0, 5) === slot.start);
@@ -123,11 +155,13 @@ export class CalendarPreviewComponent implements OnInit {
               id: slot.start,
               label: slot.end ? `Fascia ${slot.start}–${slot.end}` : slot.start,
               taken: !!dose,
+              medicationId: String(item.row.id),
+              childId: item.row['child_id'] ? String(item.row['child_id']) : undefined,
               actualTime: takenAt && !Number.isNaN(takenAt.getTime())
                 ? takenAt.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
                 : '',
             };
-          })
+          }))
           : [];
         return {
           id: item.row.id,
@@ -137,7 +171,15 @@ export class CalendarPreviewComponent implements OnInit {
           date: '',
           kind:
             (item.section === 'medications'
-              ? [item.row['dosage'], item.row['schedule_times']].filter(Boolean).join(' · ')
+              ? medicationSchedulePeriods(item.row)
+                .filter((period, index, periods) => {
+                  const start = period.start_date || String(item.row['start_date'] ?? '');
+                  const end = period.end_date || (periods.length === 1 ? String(item.row['end_date'] ?? '') : '');
+                  return (!start || start <= this.today) && (!end || end >= this.today);
+                })
+                .map((period) => [period.dosage, period.schedule_times].filter(Boolean).join(' · '))
+                .filter(Boolean)
+                .join(' | ')
               : [item.row['frequency'], item.row['facility']].filter(Boolean).join(' · ')) || 'In corso',
           dosesToday,
           path: item.section === 'medications' ? '/medications' : '/therapies',
@@ -188,11 +230,43 @@ export class CalendarPreviewComponent implements OnInit {
       .filter((item) => isBetween(item.date, this.today, this.windowEnd))
       .sort(byDate),
   );
+  readonly todayDeadlines = computed(() => this.deadlines().filter((item) => item.date === this.today));
+  readonly futureDeadlines = computed(() => this.deadlines().filter((item) => item.date > this.today));
+  readonly todayMedicineWarnings = computed(() => this.medicineWarnings().filter((item) => item.date === this.today));
+  readonly futureMedicineWarnings = computed(() => this.medicineWarnings().filter((item) => item.date > this.today));
   async ngOnInit(): Promise<void> {
     await this.auth.ready;
     this.entries.set(await this.data.loadAllForSearch());
     this.loading.set(false);
     this.centerNextEvent();
+  }
+  canMarkDose(time: string): boolean {
+    if (this.today !== dateKey(new Date())) return false;
+    const now = new Date();
+    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    return currentTime >= time;
+  }
+  async markDoseTaken(item: { id: string; childId?: string }, dose: { id: string; taken: boolean }): Promise<void> {
+    if (!item.childId || dose.taken || !this.canMarkDose(dose.id) || this.savingDose()) return;
+    const now = new Date();
+    const actualDate = parseDate(this.today);
+    if (!actualDate) return;
+    actualDate.setHours(now.getHours(), now.getMinutes(), 0, 0);
+    this.savingDose.set(true);
+    this.doseError.set('');
+    const saved = await this.data.markMedicationDoseTaken(
+      item.id,
+      item.childId,
+      this.today,
+      dose.id,
+      actualDate.toISOString(),
+    );
+    this.savingDose.set(false);
+    if (!saved) {
+      this.doseError.set(this.data.error() || 'Non è stato possibile registrare la somministrazione.');
+      return;
+    }
+    this.entries.set(await this.data.loadAllForSearch());
   }
   private centerNextEvent(): void {
     const now = new Date();
@@ -224,6 +298,26 @@ export class CalendarPreviewComponent implements OnInit {
 }
 function dateKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+function medicationSchedulePeriods(row: SearchableDiaryItem['row']): MedicationSchedulePeriod[] {
+  const stored = row['schedule_periods'];
+  if (Array.isArray(stored)) {
+    const periods = stored
+      .filter((value): value is Record<string, unknown> => !!value && typeof value === 'object')
+      .map((value) => ({
+        start_date: String(value['start_date'] ?? '').slice(0, 10),
+        end_date: String(value['end_date'] ?? '').slice(0, 10),
+        dosage: String(value['dosage'] ?? row['dosage'] ?? ''),
+        schedule_times: String(value['schedule_times'] ?? ''),
+      }));
+    if (periods.length) return periods;
+  }
+  return [{
+    start_date: String(row['start_date'] ?? '').slice(0, 10),
+    end_date: String(row['end_date'] ?? '').slice(0, 10),
+    dosage: String(row['dosage'] ?? ''),
+    schedule_times: String(row['schedule_times'] ?? ''),
+  }];
 }
 function addDays(date: string, days: number): string {
   const [y, m, d] = date.split('-').map(Number);

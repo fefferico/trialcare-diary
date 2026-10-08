@@ -59,6 +59,7 @@ export class CalendarComponent implements OnInit, OnDestroy {
   readonly data = inject(DiaryDataService);
   readonly weekdays = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
   readonly entries = signal<SearchableDiaryItem[]>([]);
+  readonly expandedSkippedEvents = signal<Record<string, boolean>>({});
   readonly loading = signal(true);
   readonly month = signal(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   readonly today = dateKey(new Date());
@@ -102,7 +103,7 @@ export class CalendarComponent implements OnInit, OnDestroy {
       .filter((item) => item.section === 'children')
       .map((item) => ({ id: item.row.id, name: String(item.row['name'] ?? 'Profilo') })),
   );
-  readonly categoryOptions = ['Visita', 'Esame', 'Terapia', 'Controllo', 'Trial clinico', 'Altro'];
+  readonly categoryOptions = ['Visita Pediatrica', 'Visita Specialistica', 'Esame', 'Terapia', 'Controllo', 'Trial clinico', 'Altro'];
   readonly specialistOptions = computed(() =>
     this.suggestionValues([
       ...this.selectedChildRows('contacts')
@@ -332,6 +333,20 @@ export class CalendarComponent implements OnInit, OnDestroy {
   }
   isSkipped(event: CalendarEvent): boolean {
     return (event.status ?? '').trim().toLocaleLowerCase('it') === 'saltato';
+  }
+  isCompletedDose(event: CalendarEvent): boolean {
+    return !!event.medicationId && !!event.doseTaken;
+  }
+  isCompleted(event: CalendarEvent): boolean {
+    if (this.isSkipped(event) || this.isCanceled(event)) return false;
+    if (event.date < this.today) return true;
+    if (event.date > this.today || !event.time) return false;
+    const now = new Date();
+    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    return event.time < currentTime;
+  }
+  toggleSkippedEvent(eventId: string): void {
+    this.expandedSkippedEvents.update((expanded) => ({ ...expanded, [eventId]: !expanded[eventId] }));
   }
   isCanceled(event: CalendarEvent): boolean {
     return ['cancellato', 'cancellata', 'annullato', 'annullata', 'canceled', 'cancelled'].includes(
@@ -594,12 +609,12 @@ export class CalendarComponent implements OnInit, OnDestroy {
       this.saving.set(true);
       this.saveError.set('');
       skipped = await this.data.markMedicationDoseSkipped(
-          event.medicationId,
-          event.childId,
-          event.date,
-          event.time,
-          this.skipReason().trim(),
-        );
+        event.medicationId,
+        event.childId,
+        event.date,
+        event.time,
+        this.skipReason().trim(),
+      );
       this.saving.set(false);
       if (!skipped) this.saveError.set(this.data.error() || 'Non è stato possibile registrare la dose saltata.');
     } else {

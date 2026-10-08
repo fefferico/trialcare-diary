@@ -79,12 +79,16 @@ import { BiometricAuthService } from '../core/biometric-auth.service';
 export class LoginComponent {
   readonly auth = inject(AuthService);
   readonly biometrics = inject(BiometricAuthService);
+  constructor() {
+    this.biometrics.refreshEnrollmentStatus();
+  }
   email = '';
   password = '';
   createAccount = false;
   async submit(): Promise<void> {
     if (this.createAccount) await this.auth.signUp(this.email, this.password);
     else if (await this.auth.signIn(this.email, this.password)) {
+      await this.biometrics.syncCurrentSession();
       sessionStorage.setItem('trialcare-biometric-offer-pending', 'true');
       window.location.reload();
     }

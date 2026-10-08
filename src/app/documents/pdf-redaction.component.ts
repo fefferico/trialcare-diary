@@ -86,7 +86,7 @@ type ResizeCorner = 'nw' | 'ne' | 'sw' | 'se';
       testo selezionabile verrà rimosso dalla copia.
     </p>
     <label class="form-field mt-3"
-      ><span>Parole da cercare (testo selezionabile o scansioni con OCR già estratto)</span><input
+      ><span>Parole da cercare (se non trova risultati, prova l’OCR locale)</span><input
         class="field-control"
         [value]="terms()"
         (input)="terms.set($any($event.target).value)"
@@ -117,7 +117,9 @@ type ResizeCorner = 'nw' | 'ne' | 'sw' | 'se';
       <p class="mt-2 text-sm" role="status">{{ notice() }}</p>
     }
     @if (pageCount()) {
-      <div class="mt-3 flex items-center gap-3">
+      <div class="mt-4 grid items-start gap-4 lg:grid-cols-2">
+      <div class="min-w-0">
+      <div class="flex items-center gap-3">
         <button
           type="button"
           class="button-secondary"
@@ -255,8 +257,9 @@ type ResizeCorner = 'nw' | 'ne' | 'sw' | 'se';
           </p>
         }
       </section>
+      </div>
       <section
-        class="mt-4 rounded-xl border border-slate-200 p-3 dark:border-slate-700 sm:p-4"
+        class="min-w-0 rounded-xl border border-slate-200 p-3 dark:border-slate-700 sm:p-4"
         aria-labelledby="pdf-extracted-text-title"
       >
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -276,6 +279,11 @@ type ResizeCorner = 'nw' | 'ne' | 'sw' | 'se';
           </p>
         }
         @if (!busy()) {
+          @if (textEdited()) {
+            <p class="mt-2 text-xs leading-5 text-teal-700 dark:text-teal-300">
+              È conservato il testo già associato al documento. Se aggiungi nuove zone oscurate e vuoi aggiornarlo, esegui l’OCR dopo averle disegnate.
+            </p>
+          }
           <label class="form-field mt-3">
             <span>Testo da salvare con il documento (le aree oscurate sono escluse automaticamente)</span>
             <textarea
@@ -309,6 +317,7 @@ type ResizeCorner = 'nw' | 'ne' | 'sw' | 'se';
           </p>
         }
       </section>
+      </div>
       <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
         Trascina sull’anteprima per aggiungere aree nere. Le zone oscurate non vengono incluse nel testo salvato.
         Controlla tutte le pagine prima di procedere.
@@ -321,6 +330,7 @@ export class PdfRedactionComponent implements OnChanges {
   @ViewChild('preview') preview?: ElementRef<HTMLCanvasElement>;
   @Input({ required: true }) file!: File;
   @Input() initialTerms = '';
+  @Input() initialExtractedText = '';
   @Output() redacted = new EventEmitter<File>();
   @Output() textForSaving = new EventEmitter<{ file: File; text: string }>();
   @Output() processingChange = new EventEmitter<{ file: File; processing: boolean }>();
@@ -585,8 +595,10 @@ export class PdfRedactionComponent implements OnChanges {
         const pageLines = this.extractNativeLines(textContent, viewport);
         this.nativePages.push(pageLines);
       }
-      const initialText = this.buildExtractedText();
+      const extractedText = this.buildExtractedText();
+      const initialText = this.initialExtractedText.trim() || extractedText;
       if (this.file === file) {
+        this.textEdited.set(!!this.initialExtractedText.trim());
         this.setTextForSaving(initialText);
       }
       this.page.set(1);
@@ -598,9 +610,11 @@ export class PdfRedactionComponent implements OnChanges {
       this.processingChange.emit({ file, processing: false });
     }
   }
-  async runOcr(): Promise<void> {
+  async runOcr(preserveExistingText = false): Promise<void> {
     if (!this.pdf || this.busy()) return;
     const file = this.file;
+    const savedText = this.extractedText();
+    const textWasEdited = this.textEdited();
     this.busy.set(true);
     this.processingChange.emit({ file, processing: true });
     this.notice.set('');
@@ -620,10 +634,15 @@ export class PdfRedactionComponent implements OnChanges {
           this.ocrUsed.set(true);
         }
       }
-      this.textEdited.set(false);
       const recomputed = this.buildExtractedText();
       if (recomputed && this.file === file) {
-        this.setTextForSaving(recomputed);
+        if (preserveExistingText && savedText.trim()) {
+          this.setTextForSaving(savedText);
+          this.textEdited.set(textWasEdited);
+        } else {
+          this.textEdited.set(false);
+          this.setTextForSaving(recomputed);
+        }
         this.notice.set('OCR completato: il testo estratto esclude le parti oscurate.');
       } else if (!recomputed) {
         this.notice.set('L’OCR non ha riconosciuto testo nelle pagine.');
@@ -1188,6 +1207,7 @@ export class PdfRedactionComponent implements OnChanges {
       this.notice.set('Inserisci almeno una parola o frase da cercare.');
       return;
     }
+    const hadOcrResults = this.ocrPages.some(Boolean);
     this.busy.set(true);
     this.matches.set(0);
     let count = 0;
@@ -1256,6 +1276,15 @@ export class PdfRedactionComponent implements OnChanges {
           `${count} aree individuate; verifica le aree su ogni pagina e premi "Oscura risultati" per confermare.`,
         );
       } else {
+        if (!hadOcrResults && !this.ocrAttempted()) {
+          this.notice.set('Nessuna corrispondenza nel testo selezionabile. Avvio OCR locale…');
+          this.busy.set(false);
+          await this.runOcr(true);
+          if (this.ocrPages.some(Boolean)) {
+            await this.findTerms();
+            return;
+          }
+        }
         const hasText = this.extractedText().length > 0;
         this.notice.set(
           hasText
@@ -1305,7 +1334,8 @@ export class PdfRedactionComponent implements OnChanges {
         );
       }
       const blob = output.output('blob');
-      const redactedFile = new File([blob], this.file.name.replace(/\.pdf$/i, '-oscurato.pdf'), {
+      const baseName = this.file.name.replace(/(?:-oscurato)?\.pdf$/i, '');
+      const redactedFile = new File([blob], `${baseName}-oscurato.pdf`, {
         type: 'application/pdf',
       });
       this.lastAppliedFile = redactedFile;

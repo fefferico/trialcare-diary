@@ -36,6 +36,20 @@ export class BiometricAuthService {
     }
   }
 
+  refreshEnrollmentStatus(): void {
+    this.enrolled.set(this.readVault() !== null);
+  }
+
+  async syncCurrentSession(): Promise<void> {
+    const vault = this.readVault();
+    const client = this.supabase.client;
+    if (!vault || !client) return;
+    const { data, error } = await client.auth.getSession();
+    if (!error && data.session?.user.id === vault.userId && data.session.refresh_token) {
+      this.writeVault({ ...vault, refreshToken: data.session.refresh_token });
+    }
+  }
+
   async enroll(): Promise<void> {
     const user = this.auth.user();
     const client = this.supabase.client;

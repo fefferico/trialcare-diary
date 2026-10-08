@@ -56,7 +56,8 @@ export class AuthService {
   }
 
   async signOut(): Promise<void> {
-    await this.supabase.client?.auth.signOut();
+    // Keep the device's biometric refresh token valid for its next local sign-in.
+    await this.supabase.client?.auth.signOut({ scope: 'local' });
     this.setSession(null);
   }
   private setSession(session: Session | null): void {

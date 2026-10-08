@@ -1,13 +1,27 @@
 <section class="panel space-y-4">
   <div class="flex items-start justify-between gap-3">
     <div>
-      <p class="eyebrow">PROSSIMI 30 GIORNI</p>
-      <h2 class="mt-1 text-xl font-semibold">In programma</h2>
+      <!-- <p class="eyebrow">{{ selectedView() === 'today' ? 'OGGI' : 'DA DOMANI · PROSSIMI 30 GIORNI' }}</p> -->
+      <h2 class="mt-1 text-xl font-semibold">{{ selectedView() === 'today' ? 'La giornata di oggi' : 'In programma' }}
+      </h2>
       <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-        Eventi, terapie attive e date da ricordare.
+        {{ selectedView() === 'today' ? 'Eventi, farmaci e terapie da seguire oggi.' : 'Eventi e date da ricordare nei
+        prossimi 30 giorni.' }}
       </p>
     </div>
     <a routerLink="/calendar" class="button-secondary shrink-0">Apri calendario</a>
+  </div>
+  <div class="flex justify-center">
+    <div class="grid w-full max-w-xs grid-cols-2 rounded-xl bg-slate-100 p-1 dark:bg-slate-800" role="tablist"
+      aria-label="Periodo del programma">
+      <button type="button" role="tab" [attr.aria-selected]="selectedView() === 'today'"
+        (click)="selectedView.set('today')" class="w-full text-center rounded-lg px-4 py-2 text-sm font-semibold"
+        [ngClass]="selectedView() === 'today' ? 'bg-white text-teal-800 shadow-sm dark:bg-slate-700 dark:text-teal-200' : 'text-slate-600 dark:text-slate-300'">Oggi</button>
+      <button type="button" role="tab" [attr.aria-selected]="selectedView() === 'upcoming'"
+        (click)="selectedView.set('upcoming')" class="w-full text-center rounded-lg px-4 py-2 text-sm font-semibold"
+        [ngClass]="selectedView() === 'upcoming' ? 'bg-white text-teal-800 shadow-sm dark:bg-slate-700 dark:text-teal-200' : 'text-slate-600 dark:text-slate-300'">Da
+        domani</button>
+    </div>
   </div>
   @if (loading()) {
   <div class="grid gap-4 md:grid-cols-3" aria-label="Caricamento programma" aria-busy="true">
@@ -24,7 +38,7 @@
     }
   </div>
   } @else {
-  @if (medicineWarnings().length) {
+  @if ((selectedView() === 'today' ? todayMedicineWarnings() : futureMedicineWarnings()).length) {
   <section class="rounded-2xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/40"
     aria-live="polite">
     <div class="flex items-start justify-between gap-3">
@@ -40,7 +54,8 @@
         class="shrink-0 text-sm font-semibold text-amber-900 underline dark:text-amber-100">Apri inventario</a>
     </div>
     <ul class="mt-3 grid gap-2 sm:grid-cols-2">
-      @for (item of medicineWarnings().slice(0, 4); track item.id) {
+      @for (item of (selectedView() === 'today' ? todayMedicineWarnings() : futureMedicineWarnings()).slice(0, 4); track
+      item.id) {
       <li>
         <a routerLink="/medicine-cabinet" [queryParams]="{ highlight: item.id, child: item.childId || null }"
           class="flex justify-between gap-3 rounded-xl bg-white/80 px-3 py-2 text-sm dark:bg-slate-900/70"><strong
@@ -55,11 +70,12 @@
   <div class="grid gap-4 md:grid-cols-3">
     <section>
       <h3 class="text-sm font-semibold">
-        Eventi in arrivo <span class="text-slate-400">{{ upcoming().length }}</span>
+        {{ selectedView() === 'today' ? 'Eventi di oggi' : 'Eventi in arrivo' }} <span class="text-slate-400">{{
+          (selectedView() === 'today' ? todayCalendarEvents() : futureCalendarEvents()).length }}</span>
       </h3>
-      @if (upcoming().length) {
+      @if ((selectedView() === 'today' ? todayCalendarEvents() : futureCalendarEvents()).length) {
       <ul class="preview-scroll-list mt-2 max-h-64 space-y-2 overflow-y-auto overscroll-contain pr-1">
-        @for (item of upcoming(); track item.id) {
+        @for (item of (selectedView() === 'today' ? todayCalendarEvents() : futureCalendarEvents()); track item.id) {
         <li>
           <a [attr.data-event-id]="item.id" [routerLink]="item.path"
             [queryParams]="item.path === '/calendar' ? { date: item.date } : { highlight: item.highlightId, child: item.childId || null }"
@@ -68,7 +84,8 @@
                         ? 'bg-rose-50 dark:bg-rose-950/30'
                         : 'bg-slate-50 dark:bg-slate-800/60'
                     "><span class="min-w-12 text-xs font-semibold text-teal-700 dark:text-teal-300">{{
-              (item.monthOnly ? monthYear(item.date) : shortDate(item.date)) }}</span><span class="min-w-0"><strong class="block truncate text-sm">{{ item.title
+              (item.monthOnly ? monthYear(item.date) : shortDate(item.date)) }}</span><span class="min-w-0"><strong
+                class="block truncate text-sm">{{ item.title
                 }}</strong><span class="text-xs text-slate-500">{{ item.kind }}</span>
               @if (item.specialist) {
               <span class="mt-1 block text-xs text-slate-500">{{ item.specialist }}</span>
@@ -81,66 +98,108 @@
                 class="mt-1 ml-2 inline-flex rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-800 dark:bg-rose-900/60 dark:text-rose-200">Saltato</span>
               }
               @if (item.doseTaken) {
-              <span class="mt-1 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200">Somministrata</span>
+              <span
+                class="mt-1 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200">Somministrata</span>
               }</span></a>
         </li>
         }
       </ul>
       } @else {
-      <p class="mt-2 text-sm text-slate-500">Nessun evento in arrivo.</p>
+      <p class="mt-2 text-sm text-slate-500">{{ selectedView() === 'today' ? 'Nessun evento in programma oggi.' :
+        'Nessun evento in arrivo.' }}</p>
       }
     </section>
     <section>
       <h3 class="text-sm font-semibold">
-        Terapie in corso <span class="text-slate-400">{{ activeTherapies().length }}</span>
+        Terapie in corso <span class="text-slate-400">{{ selectedView() === 'today' ? activeTherapies().length :
+          futureMedicationDoses().length }}</span>
       </h3>
-      @if (activeTherapies().length) {
+      @if (selectedView() === 'today' && activeTherapies().length) {
       <ul class="preview-scroll-list mt-2 max-h-64 space-y-2 overflow-y-auto overscroll-contain pr-1">
         @for (item of activeTherapies(); track item.id) {
         <li>
-          <a [routerLink]="item.path" [queryParams]="{ highlight: item.highlightId, child: item.childId || null }"
-            class="block rounded-xl bg-slate-50 p-3 text-sm hover:bg-teal-50 dark:bg-slate-800/60 dark:hover:bg-slate-800"><strong
-              class="block truncate">{{ item.title }}</strong><span class="text-xs text-slate-500">{{ item.kind
-              }}</span>
+          <div class="rounded-xl bg-slate-50 p-3 text-sm dark:bg-slate-800/60">
+            <a [routerLink]="item.path" [queryParams]="{ highlight: item.highlightId, child: item.childId || null }"
+              class="block rounded-lg hover:text-teal-700 dark:hover:text-teal-300"><strong class="block truncate">{{
+                item.title }}</strong><span class="text-xs text-slate-500">{{ item.kind
+                }}</span></a>
             @if (item.dosesToday.length) {
             <ul class="mt-2 space-y-1 border-t border-slate-200 pt-2 dark:border-slate-700">
               @for (dose of item.dosesToday; track dose.id) {
-              <li class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs">
+              <li class="flex flex-wrap items-center justify-between gap-2 text-xs">
                 <span class="text-slate-600 dark:text-slate-300">{{ dose.label }}</span>
-                <span class="rounded-full px-2 py-0.5 font-semibold"
-                  [ngClass]="dose.taken ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200' : 'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-100'">
-                  {{ dose.taken ? 'Somministrata' : 'Da segnare' }}@if (dose.taken && dose.actualTime) { alle {{ dose.actualTime }}}
+                <span class="flex flex-wrap items-center gap-2">
+                  <span class="rounded-full px-2 py-0.5 font-semibold"
+                    [ngClass]="dose.taken ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200' : 'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-100'">
+                    {{ dose.taken ? 'Somministrata' : 'Da fare' }}@if (dose.taken && dose.actualTime) { alle {{
+                    dose.actualTime }}}
+                  </span>
+                  @if (!dose.taken && canMarkDose(dose.id)) {
+                  <button type="button" class="button-primary !px-3 !py-1.5 text-[11px] font-bold"
+                    [disabled]="savingDose() || !item.childId" (click)="markDoseTaken(item, dose)">
+                    {{ savingDose() ? '...' : 'FATTO' }}
+                  </button>
+                  }
                 </span>
               </li>
               }
             </ul>
             }
-            </a>
+          </div>
+        </li>
+        }
+      </ul>
+      @if (doseError()) {
+      <p class="mt-2 text-sm text-rose-700 dark:text-rose-300" role="alert">{{ doseError() }}</p>
+      }
+      } @else if (selectedView() === 'today') {
+      <p class="mt-2 text-sm text-slate-500">Nessuna terapia attiva registrata.</p>
+      }
+      @if (selectedView() === 'upcoming') {
+      @if (futureMedicationDoses().length) {
+      <ul class="preview-scroll-list mt-2 max-h-64 space-y-2 overflow-y-auto overscroll-contain pr-1">
+        @for (item of futureMedicationDoses(); track item.id) {
+        <li>
+          <a [attr.data-event-id]="item.id" routerLink="/calendar" [queryParams]="{ date: item.date }"
+            class="flex gap-3 rounded-xl bg-slate-50 p-3 hover:bg-teal-50 dark:bg-slate-800/60 dark:hover:bg-slate-800">
+            <span class="min-w-12 text-xs font-semibold text-teal-700 dark:text-teal-300">{{ shortDate(item.date)
+              }}</span>
+            <span class="min-w-0"><strong class="block truncate text-sm">{{ item.title }}</strong>
+              <span class="text-xs text-slate-500">{{ item.kind }}</span>
+              @if (item.doseTaken) {
+              <span class="mt-1 block text-xs font-semibold text-emerald-700 dark:text-emerald-300">Somministrata</span>
+              }
+            </span>
+          </a>
         </li>
         }
       </ul>
       } @else {
-      <p class="mt-2 text-sm text-slate-500">Nessuna terapia attiva registrata.</p>
+      <p class="mt-2 text-sm text-slate-500">Nessuna somministrazione programmata nei prossimi 30 giorni.</p>
+      }
       }
     </section>
     <section>
       <h3 class="text-sm font-semibold">
-        Scadenze prossime <span class="text-slate-400">{{ deadlines().length }}</span>
+        {{ selectedView() === 'today' ? 'Scadenze di oggi' : 'Scadenze prossime' }} <span class="text-slate-400">{{
+          (selectedView() === 'today' ? todayDeadlines() : futureDeadlines()).length }}</span>
       </h3>
-      @if (deadlines().length) {
+      @if ((selectedView() === 'today' ? todayDeadlines() : futureDeadlines()).length) {
       <ul class="preview-scroll-list mt-2 max-h-64 space-y-2 overflow-y-auto overscroll-contain pr-1">
-        @for (item of deadlines(); track item.id) {
+        @for (item of (selectedView() === 'today' ? todayDeadlines() : futureDeadlines()); track item.id) {
         <li>
           <a [routerLink]="item.path" [queryParams]="{ highlight: item.highlightId, child: item.childId || null }"
             class="flex gap-3 rounded-xl bg-slate-50 p-3 hover:bg-amber-50 dark:bg-slate-800/60 dark:hover:bg-slate-800"><span
-              class="min-w-12 text-xs font-semibold text-amber-700 dark:text-amber-300">{{ item.monthOnly ? monthYear(item.date) : shortDate(item.date)
+              class="min-w-12 text-xs font-semibold text-amber-700 dark:text-amber-300">{{ item.monthOnly ?
+              monthYear(item.date) : shortDate(item.date)
               }}</span><span class="min-w-0"><strong class="block truncate text-sm">{{ item.title }}</strong><span
                 class="text-xs text-slate-500">{{ item.kind }}</span></span></a>
         </li>
         }
       </ul>
       } @else {
-      <p class="mt-2 text-sm text-slate-500">Nessuna scadenza nei prossimi 30 giorni.</p>
+      <p class="mt-2 text-sm text-slate-500">{{ selectedView() === 'today' ? 'Nessuna scadenza oggi.' : 'Nessuna
+        scadenza nei prossimi 30 giorni.' }}</p>
       }
     </section>
   </div>

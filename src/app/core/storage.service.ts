@@ -68,6 +68,19 @@ export class StorageService {
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     return true;
   }
+  async getLocalFile(id: string): Promise<File | null> {
+    const database = await this.openLocalFileDatabase();
+    try {
+      const entry = await new Promise<{ name: string; type: string; blob: Blob } | undefined>((resolve, reject) => {
+        const request = database.transaction('files', 'readonly').objectStore('files').get(id);
+        request.onsuccess = () => resolve(request.result as { name: string; type: string; blob: Blob } | undefined);
+        request.onerror = () => reject(request.error);
+      });
+      return entry?.blob ? new File([entry.blob], entry.name, { type: entry.type || entry.blob.type }) : null;
+    } finally {
+      database.close();
+    }
+  }
   async removeLocalFile(id: string): Promise<void> {
     const database = await this.openLocalFileDatabase();
     try {
@@ -100,6 +113,18 @@ export class StorageService {
       .from('clinical-documents')
       .createSignedUrl(path, 60);
     return error ? null : data.signedUrl;
+  }
+  async downloadDocument(path: string): Promise<Blob | null> {
+    const client = this.supabase.client;
+    if (!client || !this.auth.user()) return null;
+    const { data, error } = await client.storage.from('clinical-documents').download(path);
+    return error ? null : data;
+  }
+  async removeDocument(path: string): Promise<boolean> {
+    const client = this.supabase.client;
+    if (!client || !this.auth.user()) return false;
+    const { error } = await client.storage.from('clinical-documents').remove([path]);
+    return !error;
   }
   async uploadVoice(file: File, childId: string): Promise<string | null> {
     const client = this.supabase.client;

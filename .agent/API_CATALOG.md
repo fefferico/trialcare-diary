@@ -1,6 +1,6 @@
 # API Catalog
 
-> Generato da `npm run update-context` il 07/10/2026, 18:37:03.
+> Generato da `npm run update-context` il 08/10/2026, 09:13:35.
 
 ## Servizi
 
@@ -17,6 +17,8 @@ File: [src/app/core/auth.service.ts](../src/app/core/auth.service.ts)
 File: [src/app/core/biometric-auth.service.ts](../src/app/core/biometric-auth.service.ts)
 
 - `checkAvailability()`: `Promise<void>`
+- `refreshEnrollmentStatus()`: `void`
+- `syncCurrentSession()`: `Promise<void>`
 - `enroll()`: `Promise<void>`
 - `signIn()`: `Promise<void>`
 - `revoke()`: `void`
@@ -109,8 +111,11 @@ File: [src/app/core/storage.service.ts](../src/app/core/storage.service.ts)
 - `upload(file: File, childId: string)`: `Promise<string | null>`
 - `saveLocalFile(file: File)`: `Promise<string>`
 - `openLocalFile(id: string)`: `Promise<boolean>`
+- `getLocalFile(id: string)`: `Promise<File | null>`
 - `removeLocalFile(id: string)`: `Promise<void>`
 - `signedUrl(path: string)`: `Promise<string | null>`
+- `downloadDocument(path: string)`: `Promise<Blob | null>`
+- `removeDocument(path: string)`: `Promise<boolean>`
 - `uploadVoice(file: File, childId: string)`: `Promise<string | null>`
 - `saveAvatar(file: File)`: `Promise<string | null>`
 - `removeAvatar()`: `Promise<void>`

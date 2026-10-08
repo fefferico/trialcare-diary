@@ -39,6 +39,41 @@ interface MedicationScheduleDraft {
   planned_pause: string;
 }
 
+function normalizeSearch(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('it')
+    .trim();
+}
+
+function fuzzyTermMatch(term: string, value: string): boolean {
+  if (value.includes(term)) return true;
+  const words = value.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const maxDistance = term.length < 4 ? 0 : term.length < 7 ? 1 : 2;
+  return words.some((word) => {
+    if (word.startsWith(term)) return true;
+    if (!maxDistance || Math.abs(word.length - term.length) > maxDistance) return false;
+    return searchEditDistance(term, word) <= maxDistance;
+  });
+}
+
+function searchEditDistance(left: string, right: string): number {
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= left.length; i++) {
+    const current = [i];
+    for (let j = 1; j <= right.length; j++) {
+      current[j] = Math.min(
+        current[j - 1] + 1,
+        previous[j] + 1,
+        previous[j - 1] + (left[i - 1] === right[j - 1] ? 0 : 1),
+      );
+    }
+    previous = current;
+  }
+  return previous[right.length];
+}
+
 @Component({
   selector: 'tc-feature-page',
   standalone: true,
@@ -193,6 +228,21 @@ interface MedicationScheduleDraft {
         @if (data.error()) {
           <div class="notice-error" role="alert">{{ data.error() }}</div>
         }
+        @if (supportsFuzzySearch && data.rows().length) {
+          <label class="form-field max-w-xl">
+            <span>Cerca in {{ section.label.toLocaleLowerCase('it') }}</span>
+            <input
+              class="field-control"
+              type="search"
+              maxlength="120"
+              autocomplete="off"
+              placeholder="Nome, descrizione, note…"
+              [ngModel]="searchQuery()"
+              (ngModelChange)="searchQuery.set($event)"
+              [attr.aria-label]="'Cerca in ' + section.label"
+            />
+          </label>
+        }
         @if (data.syncing()) {
           <div class="grid gap-3 md:grid-cols-2" aria-label="Caricamento voci" aria-busy="true">
             @for (placeholder of [1, 2, 3, 4]; track placeholder) {
@@ -208,6 +258,12 @@ interface MedicationScheduleDraft {
                 <div class="h-3 w-3/5 rounded bg-slate-100 dark:bg-slate-800"></div>
               </div>
             }
+          </div>
+        } @else if (!filteredRows.length && section.id !== 'reports' && searchQuery().trim()) {
+          <div class="panel flex flex-col items-center px-6 py-10 text-center">
+            <h2 class="text-lg font-semibold">Nessun risultato</h2>
+            <p class="mt-2 text-sm text-slate-500">Prova un altro termine o correggi la ricerca.</p>
+            <button type="button" class="button-secondary mt-4" (click)="searchQuery.set('')">Cancella ricerca</button>
           </div>
         } @else if (!filteredRows.length && section.id !== 'reports') {
           <div class="panel flex flex-col items-center px-6 py-14 text-center">
@@ -579,10 +635,16 @@ interface MedicationScheduleDraft {
                           Il testo estratto o scritto a mano viene salvato con il documento per la
                           ricerca.</small
                         >
+                        @if (section.id === 'documents' && isEditing() && hasExistingPdf() && !isPdfAttachment()) {
+                          <button type="button" class="button-secondary mt-2" [disabled]="loadingExistingPdf()" (click)="loadExistingPdf()">
+                            {{ loadingExistingPdf() ? 'Apertura del PDF…' : 'Apri il PDF allegato per oscurarlo' }}
+                          </button>
+                        }
                         @if (section.id === 'documents' && isPdfAttachment()) {
                           <tc-pdf-redaction
                             [file]="attachedFile!"
                             [initialTerms]="selectedChildName()"
+                            [initialExtractedText]="pdfTextSeed"
                             (redacted)="setRedactedFile($event)"
                             (textForSaving)="setPdfTextForSaving($event)"
                             (processingChange)="setPdfTextProcessing($event)"
@@ -953,6 +1015,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   readonly saving = signal(false);
   readonly extracting = signal(false);
   readonly documentTextProcessing = signal(false);
+  readonly loadingExistingPdf = signal(false);
   readonly documentLinksLoading = signal(false);
   readonly exporting = signal(false);
   readonly initialized = signal(false);
@@ -961,6 +1024,10 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   readonly selectedChildId = signal('');
   readonly selectedChildName = signal('');
   readonly highlightedId = signal('');
+  readonly searchQuery = signal('');
+  get supportsFuzzySearch(): boolean {
+    return ['medications', 'medicine_cabinet', 'orthoses', 'health_events', 'therapies', 'documents', 'expenses', 'contacts'].includes(this.sectionId);
+  }
   readonly shareNoticeId = signal('');
   readonly shareNotice = signal('');
   readonly reportFrom = signal('');
@@ -992,6 +1059,8 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   private documentSearchRequest = 0;
   readonly additionalMedicationSchedules = signal<MedicationScheduleDraft[]>([]);
   attachedFile: File | null = null;
+  pdfTextSeed = '';
+  private attachmentModified = false;
   private pdfTextForSaving: { file: File; text: string } | null = null;
   recordedVoice: Blob | null = null;
   recordedVoiceUrl = '';
@@ -1001,6 +1070,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   private analyser?: AnalyserNode;
   private spectrumFrame = 0;
   private editingId = '';
+  private editingDocumentRow: DiaryRow | null = null;
   private requestedChildId = '';
   private loadedUserId: string | null = null;
   private routeSubscription?: Subscription;
@@ -1117,7 +1187,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   get filteredRows(): DiaryRow[] {
     const today = new Date();
     const todayDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    return this.data.rows().filter((row) => {
+    const rows = this.data.rows().filter((row) => {
       const date = String(row['date'] ?? row['start_date'] ?? '').slice(0, 10);
       if (this.sectionId === 'health_events' && (!date || date > todayDate)) return false;
       if (
@@ -1145,6 +1215,18 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         (!this.reportTo() || date <= this.reportTo()) &&
         (!this.reportCategory() || categoryLabel === this.reportCategory())
       );
+    });
+    const query = normalizeSearch(this.searchQuery().trim());
+    if (!query) return rows;
+    const terms = query.split(/\s+/).filter(Boolean);
+    return rows.filter((row) => {
+      const values = Object.entries(row)
+        .filter(([key, value]) =>
+          !['id', 'user_id', 'child_id', 'created_at', 'updated_at', 'storage_path', 'receipt_path'].includes(key) &&
+          (typeof value === 'string' || typeof value === 'number'),
+        )
+        .map(([, value]) => normalizeSearch(String(value)));
+      return terms.every((term) => values.some((value) => fuzzyTermMatch(term, value)));
     });
   }
   async ngOnInit(): Promise<void> {
@@ -1325,10 +1407,55 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   isEditing(): boolean {
     return !!this.editingId;
   }
+  hasExistingPdf(): boolean {
+    const row = this.editingDocumentRow;
+    const isPdf = /\.pdf$/i.test(String(row?.['title'] ?? '')) ||
+      /\.pdf$/i.test(String(row?.['storage_path'] ?? '')) ||
+      (!!String(row?.['extracted_text'] ?? '').trim() &&
+        (typeof row?.['storage_path'] === 'string' || typeof row?.['local_file_id'] === 'string'));
+    return !!row && isPdf &&
+      (typeof row['storage_path'] === 'string' || typeof row['local_file_id'] === 'string');
+  }
+  async loadExistingPdf(): Promise<void> {
+    const row = this.editingDocumentRow;
+    if (!row || !this.hasExistingPdf() || this.loadingExistingPdf()) return;
+    this.loadingExistingPdf.set(true);
+    this.data.error.set('');
+    try {
+      let file: File | null = null;
+      if (typeof row['storage_path'] === 'string') {
+        const blob = await this.storage.downloadDocument(String(row['storage_path']));
+        if (blob) file = new File([blob], String(row['title'] || 'documento.pdf'), { type: blob.type });
+      } else if (typeof row['local_file_id'] === 'string') {
+        file = await this.storage.getLocalFile(String(row['local_file_id']));
+      }
+      if (!file) {
+        this.data.error.set('Non è stato possibile aprire il PDF allegato.');
+        return;
+      }
+      const header = await file.slice(0, 1024).text();
+      if (!header.includes('%PDF-')) {
+        this.data.error.set('L’allegato non è un PDF e non può essere aperto nell’editor.');
+        return;
+      }
+      if (!/\.pdf$/i.test(file.name))
+        file = new File([file], `${file.name}.pdf`, { type: 'application/pdf' });
+      this.attachedFile = file;
+      this.form['file'] = file.name;
+      this.pdfTextForSaving = null;
+      this.documentTextProcessing.set(true);
+    } catch {
+      this.data.error.set('Non è stato possibile aprire il PDF allegato.');
+    } finally {
+      this.loadingExistingPdf.set(false);
+    }
+  }
   setFile(field: FieldDefinition, event: Event): void {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (file) {
       this.attachedFile = file;
+      this.attachmentModified = true;
+      this.pdfTextSeed = '';
       this.form[field.key] = file.name;
       if (this.sectionId === 'documents') {
         this.pdfTextForSaving = null;
@@ -1339,6 +1466,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   }
   setRedactedFile(file: File): void {
     this.attachedFile = file;
+    this.attachmentModified = true;
     this.form['file'] = file.name;
     this.form['extracted_text'] = '';
     this.pdfTextForSaving = null;
@@ -1413,10 +1541,13 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.associatedFiles = [];
     this.additionalMedicationSchedules.set([]);
     this.attachedFile = null;
+    this.attachmentModified = false;
+    this.pdfTextSeed = '';
     this.pdfTextForSaving = null;
     this.documentTextProcessing.set(false);
     this.clearVoice();
     this.editingId = '';
+    this.editingDocumentRow = null;
     this.isFormOpen.set(true);
     this.ui.setModal(true);
   }
@@ -1479,16 +1610,21 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.documentLinksLoading.set(false);
     this.associatedFiles = [];
     this.attachedFile = null;
+    this.attachmentModified = false;
+    this.pdfTextSeed = '';
     this.pdfTextForSaving = null;
     this.documentTextProcessing.set(false);
+    this.editingDocumentRow = this.sectionId === 'documents' ? row : null;
     for (const field of this.section.fields) {
       const value = row[field.key];
       if (field.key === 'expiry_precision' && this.sectionId === 'medicine_cabinet') {
         this.form[field.key] = value === 'month' ? 'Mese e anno' : 'Data completa';
       } else if (value != null && typeof value !== 'object') this.form[field.key] = String(value);
     }
-    if (this.sectionId === 'documents')
+    if (this.sectionId === 'documents') {
       this.form['extracted_text'] = String(row['extracted_text'] ?? '');
+      this.pdfTextSeed = String(row['extracted_text'] ?? '');
+    }
     const savedSchedules = this.medicationSchedulePeriods(row);
     if (this.sectionId === 'medications' && Array.isArray(row['schedule_periods']) && savedSchedules.length) {
       const first = savedSchedules[0];
@@ -1527,6 +1663,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     }
     this.isFormOpen.set(true);
     this.ui.setModal(true);
+    if (this.sectionId === 'documents' && this.hasExistingPdf()) void this.loadExistingPdf();
   }
   closeForm(): void {
     if (this.documentSearchTimer) clearTimeout(this.documentSearchTimer);
@@ -1535,9 +1672,13 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.stopRecording();
     this.clearVoice();
     this.attachedFile = null;
+    this.attachmentModified = false;
+    this.pdfTextSeed = '';
     this.associatedFiles = [];
     this.pdfTextForSaving = null;
     this.documentTextProcessing.set(false);
+    this.loadingExistingPdf.set(false);
+    this.editingDocumentRow = null;
     this.isFormOpen.set(false);
     this.ui.setModal(false);
   }
@@ -1780,13 +1921,38 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         this.extracting.set(false);
       }
     }
-    if (
-      this.attachedFile &&
-      this.selectedChildId() &&
-      ['documents', 'expenses'].includes(this.sectionId)
-    ) {
+    let replacementLocalFileId = '';
+    let replacementStoragePath = '';
+    if (this.attachedFile && this.attachmentModified && this.sectionId === 'documents') {
+      const childId = this.selectedChildId() || String(this.editingDocumentRow?.['child_id'] ?? '');
+      if (this.supabase.configured && this.auth.user() && childId) {
+        const path = await this.storage.upload(this.attachedFile, childId);
+        if (path) {
+          replacementStoragePath = path;
+          value['storage_path'] = path;
+          delete value['local_file_id'];
+        }
+      } else {
+        try {
+          replacementLocalFileId = await this.storage.saveLocalFile(this.attachedFile);
+          value['local_file_id'] = replacementLocalFileId;
+          delete value['storage_path'];
+        } catch {
+          this.data.error.set('Il browser non ha potuto conservare localmente il PDF modificato.');
+          this.saving.set(false);
+          return;
+        }
+      }
+      if (!replacementStoragePath && this.supabase.configured && this.auth.user()) {
+        this.data.error.set(
+          'Upload non autorizzato. Applica le migrazioni Storage aggiornate su Supabase e riprova.',
+        );
+        this.saving.set(false);
+        return;
+      }
+    } else if (this.attachedFile && this.sectionId === 'expenses' && this.selectedChildId()) {
       const path = await this.storage.upload(this.attachedFile, this.selectedChildId());
-      if (path) value[this.sectionId === 'documents' ? 'storage_path' : 'receipt_path'] = path;
+      if (path) value['receipt_path'] = path;
       else if (this.supabase.configured && this.auth.user()) {
         this.data.error.set(
           'Upload non autorizzato. Applica le migrazioni Storage aggiornate su Supabase e riprova.',
@@ -1795,7 +1961,10 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         return;
       }
     }
-    if (this.sectionId === 'documents' && value['storage_path']) delete value['file'];
+    if (
+      this.sectionId === 'documents' &&
+      (value['storage_path'] || value['local_file_id'] || this.editingDocumentRow?.['storage_path'] || this.editingDocumentRow?.['local_file_id'])
+    ) delete value['file'];
     if (this.sectionId === 'expenses' && value['receipt_path']) delete value['receipt'];
     const targetId = this.editingId || crypto.randomUUID();
     const targetChildId = this.selectedChildId();
@@ -1803,9 +1972,32 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       ? await this.data.update(this.sectionId, this.editingId, value)
       : !!(await this.data.saveWithId(
           this.sectionId,
-          { ...value, id: targetId },
-          this.sectionId === 'children' ? undefined : targetChildId || undefined,
-        ));
+        { ...value, id: targetId },
+        this.sectionId === 'children' ? undefined : targetChildId || undefined,
+      ));
+    if (!ok && replacementStoragePath) await this.storage.removeDocument(replacementStoragePath);
+    if (!ok && replacementLocalFileId) {
+      try {
+        await this.storage.removeLocalFile(replacementLocalFileId);
+      } catch {
+        // The failed update must not replace the existing attachment.
+      }
+    }
+    if (ok && this.sectionId === 'documents' && this.editingDocumentRow && this.attachedFile && this.attachmentModified) {
+      const oldStoragePath = this.editingDocumentRow['storage_path'];
+      const oldLocalFileId = this.editingDocumentRow['local_file_id'];
+      if (typeof oldStoragePath === 'string' && oldStoragePath !== replacementStoragePath) {
+        if (!(await this.storage.removeDocument(oldStoragePath)))
+          this.data.error.set('PDF aggiornato, ma non è stato possibile eliminare la copia precedente dal deposito.');
+      }
+      if (typeof oldLocalFileId === 'string' && oldLocalFileId !== replacementLocalFileId) {
+        try {
+          await this.storage.removeLocalFile(oldLocalFileId);
+        } catch {
+          this.data.error.set('PDF aggiornato, ma non è stato possibile eliminare la copia precedente dal browser.');
+        }
+      }
+    }
     if (ok && !this.editingId && ['medications', 'orthoses'].includes(this.sectionId))
       this.editingId = targetId;
     if (ok && ['medications', 'orthoses'].includes(this.sectionId) && targetChildId) {
@@ -1894,6 +2086,13 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       confirmLabel: 'Elimina',
     })) {
       this.data.error.set('');
+      if (this.sectionId === 'documents' && typeof row['storage_path'] === 'string') {
+        const removed = await this.storage.removeDocument(String(row['storage_path']));
+        if (!removed) {
+          this.data.error.set('Non è stato possibile eliminare il file dal deposito. Il documento è rimasto nel diario.');
+          return;
+        }
+      }
       await this.data.remove(this.sectionId, row);
       if (this.sectionId === 'documents' && row['local_file_id'] && !this.data.error())
         await this.storage.removeLocalFile(String(row['local_file_id']));

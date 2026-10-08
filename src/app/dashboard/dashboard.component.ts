@@ -24,6 +24,11 @@ interface SearchResult {
   score: number;
 }
 
+interface HighlightSegment {
+  text: string;
+  highlighted: boolean;
+}
+
 @Component({
   selector: 'tc-dashboard',
   standalone: true,
@@ -95,16 +100,30 @@ interface SearchResult {
                   (click)="isOpen.set(false)"
                   class="block rounded-xl px-3 py-3 hover:bg-teal-50 focus:bg-teal-50 focus:outline-none dark:hover:bg-slate-800 dark:focus:bg-slate-800"
                   ><span class="flex items-center justify-between gap-3"
-                    ><strong class="truncate text-sm">{{ result.title }}</strong
+                    ><strong class="truncate text-sm">
+                      @for (part of highlightSegments(result.title); track $index) {
+                        @if (part.highlighted) {
+                          <mark class="global-search-match">{{ part.text }}</mark>
+                        } @else {
+                          <span>{{ part.text }}</span>
+                        }
+                      }
+                    </strong
                     ><span
                       class="shrink-0 rounded-full bg-teal-50 px-2 py-1 text-[11px] font-semibold text-teal-800 dark:bg-teal-900/40 dark:text-teal-200"
                       >{{ sectionLabel(result.section) }}</span
                     ></span
                   >
                   @if (result.detail) {
-                    <span class="mt-1 block truncate text-xs text-slate-500 dark:text-slate-400">{{
-                      result.detail
-                    }}</span>
+                    <span class="mt-1 block truncate text-xs text-slate-500 dark:text-slate-400">
+                      @for (part of highlightSegments(result.detail); track $index) {
+                        @if (part.highlighted) {
+                          <mark class="global-search-match">{{ part.text }}</mark>
+                        } @else {
+                          <span>{{ part.text }}</span>
+                        }
+                      }
+                    </span>
                   }
                 </a>
               }
@@ -251,6 +270,60 @@ export class DashboardComponent implements OnInit {
     return SECTIONS.find((item) => item.id === section)?.label ?? section;
   }
 
+  highlightSegments(value: string): HighlightSegment[] {
+    const normalizedValue = normalize(value);
+    const originalIndexes: number[] = [];
+    for (let index = 0; index < value.length; index++) {
+      const normalizedChar = normalizeCharacter(value[index]);
+      for (let offset = 0; offset < normalizedChar.length; offset++) originalIndexes.push(index);
+    }
+
+    const highlighted = new Array(value.length).fill(false) as boolean[];
+    const terms = normalize(this.query()).split(/\s+/).filter(Boolean);
+    for (const term of terms) {
+      let start = 0;
+      while (term && start <= normalizedValue.length - term.length) {
+        const match = normalizedValue.indexOf(term, start);
+        if (match < 0) break;
+        for (let position = match; position < match + term.length; position++) {
+          const originalIndex = originalIndexes[position];
+          if (originalIndex !== undefined) highlighted[originalIndex] = true;
+        }
+        start = match + term.length;
+      }
+    }
+
+    const segments: HighlightSegment[] = [];
+    for (let index = 0; index < value.length; ) {
+      const isHighlighted = highlighted[index];
+      let end = index + 1;
+      while (end < value.length && highlighted[end] === isHighlighted) end++;
+      segments.push({ text: value.slice(index, end), highlighted: isHighlighted });
+      index = end;
+    }
+    return segments;
+  }
+
+  private searchExcerpt(value: string): string {
+    const maxLength = 140;
+    const terms = normalize(this.query()).split(/\s+/).filter(Boolean);
+    const normalizedValue = normalize(value);
+    const originalIndexes: number[] = [];
+    for (let index = 0; index < value.length; index++) {
+      const normalizedChar = normalizeCharacter(value[index]);
+      for (let offset = 0; offset < normalizedChar.length; offset++) originalIndexes.push(index);
+    }
+
+    const matches = terms
+      .map((term) => normalizedValue.indexOf(term))
+      .filter((index) => index >= 0);
+    const firstMatch = matches.length ? Math.min(...matches) : -1;
+    const matchIndex = firstMatch >= 0 ? (originalIndexes[firstMatch] ?? 0) : 0;
+    const start = Math.min(Math.max(0, matchIndex - 45), Math.max(0, value.length - maxLength));
+    const excerpt = value.slice(start, start + maxLength);
+    return `${start > 0 ? '…' : ''}${excerpt}${start + maxLength < value.length ? '…' : ''}`;
+  }
+
   private rank(rawQuery: string, entries: SearchableDiaryItem[]): SearchResult[] {
     const query = normalize(rawQuery.trim());
     const terms = query.split(/\s+/).filter(Boolean);
@@ -311,12 +384,12 @@ export class DashboardComponent implements OnInit {
         : [];
       const pdfText =
         typeof item.row['extracted_text'] === 'string' ? item.row['extracted_text'] : '';
-      const pdfExcerpt = pdfText.slice(0, 140);
+      const pdfExcerpt = this.searchExcerpt(pdfText);
       const detail = [
         childNames.get(String(item.row['child_id'] ?? '')),
         ...medicationDetails,
         ...detailKeys.map((key) => item.row[key]),
-        ...(pdfExcerpt ? [`PDF: ${pdfExcerpt}${pdfText.length > 140 ? '…' : ''}`] : []),
+        ...(pdfExcerpt ? [`PDF: ${pdfExcerpt}`] : []),
       ]
         .filter(
           (value): value is string | number =>
@@ -345,6 +418,13 @@ function normalize(value: string): string {
     .replace(/[\u0300-\u036f]/g, '')
     .toLocaleLowerCase('it')
     .trim();
+}
+
+function normalizeCharacter(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('it');
 }
 
 function formatDate(value: unknown): string {

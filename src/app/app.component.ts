@@ -333,7 +333,7 @@ import { TooltipDirective } from './shared/directives/tooltip.directive';
                 <path
                   d="m3.5 10 8.5-7 8.5 7v10a.5.5 0 0 1-.5.5h-5.5v-7h-5v7H4a.5.5 0 0 1-.5-.5z"
                 /></svg></span
-            >Home</a
+            ><span class="bottom-nav-label">Home</span></a
           ><a routerLink="/calendar" routerLinkActive="bottom-active"
             ><span
               ><svg
@@ -349,7 +349,7 @@ import { TooltipDirective } from './shared/directives/tooltip.directive';
                 <path
                   d="M7.5 3v4M16.5 3v4M4 9.5h16M8 13h.01M12 13h.01M16 13h.01M8 17h.01M12 17h.01"
                 /></svg></span
-            >Calendario</a
+            ><span class="bottom-nav-label">Calendario</span></a
           >
           @for (section of bottomSections; track section.id) {
             <a
@@ -367,7 +367,7 @@ import { TooltipDirective } from './shared/directives/tooltip.directive';
                   aria-hidden="true"
                 >
                   <path [attr.d]="iconPath(section.id)" /></svg></span
-              >{{ section.shortLabel }}</a
+              ><span class="bottom-nav-label">{{ section.shortLabel }}</span></a
             >
           }
           <button
@@ -390,7 +390,7 @@ import { TooltipDirective } from './shared/directives/tooltip.directive';
                 <circle cx="5" cy="12" r="1" />
                 <circle cx="12" cy="12" r="1" />
                 <circle cx="19" cy="12" r="1" /></svg></span
-            >Altro
+            ><span class="bottom-nav-label">Altro</span>
           </button>
           @if (moreOpen()) {
             <div class="more-nav-menu">
@@ -606,7 +606,6 @@ export class AppComponent implements OnDestroy {
       this.biometricPromptVisible.set(true);
   }
   async signOut(): Promise<void> {
-    this.biometrics.revoke();
     sessionStorage.removeItem('trialcare-biometric-unlocked');
     await this.auth.signOut();
   }
