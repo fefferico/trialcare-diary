@@ -689,9 +689,11 @@ textarea:focus-visible {
 }
 .bottom-nav .bottom-nav-label {
   display: flex;
+  width: 100%;
   min-height: 20px;
   align-items: center;
   justify-content: center;
+  font-size: inherit;
   line-height: 10px;
   text-align: center;
 }

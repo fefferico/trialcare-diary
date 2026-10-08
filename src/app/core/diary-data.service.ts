@@ -322,7 +322,7 @@ export class DiaryDataService {
   async loadReport(childId?: string): Promise<void> {
     this.syncing.set(true);
     this.error.set('');
-    const tables = ['medications', 'health_events', 'therapies', 'orthoses', 'documents', 'expenses'] as const;
+    const tables = ['medications', 'health_events', 'therapies', 'orthoses', 'documents', 'expenses', 'calendar_events', 'medication_doses'] as const;
     const client = this.supabase.client;
     if (client && this.auth.user()) {
       const results = await Promise.all(
@@ -336,26 +336,51 @@ export class DiaryDataService {
       );
       const failed = results.find((result) => result.error);
       if (failed?.error) this.error.set(failed.error.message);
+      const medicationNames = new Map(
+        ((results[0].data ?? []) as DiaryRow[]).map((row) => [String(row['id']), String(row['name'] ?? 'Farmaco')]),
+      );
       this.rows.set(
         results
           .flatMap((result, index) =>
             (result.data ?? [])
               .filter((row) => tables[index] !== 'health_events' || !isLegacyCalendarEvent(row))
-              .map((row) => ({ ...row, record_type: tables[index] })),
+              .map((row) => ({
+                ...row,
+                date: row[DOCUMENT_DATE_FIELD[tables[index]] ?? 'date'],
+                ...(tables[index] === 'medication_doses'
+                  ? { name: medicationNames.get(String(row['medication_id'])) ?? 'Farmaco' }
+                  : {}),
+                record_type: tables[index],
+              })),
           )
           .sort((a, b) => this.reportDate(b).localeCompare(this.reportDate(a))) as DiaryRow[],
       );
-    } else
-      this.rows.set(
-        tables
-          .flatMap((table) =>
+      const { data: measurements, error: measurementError } = await client
+        .from('child_measurements').select('*').order('date', { ascending: false });
+      if (!measurementError) {
+        this.rows.update((rows) => [
+          ...rows,
+          ...(measurements ?? []).filter((row) => !childId || row['child_id'] === childId)
+            .map((row) => ({ ...row, record_type: 'child_measurements' } as DiaryRow)),
+        ].sort((a, b) => String(b['date'] ?? '').localeCompare(String(a['date'] ?? ''))));
+      } else this.error.set(measurementError.message);
+    } else {
+      const localReportRows: DiaryRow[] = tables.flatMap((table) =>
             newestFirst(this.local[table] ?? [], table)
               .filter((row) => !childId || row['child_id'] === childId)
               .filter((row) => table !== 'health_events' || !isLegacyCalendarEvent(row))
-              .map((row) => ({ ...row, record_type: table })),
-          )
-          .sort((a, b) => this.reportDate(b).localeCompare(this.reportDate(a))),
-      );
+              .map((row) => ({
+                ...row,
+                date: row[DOCUMENT_DATE_FIELD[table] ?? 'date'],
+                ...(table === 'medication_doses'
+                  ? { name: (this.local.medications ?? []).find((medication) => medication.id === row['medication_id'])?.['name'] ?? 'Farmaco' }
+                  : {}),
+                record_type: table,
+              })),
+          );
+      localReportRows.push(...this.localMeasurements(childId).map((row) => ({ ...row, date: row['date'], record_type: 'child_measurements' })));
+      this.rows.set(localReportRows.sort((a, b) => this.reportDate(b).localeCompare(this.reportDate(a))));
+    }
     this.syncing.set(false);
   }
 
@@ -575,6 +600,7 @@ export class DiaryDataService {
   }
 
   private reportDate(row: DiaryRow): string {
+    if (row['date']) return String(row['date']);
     const section = String(row['record_type'] ?? '') as SectionId;
     return String(row[DOCUMENT_DATE_FIELD[section] ?? ''] ?? '');
   }

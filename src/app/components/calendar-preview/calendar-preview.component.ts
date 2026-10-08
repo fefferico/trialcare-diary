@@ -182,9 +182,11 @@ export class CalendarPreviewComponent implements OnInit {
                 .join(' | ')
               : [item.row['frequency'], item.row['facility']].filter(Boolean).join(' · ')) || 'In corso',
           dosesToday,
+          allDosesTaken: dosesToday.length > 0 && dosesToday.every((dose) => dose.taken),
           path: item.section === 'medications' ? '/medications' : '/therapies',
         };
-      }),
+      })
+      .sort((a, b) => Number(b.allDosesTaken) - Number(a.allDosesTaken)),
   );
   readonly deadlines = computed(() =>
     this.entries()
@@ -246,6 +248,9 @@ export class CalendarPreviewComponent implements OnInit {
     const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     return currentTime >= time;
   }
+  completedDoseTimes(doses: Array<{ actualTime: string; label: string }>): string {
+    return doses.map((dose) => dose.actualTime || dose.label).join(' · ');
+  }
   async markDoseTaken(item: { id: string; childId?: string }, dose: { id: string; taken: boolean }): Promise<void> {
     if (!item.childId || dose.taken || !this.canMarkDose(dose.id) || this.savingDose()) return;
     const now = new Date();
@@ -278,8 +283,21 @@ export class CalendarPreviewComponent implements OnInit {
         (item.date > today ||
           (item.date === today && (!item.time || item.time >= currentTime))),
     );
-    if (!next) return;
+    const nextDose = this.activeTherapies()
+      .flatMap((item) => item.dosesToday)
+      .find((dose) => !dose.taken);
+    if (!next && !nextDose) return;
     requestAnimationFrame(() => {
+      if (nextDose) {
+        const doseTarget = Array.from(
+          this.host.nativeElement.querySelectorAll('[data-medication-dose-id]') as NodeListOf<HTMLElement>,
+        ).find((element) => element.dataset['medicationDoseId'] === nextDose.id);
+        if (doseTarget) {
+          doseTarget.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+          return;
+        }
+      }
+      if (!next) return;
       const target = Array.from(
         this.host.nativeElement.querySelectorAll('[data-event-id]') as NodeListOf<HTMLElement>,
       ).find((element) => element.dataset['eventId'] === next.id);

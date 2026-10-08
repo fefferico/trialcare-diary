@@ -355,6 +355,7 @@ import { TooltipDirective } from './shared/directives/tooltip.directive';
             <a
               [routerLink]="'/' + section.id"
               routerLinkActive="bottom-active"
+              [attr.aria-label]="section.id === 'medications' ? section.label : null"
               (click)="moreOpen.set(false)"
               ><span
                 ><svg
@@ -367,7 +368,7 @@ import { TooltipDirective } from './shared/directives/tooltip.directive';
                   aria-hidden="true"
                 >
                   <path [attr.d]="iconPath(section.id)" /></svg></span
-              ><span class="bottom-nav-label">{{ section.shortLabel }}</span></a
+              ><span class="bottom-nav-label">{{ section.id === 'medications' ? 'Terapia' : section.shortLabel }}</span></a
             >
           }
           <button

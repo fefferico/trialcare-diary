@@ -1,6 +1,6 @@
 # API Catalog
 
-> Generato da `npm run update-context` il 08/10/2026, 09:13:35.
+> Generato da `npm run update-context` il 08/10/2026, 09:58:12.
 
 ## Servizi
 
@@ -102,6 +102,7 @@ File: [src/app/core/diary-data.service.ts](../src/app/core/diary-data.service.ts
 
 File: [src/app/core/pdf-export.service.ts](../src/app/core/pdf-export.service.ts)
 
+- `exportVisitSummary(rows: DiaryRow[], childName: string, from: string, to: string)`: `void`
 - `export(section: SectionDefinition, rows: DiaryRow[], childName: string)`: `void`
 
 ### StorageService

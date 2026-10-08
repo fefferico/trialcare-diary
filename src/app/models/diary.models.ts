@@ -78,7 +78,7 @@ export const SECTIONS: SectionDefinition[] = [
       { key: 'name', label: 'Nome e cognome', kind: 'text', required: true },
       { key: 'birth_date', label: 'Data di nascita', kind: 'date', required: true },
       { key: 'trial_id', label: 'ID trial clinico', kind: 'text' },
-      { key: 'blood_group', label: 'Gruppo sanguigno', kind: 'select', options: ['A+','A−','B+','B−','AB+','AB−','0+','0−','Non noto'] },
+      { key: 'blood_group', label: 'Gruppo sanguigno', kind: 'select', options: ['A+', 'A−', 'B+', 'B−', 'AB+', 'AB−', '0+', '0−', 'Non noto'] },
       { key: 'allergies', label: 'Allergie e reazioni avverse', kind: 'textarea' },
       { key: 'medical_conditions', label: 'Condizioni cliniche rilevanti', kind: 'textarea' },
       { key: 'medical_alerts', label: 'Indicazioni importanti per le emergenze', kind: 'textarea' },
@@ -100,7 +100,7 @@ export const SECTIONS: SectionDefinition[] = [
         key: 'formulation',
         label: 'Formulazione',
         kind: 'select',
-        options: ['Compressa', 'Sciroppo', 'Gocce', 'Spray', 'Aerosol', 'Crema', 'Altro'],
+        options: ['Compressa', 'Sciroppo', 'Gocce', 'Spray', 'Aerosol', 'Crema', 'Doccia nasale', 'Altro'],
       },
       { key: 'spray_count', label: 'Puff o spruzzi per somministrazione', kind: 'number' },
       {

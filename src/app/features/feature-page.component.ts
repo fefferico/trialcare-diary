@@ -135,12 +135,15 @@ function searchEditDistance(left: string, right: string): number {
               <div>
                 <h2 class="font-semibold">Report per il team clinico</h2>
                 <p class="mt-1 text-sm text-slate-500">
-                  Esporta le voci della sezione corrente in un PDF pronto per la visita.
+                  Prepara un riepilogo cronologico del periodo da discutere durante la visita.
                 </p>
               </div>
-              <button type="button" class="button-primary" (click)="exportReport()">
-                Scarica PDF
-              </button>
+              <div class="flex flex-wrap gap-2">
+                <button type="button" class="button-primary" [disabled]="!selectedChildId() || invalidReportPeriod" (click)="exportVisitSummary()">
+                  Riepilogo visita PDF
+                </button>
+                <button type="button" class="button-secondary" (click)="exportReport()">Esporta elenco</button>
+              </div>
             </div>
             <div class="border-t border-slate-100 pt-4 dark:border-slate-800">
               <h3 class="font-semibold">Backup completo dei dati</h3>
@@ -180,6 +183,9 @@ function searchEditDistance(left: string, right: string): number {
           </div>
         }
         @if (section.id === 'reports') {
+          @if (invalidReportPeriod) {
+            <p class="notice-error" role="alert">La data iniziale deve precedere la data finale.</p>
+          }
           <div class="panel grid gap-3 sm:grid-cols-3">
             <label class="form-field"
               ><span>Dal</span
@@ -1040,8 +1046,11 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     'Ortesi e ausili',
     'Documenti',
     'Spese e rimborsi',
+    'Appuntamenti',
+    'Somministrazioni',
+    'Misurazioni',
   ];
-  readonly medicationFormulations = ['Compressa', 'Sciroppo', 'Gocce', 'Spray', 'Aerosol', 'Crema', 'Altro'];
+  readonly medicationFormulations = ['Compressa', 'Sciroppo', 'Gocce', 'Spray', 'Aerosol', 'Crema', 'Doccia nasale', 'Altro'];
   readonly measurementRows = signal<DiaryRow[]>([]);
   readonly measurementLoading = signal(false);
   readonly measurementSaving = signal(false);
@@ -1189,6 +1198,12 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     const todayDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     const rows = this.data.rows().filter((row) => {
       const date = String(row['date'] ?? row['start_date'] ?? '').slice(0, 10);
+      const category = String(row['record_type'] ?? '');
+      if (
+        this.sectionId === 'reports' &&
+        ['calendar_events', 'medication_doses'].includes(category) &&
+        date > todayDate
+      ) return false;
       if (this.sectionId === 'health_events' && (!date || date > todayDate)) return false;
       if (
         this.sectionId === 'health_events' &&
@@ -1198,7 +1213,6 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
           !!row['recurrence_group_id'])
       )
         return false;
-      const category = String(row['record_type'] ?? '');
       const categoryLabel =
         (
           {
@@ -1208,6 +1222,9 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
             orthoses: 'Ortesi e ausili',
             documents: 'Documenti',
             expenses: 'Spese e rimborsi',
+            calendar_events: 'Appuntamenti',
+            medication_doses: 'Somministrazioni',
+            child_measurements: 'Misurazioni',
           } as Record<string, string>
         )[category] ?? '';
       return (
@@ -1227,6 +1244,27 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         )
         .map(([, value]) => normalizeSearch(String(value)));
       return terms.every((term) => values.some((value) => fuzzyTermMatch(term, value)));
+    });
+  }
+  get invalidReportPeriod(): boolean {
+    return !!this.reportFrom() && !!this.reportTo() && this.reportFrom() > this.reportTo();
+  }
+  get visitSummaryRows(): DiaryRow[] {
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    return this.data.rows().filter((row) => {
+      const type = String(row['record_type'] ?? '');
+      const date = String(row['date'] ?? row['scheduled_date'] ?? row['start_date'] ?? '').slice(0, 10);
+      if (['calendar_events', 'medication_doses', 'health_events'].includes(type) && date > today) return false;
+      if (type === 'medications') {
+        const start = String(row['start_date'] ?? '');
+        const end = String(row['end_date'] ?? '');
+        return (!this.reportTo() || !start || start <= this.reportTo()) &&
+          (!this.reportFrom() || !end || end >= this.reportFrom());
+      }
+      if (!date) return false;
+      const endDate = !this.reportTo() || this.reportTo() > today ? today : this.reportTo();
+      return (!this.reportFrom() || date >= this.reportFrom()) && date <= endDate;
     });
   }
   async ngOnInit(): Promise<void> {
@@ -1847,6 +1885,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         return;
       }
       value['schedule_periods'] = schedules;
+      value['end_date'] = value['end_date'] || null;
     }
     if (this.recording()) {
       const recorder = this.recorder;
@@ -1971,7 +2010,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     let ok = this.editingId
       ? await this.data.update(this.sectionId, this.editingId, value)
       : !!(await this.data.saveWithId(
-          this.sectionId,
+        this.sectionId,
         { ...value, id: targetId },
         this.sectionId === 'children' ? undefined : targetChildId || undefined,
       ));
@@ -2131,6 +2170,15 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   }
   exportReport(): void {
     this.pdf.export(this.section, this.filteredRows, this.selectedChildName());
+  }
+  exportVisitSummary(): void {
+    if (!this.selectedChildId() || this.invalidReportPeriod) return;
+    this.pdf.exportVisitSummary(
+      this.visitSummaryRows,
+      this.selectedChildName(),
+      this.reportFrom(),
+      this.reportTo(),
+    );
   }
   async exportData(format: 'json' | 'markdown' | 'doc'): Promise<void> {
     this.exporting.set(true);

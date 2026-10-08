@@ -13,7 +13,7 @@ Diario clinico digitale in Angular 21 per famiglie che accompagnano un bambino d
 - Calendario mensile con appuntamenti singoli o ricorrenti (settimanali, bisettimanali e mensili), conferma degli eventi futuri e motivazione per quelli saltati; riepilogo homepage di eventi, terapie e scadenze nei successivi 30 giorni.
 - Percorsi terapeutici, documenti e ricevute in Storage privato. Per i PDF clinici è disponibile una redazione locale manuale o basata su testo selezionabile: la copia viene appiattita in immagini prima dell’upload. L’OCR locale legge anche le scansioni; il testo riconosciuto può essere corretto o scritto a mano e viene salvato con il documento per la ricerca.
 - Note spese con calcolo della quota chilometrica (`km × tariffa/km`).
-- Report PDF, accesso Supabase Auth e dati isolati da RLS.
+- Riepilogo PDF per la visita, filtrabile per bambino e periodo, con appuntamenti, eventi e sintomi, terapie e dosi registrate o saltate, misure, documenti e spese; include uno spazio per preparare domande. Report PDF, accesso Supabase Auth e dati isolati da RLS.
 - Avatar profilo personalizzabile: in Supabase l’immagine è privata e accessibile solo al proprietario; in modalità demo resta nel browser.
 - Accesso biometrico locale tramite WebAuthn/passkey sui dispositivi compatibili.
 

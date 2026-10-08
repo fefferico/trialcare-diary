@@ -69,7 +69,8 @@
   }
   <div class="grid gap-4 md:grid-cols-3">
     <section>
-      <h3 class="text-sm font-semibold">
+      <h3 class="flex items-center gap-2 text-sm font-semibold">
+        <svg class="h-4 w-4 shrink-0 text-teal-700 dark:text-teal-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></svg>
         {{ selectedView() === 'today' ? 'Eventi di oggi' : 'Eventi in arrivo' }} <span class="text-slate-400">{{
           (selectedView() === 'today' ? todayCalendarEvents() : futureCalendarEvents()).length }}</span>
       </h3>
@@ -110,7 +111,8 @@
       }
     </section>
     <section>
-      <h3 class="text-sm font-semibold">
+      <h3 class="flex items-center gap-2 text-sm font-semibold">
+        <svg class="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 3.5h3a2 2 0 0 1 2 2v1h1a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-10a2 2 0 0 1 2-2h1v-1a2 2 0 0 1 2-2Z" /><path d="M9 6.5h6M12 10v7M8.5 13.5h7" /></svg>
         Terapie in corso <span class="text-slate-400">{{ selectedView() === 'today' ? activeTherapies().length :
           futureMedicationDoses().length }}</span>
       </h3>
@@ -118,19 +120,24 @@
       <ul class="preview-scroll-list mt-2 max-h-64 space-y-2 overflow-y-auto overscroll-contain pr-1">
         @for (item of activeTherapies(); track item.id) {
         <li>
+          @if (item.allDosesTaken) {
+          <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg bg-slate-50/60 px-2.5 py-1.5 text-xs text-slate-500 dark:bg-slate-900/30">
+            <a [routerLink]="item.path" [queryParams]="{ highlight: item.highlightId, child: item.childId || null }"
+              class="min-w-0 truncate font-medium hover:text-teal-700 dark:hover:text-teal-300">{{ item.title }}</a>
+            <span class="shrink-0">{{ completedDoseTimes(item.dosesToday) }}</span>
+          </div>
+          } @else {
           <div class="rounded-xl bg-slate-50 p-3 text-sm dark:bg-slate-800/60">
             <a [routerLink]="item.path" [queryParams]="{ highlight: item.highlightId, child: item.childId || null }"
-              class="block rounded-lg hover:text-teal-700 dark:hover:text-teal-300"><strong class="block truncate">{{
-                item.title }}</strong><span class="text-xs text-slate-500">{{ item.kind
-                }}</span></a>
+              class="block rounded-lg hover:text-teal-700 dark:hover:text-teal-300"><strong class="block truncate">{{ item.title }}</strong><span class="text-xs text-slate-500">{{ item.kind }}</span></a>
             @if (item.dosesToday.length) {
             <ul class="mt-2 space-y-1 border-t border-slate-200 pt-2 dark:border-slate-700">
               @for (dose of item.dosesToday; track dose.id) {
-              <li class="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <li [attr.data-medication-dose-id]="dose.taken ? null : dose.id" class="flex flex-wrap items-center justify-between gap-2 text-xs">
                 <span class="text-slate-600 dark:text-slate-300">{{ dose.label }}</span>
                 <span class="flex flex-wrap items-center gap-2">
                   <span class="rounded-full px-2 py-0.5 font-semibold"
-                    [ngClass]="dose.taken ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200' : 'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-100'">
+                    [ngClass]="'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-100'">
                     {{ dose.taken ? 'Somministrata' : 'Da fare' }}@if (dose.taken && dose.actualTime) { alle {{
                     dose.actualTime }}}
                   </span>
@@ -142,10 +149,11 @@
                   }
                 </span>
               </li>
-              }
+            }
             </ul>
             }
           </div>
+          }
         </li>
         }
       </ul>
@@ -180,7 +188,8 @@
       }
     </section>
     <section>
-      <h3 class="text-sm font-semibold">
+      <h3 class="flex items-center gap-2 text-sm font-semibold">
+        <svg class="h-4 w-4 shrink-0 text-rose-700 dark:text-rose-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2M12 3v1M21 12h-1" /></svg>
         {{ selectedView() === 'today' ? 'Scadenze di oggi' : 'Scadenze prossime' }} <span class="text-slate-400">{{
           (selectedView() === 'today' ? todayDeadlines() : futureDeadlines()).length }}</span>
       </h3>
