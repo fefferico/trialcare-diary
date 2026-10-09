@@ -1,4 +1,4 @@
-import { Component, OnDestroy, effect, inject, signal, untracked } from '@angular/core';
+import { Component, HostListener, OnDestroy, effect, inject, signal, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthService } from './core/auth.service';
@@ -477,6 +477,7 @@ export class AppComponent implements OnDestroy {
   readonly avatarBusy = signal(false);
   readonly avatarError = signal('');
   private readonly storage = inject(StorageService);
+  private readonly outsideScrollListener = (event: Event) => this.closeMoreOnOutsideScroll(event);
   private readonly localAvatarKey = 'trialcare-profile-avatar-v1';
   private avatarLoadUserId: string | null = null;
   readonly navigation = SECTIONS;
@@ -491,6 +492,7 @@ export class AppComponent implements OnDestroy {
   readonly biometricPromptVisible = signal(false);
   private biometricOfferStarted = false;
   constructor() {
+    document.addEventListener('scroll', this.outsideScrollListener, true);
     void this.auth.ready.finally(() => this.authReady.set(true));
     effect(() => {
       const user = this.auth.user();
@@ -587,6 +589,25 @@ export class AppComponent implements OnDestroy {
   toggleMore(): void {
     this.moreOpen.update((value) => !value);
   }
+  @HostListener('document:click', ['$event'])
+  closeMoreOnOutsideClick(event: MouseEvent): void {
+    const target = event.target;
+    if (
+      this.moreOpen() &&
+      target instanceof Element &&
+      !target.closest('.more-nav-menu, .more-nav-button')
+    ) {
+      this.moreOpen.set(false);
+    }
+  }
+  private closeMoreOnOutsideScroll(event: Event): void {
+    const target = event.target;
+    const scrolledInsideMenu =
+      target instanceof Element && target.closest('.more-nav-menu, .more-nav-button');
+    if (this.moreOpen() && !scrolledInsideMenu) {
+      this.moreOpen.set(false);
+    }
+  }
   async unlockWithBiometrics(): Promise<void> {
     await this.biometrics.signIn();
     if (!this.biometrics.error()) {
@@ -633,6 +654,7 @@ export class AppComponent implements OnDestroy {
     );
   }
   ngOnDestroy(): void {
+    document.removeEventListener('scroll', this.outsideScrollListener, true);
     const avatar = this.avatarUrl();
     if (avatar?.startsWith('blob:')) URL.revokeObjectURL(avatar);
     this.ui.resetBodyScroll();

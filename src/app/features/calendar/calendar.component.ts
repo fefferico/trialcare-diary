@@ -85,6 +85,8 @@ export class CalendarComponent implements OnInit, OnDestroy {
   readonly focusedEvent = signal<CalendarEvent | null>(null);
   readonly editingEvent = signal<CalendarEvent | null>(null);
   readonly recurrenceScopePrompt = signal(false);
+  readonly pastOccurrencesPrompt = signal(false);
+  readonly pastOccurrenceCount = signal(0);
   readonly skipReason = signal('');
   readonly doseTimes = signal<Record<string, string>>({});
   readonly documentSearchResults = signal<DiaryRow[]>([]);
@@ -430,7 +432,10 @@ export class CalendarComponent implements OnInit, OnDestroy {
     this.selectedDocuments.set([]);
     this.associatedFiles.set([]);
   }
-  async saveEvent(recurrenceScope?: 'single' | 'following' | 'all'): Promise<void> {
+  async saveEvent(
+    recurrenceScope?: 'single' | 'following' | 'all',
+    markPastOccurrencesCompleted?: boolean,
+  ): Promise<void> {
     if (!this.title().trim() || !this.eventDate()) return;
     const editing = this.editingEvent();
     if (
@@ -513,6 +518,17 @@ export class CalendarComponent implements OnInit, OnDestroy {
       );
       return;
     }
+    const pastDates = dates.filter((date) => date < this.today);
+    if (
+      markPastOccurrencesCompleted === undefined &&
+      dates.length > 1 &&
+      pastDates.length > 1
+    ) {
+      this.pastOccurrenceCount.set(pastDates.length);
+      this.pastOccurrencesPrompt.set(true);
+      return;
+    }
+    if (markPastOccurrencesCompleted !== undefined) this.closePastOccurrencesPrompt();
     this.saving.set(true);
     this.saveError.set('');
     const groupId = dates.length > 1 ? crypto.randomUUID() : null;
@@ -525,7 +541,12 @@ export class CalendarComponent implements OnInit, OnDestroy {
       date,
       time: this.eventTime() || null,
       notes: this.notes().trim() || null,
-      status: date > dateKey(new Date()) ? 'Da confermare' : 'Confermato',
+      status:
+        date > this.today
+          ? 'Da confermare'
+          : markPastOccurrencesCompleted && date < this.today
+            ? 'Completato'
+            : 'Confermato',
       skipped_reason: null,
       recurrence_group_id: groupId,
     }));
@@ -549,6 +570,10 @@ export class CalendarComponent implements OnInit, OnDestroy {
     this.month.set(new Date(year, month - 1, 1));
     this.scrollToFirstUpcomingEvent();
     this.closeForm();
+  }
+  closePastOccurrencesPrompt(): void {
+    this.pastOccurrencesPrompt.set(false);
+    this.pastOccurrenceCount.set(0);
   }
   private occurrenceDates(): string[] {
     const start = parseDate(this.eventDate());

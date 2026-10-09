@@ -144,21 +144,23 @@
         @if ((!isSkipped(event) && !isCompletedDose(event)) || expandedSkippedEvents()[event.id]) {
         <div class="grid min-w-0 flex-1 gap-x-6 gap-y-3" [ngClass]="event.medicationId ? 'lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.8fr)]' : 'grid-cols-1'">
           <div class="min-w-0">
+          @if (!isSkipped(event) && !isCompletedDose(event)) {
           <strong class="block text-sm" [class.line-through]="isCanceled(event)" [class.text-slate-500]="event.medicationId && event.doseTaken" [class.font-medium]="event.medicationId && event.doseTaken">{{ event.title }}</strong><span
             class="mt-1 block text-xs text-slate-500">{{ event.time || 'Intera giornata' }}@if (event.category) { · {{
             event.category
             }} }@if (event.location) { · {{ event.location }} }</span>
+          }
           @if (event.specialist) {
           <span class="mt-1 block text-xs text-slate-500">Specialista o terapista: {{ event.specialist }}</span>
           }
           @if (event.detail) {
           <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">{{ event.detail }}</p>
           }
-          @if (event.section === 'calendar_events') {
+          @if (event.section === 'calendar_events' && !isSkipped(event)) {
           <span class="mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold"
             [class]="eventStatusTone(event)">{{ eventStatusLabel(event) || 'Confermato' }}</span>
           }
-          @if (event.medicationId) {
+          @if (event.medicationId && !isCompletedDose(event) && !isSkipped(event)) {
           <span class="mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold"
             [ngClass]="event.doseTaken ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' : event.doseSkipped ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200' : 'bg-amber-200 text-amber-950 dark:bg-amber-800 dark:text-amber-50'">
             {{ event.doseTaken ? doseTakenLabel(event) : event.doseSkipped ? 'SOMMINISTRAZIONE SALTATA' : 'DOSE DA FARE'
@@ -185,9 +187,9 @@
             </button>
         </div>
         }
-          @if (!event.doseTaken && !event.doseSkipped && event.date <= today) { <button type="button"
-          class="mt-3 text-left text-xs font-semibold text-rose-700 underline dark:text-rose-300" (click)="openSkip(event)">Segna
-          somministrazione come saltata</button>
+          @if (!event.doseSkipped && event.date <= today) { <button type="button"
+          class="mt-3 text-left text-xs font-semibold text-rose-700 underline dark:text-rose-300" (click)="openSkip(event)">
+          {{ event.doseTaken ? 'Correggi: segna la somministrazione come saltata' : 'Segna somministrazione come saltata' }}</button>
           }
           </div>
           @if (isSkipped(event) && event.skippedReason) {
@@ -216,7 +218,7 @@
       sectionLabel(event.section) }} →</button>
     } @else {
     <a [routerLink]="'/' + event.section"
-      [queryParams]="{ highlight: event.id.replace(event.section + '-', ''), child: event.childId }"
+      [queryParams]="{ highlight: event.medicationId || event.id.replace(event.section + '-', '').replace('-end', ''), child: event.childId }"
       class="shrink-0 basis-full text-right text-xs text-teal-700 dark:text-teal-300 lg:basis-auto">{{ sectionLabel(event.section) }} →</a>
     }
         }
@@ -368,6 +370,31 @@
           </button>
         </div>
       </form>
+    </section>
+  </div>
+  }
+  @if (pastOccurrencesPrompt()) {
+  <div class="modal-backdrop z-50" (click)="closePastOccurrencesPrompt()">
+    <section class="modal-panel max-w-lg" role="dialog" aria-modal="true" aria-labelledby="past-occurrences-title"
+      (click)="$event.stopPropagation()">
+      <div class="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+        <p class="eyebrow">EVENTO RICORRENTE</p>
+        <h2 id="past-occurrences-title" class="text-xl font-semibold">Segnare le occorrenze passate come svolte?</h2>
+        <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
+          La serie contiene {{ pastOccurrenceCount() }} occorrenze nel passato. Puoi segnarle come completate oppure
+          lasciarle confermate.
+        </p>
+      </div>
+      <div class="grid gap-2 p-5">
+        <button type="button" class="button-primary justify-start" [disabled]="saving()"
+          (click)="saveEvent(undefined, true)">
+          Sì, segna come svolte
+        </button>
+        <button type="button" class="button-secondary justify-start" [disabled]="saving()"
+          (click)="saveEvent(undefined, false)">
+          No, lascia come confermate
+        </button>
+      </div>
     </section>
   </div>
   }

@@ -50,6 +50,8 @@ export class CalendarPreviewComponent implements OnInit {
   readonly loading = signal(true);
   readonly savingDose = signal(false);
   readonly doseError = signal('');
+  readonly skipReason = signal('');
+  readonly skipDose = signal<{ medicationId: string; childId: string; time: string; label: string } | null>(null);
   readonly selectedView = signal<'today' | 'upcoming'>('today');
   private readonly windowEnd = addDays(dateKey(new Date()), 30);
   private readonly today = dateKey(new Date());
@@ -154,7 +156,8 @@ export class CalendarPreviewComponent implements OnInit {
             return {
               id: slot.start,
               label: slot.end ? `Fascia ${slot.start}–${slot.end}` : slot.start,
-              taken: !!dose,
+              taken: !!dose?.row['taken_at'] && !dose?.row['skipped_reason'],
+              skipped: !!dose?.row['skipped_reason'] || dose?.row['status'] === 'Saltata',
               medicationId: String(item.row.id),
               childId: item.row['child_id'] ? String(item.row['child_id']) : undefined,
               actualTime: takenAt && !Number.isNaN(takenAt.getTime())
@@ -271,6 +274,37 @@ export class CalendarPreviewComponent implements OnInit {
       this.doseError.set(this.data.error() || 'Non è stato possibile registrare la somministrazione.');
       return;
     }
+    this.entries.set(await this.data.loadAllForSearch());
+  }
+  openSkipDose(item: { id: string; childId?: string }, dose: { id: string; label: string }): void {
+    if (!item.childId || !this.canMarkDose(dose.id) || this.savingDose()) return;
+    this.doseError.set('');
+    this.skipReason.set('');
+    this.skipDose.set({ medicationId: item.id, childId: item.childId, time: dose.id, label: dose.label });
+  }
+  closeSkipDose(): void {
+    this.skipDose.set(null);
+    this.doseError.set('');
+  }
+  async markDoseSkipped(): Promise<void> {
+    const dose = this.skipDose();
+    const reason = this.skipReason().trim();
+    if (!dose || !reason || this.savingDose()) return;
+    this.savingDose.set(true);
+    this.doseError.set('');
+    const saved = await this.data.markMedicationDoseSkipped(
+      dose.medicationId,
+      dose.childId,
+      this.today,
+      dose.time,
+      reason,
+    );
+    this.savingDose.set(false);
+    if (!saved) {
+      this.doseError.set(this.data.error() || 'Non è stato possibile registrare la dose saltata.');
+      return;
+    }
+    this.skipDose.set(null);
     this.entries.set(await this.data.loadAllForSearch());
   }
   private centerNextEvent(): void {

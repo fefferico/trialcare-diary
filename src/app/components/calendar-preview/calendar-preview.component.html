@@ -124,30 +124,48 @@
           <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg bg-slate-50/60 px-2.5 py-1.5 text-xs text-slate-500 dark:bg-slate-900/30">
             <a [routerLink]="item.path" [queryParams]="{ highlight: item.highlightId, child: item.childId || null }"
               class="min-w-0 truncate font-medium hover:text-teal-700 dark:hover:text-teal-300">{{ item.title }}</a>
-            <span class="shrink-0">{{ completedDoseTimes(item.dosesToday) }}</span>
+            @for (dose of item.dosesToday; track dose.id) {
+            <span class="flex items-center gap-1.5">
+              <span>{{ dose.actualTime || dose.label }}</span>
+              @if (canMarkDose(dose.id)) {
+              <button type="button" class="font-semibold text-rose-700 underline dark:text-rose-300"
+                [disabled]="savingDose() || !item.childId" (click)="openSkipDose(item, dose)">SALTATA</button>
+              }
+            </span>
+            }
           </div>
           } @else {
           <div class="rounded-xl bg-slate-50 p-3 text-sm dark:bg-slate-800/60">
             <a [routerLink]="item.path" [queryParams]="{ highlight: item.highlightId, child: item.childId || null }"
               class="block rounded-lg hover:text-teal-700 dark:hover:text-teal-300"><strong class="block truncate">{{ item.title }}</strong><span class="text-xs text-slate-500">{{ item.kind }}</span></a>
             @if (item.dosesToday.length) {
-            <ul class="mt-2 space-y-1 border-t border-slate-200 pt-2 dark:border-slate-700">
+            <ul class="mt-2 space-y-2 border-t border-slate-200 pt-2 dark:border-slate-700">
               @for (dose of item.dosesToday; track dose.id) {
-              <li [attr.data-medication-dose-id]="dose.taken ? null : dose.id" class="flex flex-wrap items-center justify-between gap-2 text-xs">
-                <span class="text-slate-600 dark:text-slate-300">{{ dose.label }}</span>
-                <span class="flex flex-wrap items-center gap-2">
+              <li [attr.data-medication-dose-id]="dose.taken ? null : dose.id"
+                class="space-y-2 rounded-lg border border-slate-200/70 bg-white/40 p-2.5 text-xs dark:border-slate-700/70 dark:bg-slate-900/20">
+                <div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                  <span class="font-medium text-slate-600 dark:text-slate-300">{{ dose.label }}</span>
                   <span class="rounded-full px-2 py-0.5 font-semibold"
-                    [ngClass]="'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-100'">
-                    {{ dose.taken ? 'Somministrata' : 'Da fare' }}@if (dose.taken && dose.actualTime) { alle {{
+                    [ngClass]="dose.taken ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/50 dark:text-emerald-100' : dose.skipped ? 'bg-rose-100 text-rose-900 dark:bg-rose-900/50 dark:text-rose-100' : 'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-100'">
+                    {{ dose.taken ? 'Somministrata' : dose.skipped ? 'SALTATA' : 'Da fare' }}@if (dose.taken && dose.actualTime) { alle {{
                     dose.actualTime }}}
                   </span>
-                  @if (!dose.taken && canMarkDose(dose.id)) {
-                  <button type="button" class="button-primary !px-3 !py-1.5 text-[11px] font-bold"
+                </div>
+                  @if (!dose.skipped && canMarkDose(dose.id)) {
+                  <div class="grid grid-cols-2 gap-2">
+                  @if (!dose.taken) {
+                  <button type="button" class="button-primary w-full !px-2 !py-2 text-[11px] font-bold"
                     [disabled]="savingDose() || !item.childId" (click)="markDoseTaken(item, dose)">
                     {{ savingDose() ? '...' : 'FATTO' }}
                   </button>
                   }
-                </span>
+                  <button type="button" class="button-secondary w-full !px-2 !py-2 text-[11px] font-bold text-rose-700 dark:text-rose-300"
+                    [class.col-span-2]="dose.taken"
+                    [disabled]="savingDose() || !item.childId" (click)="openSkipDose(item, dose)">
+                    SALTATA
+                  </button>
+                  </div>
+                  }
               </li>
             }
             </ul>
@@ -214,3 +232,31 @@
   </div>
   }
 </section>
+@if (skipDose(); as dose) {
+<div class="modal-backdrop" (click)="closeSkipDose()">
+  <section class="modal-panel max-w-lg" role="dialog" aria-modal="true" aria-labelledby="skip-dose-title"
+    (click)="$event.stopPropagation()">
+    <div class="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+      <p class="eyebrow">SOMMINISTRAZIONE</p>
+      <h2 id="skip-dose-title" class="text-xl font-semibold">Segna la dose come saltata</h2>
+      <p class="mt-1 text-sm text-slate-500">{{ dose.label }}</p>
+    </div>
+    <form class="space-y-4 p-5" (submit)="$event.preventDefault(); markDoseSkipped()">
+      <label class="block text-sm font-medium">Motivo della dose saltata
+        <textarea class="field-control mt-1 min-h-24" required maxlength="500" [value]="skipReason()"
+          (input)="skipReason.set($any($event.target).value)"
+          placeholder="Indica perché la dose non è stata somministrata"></textarea>
+      </label>
+      @if (doseError()) {
+      <p role="alert" class="notice-error">{{ doseError() }}</p>
+      }
+      <div class="flex justify-end gap-2">
+        <button type="button" class="button-secondary" (click)="closeSkipDose()">Annulla</button>
+        <button type="submit" class="button-primary" [disabled]="savingDose() || !skipReason().trim()">
+          {{ savingDose() ? 'Salvataggio…' : 'Conferma SALTATA' }}
+        </button>
+      </div>
+    </form>
+  </section>
+</div>
+}

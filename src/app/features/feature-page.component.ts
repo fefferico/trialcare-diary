@@ -39,6 +39,12 @@ interface MedicationScheduleDraft {
   planned_pause: string;
 }
 
+interface HistoricalMedicationDose {
+  scheduledDate: string;
+  scheduledTime: string;
+  takenAt: string;
+}
+
 function normalizeSearch(value: string): string {
   return value
     .normalize('NFD')
@@ -72,6 +78,16 @@ function searchEditDistance(left: string, right: string): number {
     previous = current;
   }
   return previous[right.length];
+}
+
+function medicationDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function normalizeMedicationTime(value: string): string | null {
+  const [hour, minute] = value.split(':').map(Number);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 }
 
 @Component({
@@ -1019,6 +1035,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   readonly documentSearchLoading = signal(false);
   readonly detailDocuments = signal<DiaryRow[]>([]);
   readonly saving = signal(false);
+  private pendingHistoricalDoseMedicationId = '';
   readonly extracting = signal(false);
   readonly documentTextProcessing = signal(false);
   readonly loadingExistingPdf = signal(false);
@@ -1860,6 +1877,51 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     }
     return output;
   }
+  private historicalMedicationDoses(
+    periods: MedicationSchedulePeriod[],
+  ): HistoricalMedicationDose[] {
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const doses: HistoricalMedicationDose[] = [];
+    for (const period of periods) {
+      const start = String(period.start_date ?? '').slice(0, 10);
+      const end = String(period.end_date ?? '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || start >= today) continue;
+      const lastDate = end && end < today ? end : medicationDateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+      if (lastDate < start) continue;
+      const slots = String(period.schedule_times ?? '').split(',').flatMap((entry) => {
+        const match = entry.trim().match(/^(\d{1,2}:\d{2})(?:\s*[-–]\s*(\d{1,2}:\d{2}))?$/);
+        if (!match) return [];
+        const startTime = normalizeMedicationTime(match[1]);
+        const endTime = match[2] ? normalizeMedicationTime(match[2]) : null;
+        if (!startTime || (match[2] && !endTime) || (endTime && endTime < startTime)) return [];
+        const scheduledTime = startTime;
+        let actualTime = startTime;
+        if (endTime) {
+          const toMinutes = (value: string) => {
+            const [hour, minute] = value.split(':').map(Number);
+            return hour * 60 + minute;
+          };
+          const midpoint = Math.floor((toMinutes(startTime) + toMinutes(endTime)) / 2);
+          actualTime = `${String(Math.floor(midpoint / 60)).padStart(2, '0')}:${String(midpoint % 60).padStart(2, '0')}`;
+        }
+        return [{ scheduledTime, actualTime }];
+      });
+      if (!slots.length) continue;
+      const [year, month, day] = start.split('-').map(Number);
+      const cursor = new Date(year, month - 1, day);
+      while (medicationDateKey(cursor) <= lastDate) {
+        const scheduledDate = medicationDateKey(cursor);
+        for (const slot of slots) {
+          const [hour, minute] = slot.actualTime.split(':').map(Number);
+          const takenAt = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), hour, minute).toISOString();
+          doses.push({ scheduledDate, scheduledTime: slot.scheduledTime, takenAt });
+        }
+        cursor.setDate(cursor.getDate() + 1);
+      }
+    }
+    return doses;
+  }
   async save(): Promise<void> {
     if (this.documentLinksLoading()) return;
     if (this.sectionId === 'documents' && this.documentTextProcessing()) {
@@ -2007,6 +2069,8 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     if (this.sectionId === 'expenses' && value['receipt_path']) delete value['receipt'];
     const targetId = this.editingId || crypto.randomUUID();
     const targetChildId = this.selectedChildId();
+    const shouldBackfillMedicationDoses = this.sectionId === 'medications' &&
+      (!this.editingId || this.pendingHistoricalDoseMedicationId === targetId);
     let ok = this.editingId
       ? await this.data.update(this.sectionId, this.editingId, value)
       : !!(await this.data.saveWithId(
@@ -2014,6 +2078,16 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         { ...value, id: targetId },
         this.sectionId === 'children' ? undefined : targetChildId || undefined,
       ));
+    if (ok && !this.editingId && ['medications', 'orthoses'].includes(this.sectionId))
+      this.editingId = targetId;
+    if (ok && shouldBackfillMedicationDoses && targetChildId) {
+      this.pendingHistoricalDoseMedicationId = targetId;
+      const doses = this.historicalMedicationDoses(
+        (value['schedule_periods'] as MedicationSchedulePeriod[] | undefined) ?? [],
+      );
+      ok = await this.data.markMedicationDosesTaken(targetId, targetChildId, doses);
+      if (ok) this.pendingHistoricalDoseMedicationId = '';
+    }
     if (!ok && replacementStoragePath) await this.storage.removeDocument(replacementStoragePath);
     if (!ok && replacementLocalFileId) {
       try {
@@ -2037,8 +2111,6 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         }
       }
     }
-    if (ok && !this.editingId && ['medications', 'orthoses'].includes(this.sectionId))
-      this.editingId = targetId;
     if (ok && ['medications', 'orthoses'].includes(this.sectionId) && targetChildId) {
       const documentIds = this.selectedDocuments().map((doc) => doc.id);
       for (const file of this.associatedFiles) {

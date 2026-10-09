@@ -271,6 +271,60 @@ export class DiaryDataService {
     return true;
   }
 
+  async markMedicationDosesTaken(
+    medicationId: string,
+    childId: string,
+    doses: Array<{ scheduledDate: string; scheduledTime: string; takenAt: string }>,
+  ): Promise<boolean> {
+    this.error.set('');
+    if (!doses.length) return true;
+    const client = this.supabase.client;
+    if (client && this.auth.user()) {
+      for (let index = 0; index < doses.length; index += 500) {
+        const payload = doses.slice(index, index + 500).map((dose) => ({
+          medication_id: medicationId,
+          child_id: childId,
+          scheduled_date: dose.scheduledDate,
+          scheduled_time: dose.scheduledTime,
+          taken_at: dose.takenAt,
+          status: 'Somministrata',
+          skipped_reason: null,
+        }));
+        const { error } = await client.from('medication_doses').upsert(payload, {
+          onConflict: 'medication_id,scheduled_date,scheduled_time',
+          ignoreDuplicates: true,
+        });
+        if (error) {
+          this.error.set(error.message);
+          return false;
+        }
+      }
+    } else {
+      const rows = this.local.medication_doses ?? [];
+      const keys = new Set(rows.map((row) => String(row['dose_key'] ?? '')));
+      for (const dose of doses) {
+        const key = `${medicationId}|${dose.scheduledDate}|${dose.scheduledTime}`;
+        if (keys.has(key)) continue;
+        rows.unshift({
+          id: crypto.randomUUID(),
+          child_id: childId,
+          medication_id: medicationId,
+          scheduled_date: dose.scheduledDate,
+          scheduled_time: dose.scheduledTime,
+          dose_key: key,
+          taken_at: dose.takenAt,
+          status: 'Somministrata',
+          skipped_reason: null,
+        } as DiaryRow);
+        keys.add(key);
+      }
+      this.local.medication_doses = rows;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.local));
+    }
+    await this.load('medication_doses');
+    return true;
+  }
+
   async markMedicationDoseSkipped(
     medicationId: string,
     childId: string,
@@ -292,7 +346,7 @@ export class DiaryDataService {
           status: 'Saltata',
           skipped_reason: reason.trim(),
         },
-        { onConflict: 'medication_id,scheduled_date,scheduled_time', ignoreDuplicates: true },
+        { onConflict: 'medication_id,scheduled_date,scheduled_time' },
       );
       if (error) {
         this.error.set(error.message);
@@ -300,21 +354,32 @@ export class DiaryDataService {
       }
     } else {
       const rows = this.local.medication_doses ?? [];
-      if (!rows.some((row) => row['dose_key'] === key)) {
+      const existingIndex = rows.findIndex((row) =>
+        row['dose_key'] === key ||
+        (row['medication_id'] === medicationId &&
+          row['scheduled_date'] === scheduledDate &&
+          String(row['scheduled_time'] ?? '').slice(0, 5) === scheduledTime),
+      );
+      const updates = {
+        child_id: childId,
+        taken_at: null,
+        status: 'Saltata',
+        skipped_reason: reason.trim(),
+      };
+      if (existingIndex >= 0) {
+        rows[existingIndex] = { ...rows[existingIndex], ...updates } as DiaryRow;
+      } else {
         rows.unshift({
           id: crypto.randomUUID(),
-          child_id: childId,
           medication_id: medicationId,
           scheduled_date: scheduledDate,
           scheduled_time: scheduledTime,
           dose_key: key,
-          taken_at: null,
-          status: 'Saltata',
-          skipped_reason: reason.trim(),
+          ...updates,
         } as DiaryRow);
-        this.local.medication_doses = rows;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.local));
       }
+      this.local.medication_doses = rows;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.local));
     }
     return true;
   }

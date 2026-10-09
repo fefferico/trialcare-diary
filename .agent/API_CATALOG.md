@@ -1,6 +1,6 @@
 # API Catalog
 
-> Generato da `npm run update-context` il 08/10/2026, 09:58:12.
+> Generato da `npm run update-context` il 09/10/2026, 14:33:03.
 
 ## Servizi
 
@@ -52,6 +52,11 @@ File: [src/app/core/diary-data.service.ts](../src/app/core/diary-data.service.ts
     scheduledDate: string,
     scheduledTime: string,
     takenAt: string,
+  )`: `Promise<boolean>`
+- `markMedicationDosesTaken(
+    medicationId: string,
+    childId: string,
+    doses: Array<{ scheduledDate: string; scheduledTime: string; takenAt: string }>,
   )`: `Promise<boolean>`
 - `markMedicationDoseSkipped(
     medicationId: string,
