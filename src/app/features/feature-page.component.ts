@@ -393,6 +393,10 @@ function normalizeMedicationTime(value: string): string | null {
                           <a class="underline" [href]="'mailto:' + value(row, field.key)" (click)="$event.stopPropagation()">{{
                             value(row, field.key)
                           }}</a>
+                        } @else if (section.id === 'contacts' && field.key === 'website' && websiteHref(value(row, field.key))) {
+                          <a class="underline" [href]="websiteHref(value(row, field.key))" target="_blank" rel="noopener noreferrer" (click)="$event.stopPropagation()">{{
+                            value(row, field.key)
+                          }}</a>
                         } @else {
                           {{ value(row, field.key) }}
                         }
@@ -597,11 +601,12 @@ function normalizeMedicationTime(value: string): string | null {
                         } @else {
                           <input
                             class="field-control"
-                            type="text"
+                            [type]="section.id === 'contacts' && field.key === 'website' ? 'url' : 'text'"
                             [name]="field.key"
                             [(ngModel)]="form[field.key]"
                             [required]="field.required ?? false"
                             [placeholder]="field.placeholder ?? ''"
+                            [attr.autocomplete]="section.id === 'contacts' && field.key === 'website' ? 'url' : null"
                             (blur)="section.id === 'medications' && field.key === 'schedule_times' && normalizeScheduleTimesInput()"
                           />
                           @if (section.id === 'medications' && field.key === 'schedule_times') {
@@ -841,7 +846,13 @@ function normalizeMedicationTime(value: string): string | null {
                   @if (value(row, field.key)) {
                     <div class="min-w-0">
                       <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ field.label }}</dt>
-                      <dd class="mt-1 whitespace-pre-wrap break-words text-sm">{{ value(row, field.key) }}</dd>
+                      <dd class="mt-1 whitespace-pre-wrap break-words text-sm">
+                        @if (section.id === 'contacts' && field.key === 'website' && websiteHref(value(row, field.key))) {
+                          <a class="underline" [href]="websiteHref(value(row, field.key))" target="_blank" rel="noopener noreferrer">{{ value(row, field.key) }}</a>
+                        } @else {
+                          {{ value(row, field.key) }}
+                        }
+                      </dd>
                     </div>
                   }
                 }
@@ -1017,6 +1028,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     'Psicologo',
     'Assistente sociale',
     'Farmacista',
+    'Tecnico ortopedico',
     'Altro',
   ];
   @Input({ required: true }) sectionId!: SectionId;
@@ -1454,6 +1466,17 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   }
   setField(field: FieldDefinition, value: string): void {
     this.form[field.key] = value;
+  }
+  websiteHref(value: unknown): string {
+    const raw = String(value ?? '').trim();
+    if (!raw) return '';
+    const candidate = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+    try {
+      const url = new URL(candidate);
+      return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : '';
+    } catch {
+      return '';
+    }
   }
   isPdfAttachment(): boolean {
     return !!this.attachedFile &&
@@ -1924,6 +1947,18 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   }
   async save(): Promise<void> {
     if (this.documentLinksLoading()) return;
+    if (this.sectionId === 'contacts') {
+      const requiredContactFields = this.section.fields.filter((field) => field.required);
+      for (const field of requiredContactFields) {
+        if (!String(this.form[field.key] ?? '').trim()) {
+          const message = field.key === 'category'
+            ? 'Seleziona una categoria per il contatto prima di salvarlo.'
+            : `Inserisci ${field.key === 'name' ? 'il nome' : 'la professione o il ruolo'} del contatto prima di salvarlo.`;
+          this.data.error.set(message);
+          return;
+        }
+      }
+    }
     if (this.sectionId === 'documents' && this.documentTextProcessing()) {
       this.data.error.set('Attendi che la lettura del PDF sia completata prima di salvare.');
       return;
@@ -1931,6 +1966,11 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.saving.set(true);
     const value: Record<string, unknown> = { ...this.form };
     this.data.error.set('');
+    if (this.sectionId === 'contacts') {
+      for (const key of ['name', 'role', 'category']) {
+        value[key] = String(value[key] ?? '').trim();
+      }
+    }
     if (this.sectionId === 'medicine_cabinet') {
       const monthOnly = value['expiry_precision'] === 'Mese e anno';
       value['expiry_precision'] = monthOnly ? 'month' : 'day';

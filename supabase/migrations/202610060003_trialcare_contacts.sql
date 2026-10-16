@@ -7,6 +7,7 @@ create table if not exists public.contacts (
   category text not null,
   phone text,
   email text,
+  website text,
   facility text,
   notes text,
   created_at timestamptz not null default now(),

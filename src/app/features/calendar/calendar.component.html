@@ -20,6 +20,11 @@
     Non è stato possibile caricare tutti i dati del calendario.
   </p>
   }
+  @if (successMessage()) {
+  <p role="status" aria-live="polite" class="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-900 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-100">
+    {{ successMessage() }}
+  </p>
+  }
   @if (loading()) {
   <div class="grid gap-3 sm:grid-cols-2" aria-label="Caricamento calendario" aria-busy="true">
     @for (placeholder of [1, 2]; track placeholder) {
@@ -153,6 +158,9 @@
           @if (event.specialist) {
           <span class="mt-1 block text-xs text-slate-500">Specialista o terapista: {{ event.specialist }}</span>
           }
+          @if (contactNames(event).length) {
+          <span class="mt-1 block text-xs text-slate-500">Presenti: {{ contactNames(event).join(', ') }}</span>
+          }
           @if (event.detail) {
           <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">{{ event.detail }}</p>
           }
@@ -267,7 +275,8 @@
           <div class="flex flex-wrap items-center gap-2">
             <strong class="text-sm" [class.line-through]="isSkipped(event)" [class.text-slate-500]="isSkipped(event) || isCompleted(event)" [class.font-medium]="isCompleted(event)">{{ event.title }}</strong>
             @if (isSkipped(event)) {
-            <span class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900 dark:bg-amber-900/60 dark:text-amber-100">
+            <span class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900 dark:bg-amber-900/60 dark:text-amber-100"
+              [appTooltip]="event.skippedReason || 'Motivazione non specificata'">
               <span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>Saltato
             </span>
             }
@@ -280,8 +289,19 @@
           </div>
           <span class="mt-1 block text-xs text-slate-500 dark:text-slate-400">{{ event.date | date:'d MMMM y':'':'it'
             }}@if (event.time) { · {{ event.time }}}@if (event.category) { · {{ event.category }}}</span>
-          @if (event.specialist || event.location) {<span class="mt-1 block text-xs text-slate-500">{{ event.specialist
-            }}@if (event.specialist && event.location) { · }{{ event.location }}</span>}
+          @if (contactNames(event).length) {
+          <span class="mt-1 inline-flex items-center gap-0.5 text-xs leading-4 text-slate-500 dark:text-slate-400">
+            <svg lucideUsersRound aria-hidden="true" class="h-3.5 w-3.5 shrink-0"></svg>
+            {{ contactNames(event).join(', ') }}
+          </span>
+          }
+          @if (event.specialist) {<span class="mt-1 block text-xs text-slate-500 dark:text-slate-400">{{ event.specialist }}</span>}
+          @if (event.location) {
+          <span class="mt-1 inline-flex items-center gap-0.5 text-xs leading-4 text-slate-500 dark:text-slate-400">
+            <svg lucideMapPin aria-hidden="true" class="h-3.5 w-3.5 shrink-0"></svg>
+            {{ event.location }}
+          </span>
+          }
         </div>
         <span class="shrink-0 text-xs font-semibold text-teal-700 group-hover:underline dark:text-teal-300">Apri →</span>
       </button>
@@ -326,6 +346,52 @@
             class="font-normal text-slate-500">(facoltativo)</span>
           <app-autocomplete class="mt-1 block" [options]="locationOptions()" [value]="location()" [maxLength]="200"
             placeholder="Struttura o indirizzo" (valueChange)="location.set($event)" /></label>
+        @if (editingEvent()) {
+        <label class="block text-sm font-medium">Stato
+          <app-dropdown class="mt-1 block" [options]="['Confermato', 'Da confermare', 'Saltato', 'Cancellato']"
+            [value]="eventStatus()" placeholder="Seleziona stato"
+            (selection)="eventStatus.set($event); saveError.set('')" />
+        </label>
+        @if (eventStatus() === 'Saltato') {
+        <label class="block text-sm font-medium">Motivazione dell’evento saltato
+          <textarea class="field-control mt-1 min-h-20" maxlength="500" required
+            [value]="eventSkippedReason()" (input)="eventSkippedReason.set($any($event.target).value)"
+            placeholder="Indica perché l’appuntamento è stato saltato"></textarea>
+        </label>
+        }
+        }
+        @if (availableContacts().length) {
+        <fieldset class="space-y-2 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+          <legend class="px-1 text-sm font-medium">Persone presenti <span
+              class="font-normal text-slate-500">(facoltative, puoi selezionarne più di una)</span></legend>
+          <label class="block text-xs font-medium">Cerca tra i contatti
+            <input class="field-control mt-1" type="search" maxlength="120" autocomplete="off"
+              placeholder="Nome, ruolo, struttura…" (input)="searchContacts($any($event.target).value)" />
+          </label>
+          @if (selectedContactIds().length) {
+          <p class="text-xs text-slate-500">{{ selectedContactIds().length }} persone selezionate</p>
+          }
+          @if (contactSearchLoading()) {
+          <p class="py-2 text-sm text-slate-500" role="status" aria-live="polite">Ricerca contatti…</p>
+          } @else if (filteredContacts().length) {
+          <div class="max-h-40 space-y-1 overflow-y-auto">
+            @for (contact of filteredContacts(); track contact.id) {
+            <label class="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-slate-50 dark:hover:bg-slate-800">
+              <input class="mt-0.5 accent-teal-700" type="checkbox" [checked]="selectedContactIds().includes(contact.id)"
+                (change)="toggleContact(contact.id, $any($event.target).checked)" />
+              <span>{{ contact['name'] }} <span class="text-slate-500">· {{ contact['role'] }}</span></span>
+            </label>
+            }
+          </div>
+          } @else {
+          <p class="py-2 text-sm text-slate-500">Nessun contatto corrisponde alla ricerca.</p>
+          }
+        </fieldset>
+        } @else {
+        <p class="rounded-lg bg-slate-50 p-3 text-xs text-slate-500 dark:bg-slate-800/60">
+          Non ci sono contatti associati a questo profilo. Puoi aggiungerli nella sezione Contatti.
+        </p>
+        }
         @if (!editingEvent()) {
         <label class="block text-sm font-medium">Ripeti<select class="field-control mt-1" [value]="repeat()"
             (change)="repeat.set($any($event.target).value)">
@@ -404,14 +470,17 @@
       (click)="$event.stopPropagation()">
       <div class="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
         <p class="eyebrow">EVENTO RICORRENTE</p>
-        <h2 id="recurrence-scope-title" class="text-xl font-semibold">Dove applicare la nuova tipologia?</h2>
+        <h2 id="recurrence-scope-title" class="text-xl font-semibold">Dove applicare le modifiche?</h2>
         <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
-          Puoi cambiare la categoria solo per questo appuntamento, per questo e i successivi, oppure per tutta la serie, comprese le date passate.
+          Titolo, categoria, professionista, orario, luogo e persone presenti possono essere aggiornati per questo appuntamento, per questo e quelli precedenti o successivi, oppure per tutta la serie. Note e data restano legate a questo appuntamento.
         </p>
       </div>
       <div class="grid gap-2 p-5">
         <button type="button" class="button-secondary justify-start" [disabled]="saving()" (click)="saveEvent('single')">
           Solo questo appuntamento
+        </button>
+        <button type="button" class="button-secondary justify-start" [disabled]="saving()" (click)="saveEvent('preceding')">
+          Questo e i precedenti
         </button>
         <button type="button" class="button-secondary justify-start" [disabled]="saving()" (click)="saveEvent('following')">
           Questo e i successivi
@@ -482,6 +551,12 @@
           <div>
             <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Specialista o terapista</dt>
             <dd class="mt-1 text-sm">{{ event.specialist }}</dd>
+          </div>
+          }
+          @if (contactNames(event).length) {
+          <div>
+            <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">Persone presenti</dt>
+            <dd class="mt-1 text-sm">{{ contactNames(event).join(', ') }}</dd>
           </div>
           }
           @if (event.location) {

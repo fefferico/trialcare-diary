@@ -1,6 +1,6 @@
 # API Catalog
 
-> Generato da `npm run update-context` il 09/10/2026, 14:33:03.
+> Generato da `npm run update-context` il 16/10/2026, 15:50:43.
 
 ## Servizi
 
@@ -101,6 +101,7 @@ File: [src/app/core/diary-data.service.ts](../src/app/core/diary-data.service.ts
     childId: string,
     value: Record<string, unknown>,
     fromDate?: string,
+    throughDate?: string,
   )`: `Promise<boolean>`
 
 ### PdfExportService

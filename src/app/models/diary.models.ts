@@ -303,6 +303,7 @@ export const SECTIONS: SectionDefinition[] = [
       },
       { key: 'phone', label: 'Telefono', kind: 'text', placeholder: '+39 …' },
       { key: 'email', label: 'Email', kind: 'text' },
+      { key: 'website', label: 'Sito web', kind: 'text', placeholder: 'https://www.esempio.it' },
       { key: 'facility', label: 'Struttura', kind: 'text' },
       { key: 'notes', label: 'Note utili', kind: 'textarea' },
     ],

@@ -20,6 +20,7 @@ import { AppDatepickerComponent } from '../../shared/app-datepicker.component';
 import { AppDropdownComponent } from '../../shared/app-dropdown.component';
 import { AppTimepickerComponent } from '../../shared/app-timepicker.component';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+import { LucideMapPin, LucideUsersRound } from '@lucide/angular';
 import { StorageService } from '../../core/storage.service';
 import { SupabaseClientService } from '../../core/supabase-client.service';
 import { Subscription } from 'rxjs';
@@ -34,6 +35,7 @@ interface CalendarEvent {
   category: string;
   recurrenceGroupId?: string;
   specialist: string;
+  contactIds: string[];
   location: string;
   detail: string;
   status?: string;
@@ -47,7 +49,7 @@ interface CalendarEvent {
 @Component({
   selector: 'tc-calendar',
   standalone: true,
-  imports: [CommonModule, RouterLink, AppAutocompleteComponent, AppDatepickerComponent, AppDropdownComponent, AppTimepickerComponent, TooltipDirective, DocumentAssociationPickerComponent],
+  imports: [CommonModule, RouterLink, AppAutocompleteComponent, AppDatepickerComponent, AppDropdownComponent, AppTimepickerComponent, TooltipDirective, DocumentAssociationPickerComponent, LucideMapPin, LucideUsersRound],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './calendar.component.html',
 })
@@ -72,6 +74,9 @@ export class CalendarComponent implements OnInit, OnDestroy {
   readonly title = signal('');
   readonly eventCategory = signal('');
   readonly specialist = signal('');
+  readonly eventStatus = signal('Confermato');
+  readonly eventSkippedReason = signal('');
+  readonly selectedContactIds = signal<string[]>([]);
   readonly location = signal('');
   readonly eventDate = signal(dateKey(new Date()));
   readonly eventTime = signal('');
@@ -85,15 +90,28 @@ export class CalendarComponent implements OnInit, OnDestroy {
   readonly focusedEvent = signal<CalendarEvent | null>(null);
   readonly editingEvent = signal<CalendarEvent | null>(null);
   readonly recurrenceScopePrompt = signal(false);
+  readonly successMessage = signal('');
   readonly pastOccurrencesPrompt = signal(false);
   readonly pastOccurrenceCount = signal(0);
   readonly skipReason = signal('');
   readonly doseTimes = signal<Record<string, string>>({});
   readonly documentSearchResults = signal<DiaryRow[]>([]);
   readonly selectedDocuments = signal<DiaryRow[]>([]);
+  readonly availableContacts = computed(() => this.selectedChildRows('contacts'));
+  readonly filteredContacts = computed(() => {
+    const query = this.contactSearchTerm().trim().toLocaleLowerCase('it');
+    if (!query) return this.availableContacts();
+    return this.availableContacts().filter((contact) =>
+      ['name', 'role', 'category', 'facility', 'phone', 'email', 'website']
+        .some((key) => String(contact[key] ?? '').toLocaleLowerCase('it').includes(query)),
+    );
+  });
+  readonly contactSearchLoading = signal(false);
   readonly documentSearchLoading = signal(false);
   readonly associatedFiles = signal<File[]>([]);
   readonly focusedDocuments = signal<DiaryRow[]>([]);
+  private readonly contactSearchTerm = signal('');
+  private contactSearchTimer?: ReturnType<typeof setTimeout>;
   private pendingDocumentTargetIds: string[] = [];
   private readonly storage = inject(StorageService);
   private readonly supabase = inject(SupabaseClientService);
@@ -133,13 +151,17 @@ export class CalendarComponent implements OnInit, OnDestroy {
       .filter((item) => item.section === 'calendar_events')
       .map(({ row }) => {
         const date = String(row['date'] ?? '').slice(0, 10);
-        return { ...makeEvent(row, 'calendar_events', date), status: String(row['status'] ?? '') };
+        return {
+          ...makeEvent(row, 'calendar_events', date),
+          status: String(row['status'] ?? ''),
+          skippedReason: String(row['skipped_reason'] ?? ''),
+        };
       })
       .filter((event) => validDate(event.date))
       .filter((event) => !this.historyCategory() || event.category === this.historyCategory())
       .filter((event) => !this.historyFrom() || event.date >= this.historyFrom())
       .filter((event) => !this.historyTo() || event.date <= this.historyTo())
-      .filter((event) => !query || [event.title, event.category, event.specialist, event.location, event.detail]
+      .filter((event) => !query || [event.title, event.category, event.specialist, ...this.contactNames(event), event.location, event.detail]
         .some((value) => value.toLocaleLowerCase('it').includes(query)))
       .sort((a, b) => b.date.localeCompare(a.date) || a.time.localeCompare(b.time));
   });
@@ -216,6 +238,7 @@ export class CalendarComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.routeSubscription?.unsubscribe();
     if (this.documentSearchTimer) clearTimeout(this.documentSearchTimer);
+    if (this.contactSearchTimer) clearTimeout(this.contactSearchTimer);
   }
   closeFocusedEvent(): void {
     this.focusedEvent.set(null);
@@ -238,6 +261,16 @@ export class CalendarComponent implements OnInit, OnDestroy {
     this.title.set(event.title);
     this.eventCategory.set(event.category);
     this.specialist.set(event.specialist);
+    this.eventStatus.set(this.isSkipped(event)
+      ? 'Saltato'
+      : this.isCanceled(event)
+        ? 'Cancellato'
+        : ['Confermato', 'Da confermare'].includes(event.status ?? '')
+          ? event.status!
+          : event.date > this.today ? 'Da confermare' : 'Confermato');
+    this.eventSkippedReason.set(event.skippedReason ?? '');
+    this.selectedContactIds.set(event.contactIds);
+    this.resetContactSearch();
     this.location.set(event.location);
     this.eventDate.set(event.date);
     this.eventTime.set(event.time);
@@ -398,6 +431,8 @@ export class CalendarComponent implements OnInit, OnDestroy {
     this.title.set('');
     this.eventCategory.set('');
     this.specialist.set('');
+    this.selectedContactIds.set([]);
+    this.resetContactSearch();
     this.location.set('');
     this.eventDate.set(date);
     this.eventTime.set('');
@@ -422,27 +457,38 @@ export class CalendarComponent implements OnInit, OnDestroy {
     this.documentSearchResults.set([]);
     this.selectedDocuments.set([]);
     this.pendingDocumentTargetIds = [];
+    this.resetContactSearch();
   }
   changeChild(childId: string): void {
     if (this.documentSearchTimer) clearTimeout(this.documentSearchTimer);
     this.documentSearchRequest++;
     this.documentSearchLoading.set(false);
     this.childId.set(childId);
+    this.selectedContactIds.set([]);
+    this.resetContactSearch();
     this.documentSearchResults.set([]);
     this.selectedDocuments.set([]);
     this.associatedFiles.set([]);
   }
   async saveEvent(
-    recurrenceScope?: 'single' | 'following' | 'all',
+    recurrenceScope?: 'single' | 'preceding' | 'following' | 'all',
     markPastOccurrencesCompleted?: boolean,
   ): Promise<void> {
     if (!this.title().trim() || !this.eventDate()) return;
+    const availableContactIds = new Set(this.availableContacts().map((contact) => contact.id));
+    const selectedContactIds = [...new Set(this.selectedContactIds())];
+    if (selectedContactIds.some((id) => !availableContactIds.has(id))) {
+      this.saveError.set('Una o più persone selezionate non sono più disponibili per questo profilo. Aggiorna la selezione e riprova.');
+      return;
+    }
+    this.selectedContactIds.set(selectedContactIds);
     const editing = this.editingEvent();
-    if (
-      editing?.recurrenceGroupId &&
-      this.eventCategory().trim() !== editing.category &&
-      !recurrenceScope
-    ) {
+    if (editing && this.eventStatus() === 'Saltato' && !this.eventSkippedReason().trim()) {
+      this.saveError.set('Inserisci la motivazione per segnare l’evento come saltato.');
+      return;
+    }
+    const seriesChanges = editing?.recurrenceGroupId ? this.seriesSharedChanges(editing) : {};
+    if (Object.keys(seriesChanges).length && !recurrenceScope) {
       this.recurrenceScopePrompt.set(true);
       return;
     }
@@ -468,26 +514,31 @@ export class CalendarComponent implements OnInit, OnDestroy {
         editing.recurrenceGroupId &&
         recurrenceScope &&
         recurrenceScope !== 'single' &&
+        Object.keys(seriesChanges).length > 0 &&
         !(await this.data.updateCalendarEventSeries(
           editing.recurrenceGroupId,
           editing.childId ?? '',
-          { category: this.eventCategory().trim() || null },
+          seriesChanges,
           recurrenceScope === 'following' ? editing.date : undefined,
+          recurrenceScope === 'preceding' ? editing.date : undefined,
         ))
       ) {
         this.saving.set(false);
-        this.saveError.set(this.data.error() || 'Non è stato possibile aggiornare la categoria della serie.');
+        this.saveError.set(this.data.error() || 'Non è stato possibile aggiornare la serie di appuntamenti.');
         return;
       }
       const ok = await this.updateEvent(editing, {
         title: this.title().trim(),
         category: this.eventCategory().trim() || null,
         specialist: this.specialist().trim() || null,
+        contact_ids: this.selectedContactIds(),
         location: this.location().trim() || null,
         date: this.eventDate(),
         time: this.eventTime() || null,
         notes: this.notes().trim() || null,
         child_id: this.childId() || null,
+        status: this.eventStatus(),
+        skipped_reason: this.eventStatus() === 'Saltato' ? this.eventSkippedReason().trim() : null,
       });
       if (!ok) {
         this.saving.set(false);
@@ -503,6 +554,13 @@ export class CalendarComponent implements OnInit, OnDestroy {
       this.selectedDate.set(this.eventDate());
       const [year, month] = this.eventDate().split('-').map(Number);
       this.month.set(new Date(year, month - 1, 1));
+      this.successMessage.set(recurrenceScope === 'all'
+        ? 'Modifiche applicate a tutta la serie, agli eventi passati e futuri.'
+        : recurrenceScope === 'following'
+          ? 'Modifiche applicate a questo evento e ai successivi.'
+          : recurrenceScope === 'preceding'
+            ? 'Modifiche applicate a questo evento e ai precedenti.'
+            : 'Modifiche salvate per questo evento.');
       this.closeForm();
       this.closeFocusedEvent();
       return;
@@ -537,6 +595,7 @@ export class CalendarComponent implements OnInit, OnDestroy {
       title: this.title().trim(),
       category: this.eventCategory().trim() || null,
       specialist: this.specialist().trim() || null,
+      contact_ids: this.selectedContactIds(),
       location: this.location().trim() || null,
       date,
       time: this.eventTime() || null,
@@ -779,6 +838,52 @@ export class CalendarComponent implements OnInit, OnDestroy {
       .filter((item) => item.section === section && item.row['child_id'] === childId)
       .map((item) => item.row);
   }
+  contactNames(event: CalendarEvent): string[] {
+    if (!event.contactIds.length) return [];
+    const contacts = this.entries()
+      .filter((item) => item.section === 'contacts' && item.row['child_id'] === event.childId)
+      .map((item) => item.row);
+    return event.contactIds.flatMap((id) => {
+      const contact = contacts.find((row) => row.id === id);
+      return contact ? [String(contact['name'] ?? '')] : [];
+    });
+  }
+  toggleContact(contactId: string, checked: boolean): void {
+    this.selectedContactIds.update((ids) => checked
+      ? [...new Set([...ids, contactId])]
+      : ids.filter((id) => id !== contactId));
+  }
+  searchContacts(query: string): void {
+    if (this.contactSearchTimer) clearTimeout(this.contactSearchTimer);
+    this.contactSearchLoading.set(true);
+    this.contactSearchTimer = setTimeout(() => {
+      this.contactSearchTerm.set(query.trim());
+      this.contactSearchLoading.set(false);
+    }, 600);
+  }
+  private resetContactSearch(): void {
+    if (this.contactSearchTimer) clearTimeout(this.contactSearchTimer);
+    this.contactSearchTerm.set('');
+    this.contactSearchLoading.set(false);
+  }
+  private seriesSharedChanges(event: CalendarEvent): Record<string, unknown> {
+    const changes: Record<string, unknown> = {};
+    const addIfChanged = (key: string, value: string, current: string): void => {
+      const normalized = value.trim();
+      if (normalized !== current) changes[key] = normalized || null;
+    };
+    addIfChanged('title', this.title(), event.title);
+    addIfChanged('category', this.eventCategory(), event.category);
+    addIfChanged('specialist', this.specialist(), event.specialist);
+    addIfChanged('location', this.location(), event.location);
+    addIfChanged('time', this.eventTime(), event.time);
+    const currentContactIds = [...new Set(event.contactIds)].sort();
+    const nextContactIds = [...new Set(this.selectedContactIds())].sort();
+    if (JSON.stringify(currentContactIds) !== JSON.stringify(nextContactIds)) {
+      changes['contact_ids'] = nextContactIds;
+    }
+    return changes;
+  }
   private suggestionValues(values: string[]): string[] {
     return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort((a, b) =>
       a.localeCompare(b, 'it'),
@@ -940,6 +1045,7 @@ function makeEvent(row: DiaryRow, section: string, date: string): CalendarEvent 
     category: String(row['category'] ?? ''),
     recurrenceGroupId: row['recurrence_group_id'] ? String(row['recurrence_group_id']) : undefined,
     specialist: String(row['specialist'] ?? ''),
+    contactIds: Array.isArray(row['contact_ids']) ? row['contact_ids'].map(String) : [],
     location: String(row['location'] ?? ''),
     detail: String(row['notes'] ?? ''),
   };

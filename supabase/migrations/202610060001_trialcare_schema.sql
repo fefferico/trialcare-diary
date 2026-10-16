@@ -42,6 +42,7 @@ create table if not exists public.calendar_events (
   time time,
   location text,
   specialist text,
+  contact_ids uuid[] not null default '{}',
   notes text,
   status text not null default 'Confermato'
     check (status in ('Da confermare', 'Confermato', 'Saltato')),
@@ -74,7 +75,7 @@ create table if not exists public.expenses (
 
 create table if not exists public.contacts (
   id uuid primary key default gen_random_uuid(), child_id uuid not null references public.children(id) on delete cascade,
-  name text not null, role text not null, category text not null, phone text, email text, facility text, notes text,
+  name text not null, role text not null, category text not null, phone text, email text, website text, facility text, notes text,
   created_at timestamptz not null default now(), updated_at timestamptz not null default now()
 );
 create table if not exists public.medicine_cabinet (

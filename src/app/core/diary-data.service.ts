@@ -51,6 +51,16 @@ function newestFirst(rows: DiaryRow[], section: SectionId): DiaryRow[] {
   return [...rows].sort((a, b) => String(b[field] ?? '').localeCompare(String(a[field] ?? '')));
 }
 
+function databaseErrorMessage(message: string): string {
+  const requiredContactField = message.match(
+    /null value in column "(name|role|category)" of relation "contacts" violates not-null constraint/i,
+  )?.[1]?.toLocaleLowerCase();
+  if (requiredContactField === 'name') return 'Il nome del contatto è obbligatorio.';
+  if (requiredContactField === 'role') return 'La professione o il ruolo del contatto è obbligatorio.';
+  if (requiredContactField === 'category') return 'La categoria del contatto è obbligatoria. Seleziona una categoria e riprova.';
+  return message;
+}
+
 @Injectable({ providedIn: 'root' })
 export class DiaryDataService {
   readonly rows = signal<DiaryRow[]>([]);
@@ -459,7 +469,7 @@ export class DiaryDataService {
       const payload = { ...value, ...(childId ? { child_id: childId } : {}) };
       const { error } = await client.from(section).insert(payload);
       if (error) {
-        this.error.set(error.message);
+        this.error.set(databaseErrorMessage(error.message));
         return false;
       }
     } else {
@@ -487,7 +497,7 @@ export class DiaryDataService {
     if (client && this.auth.user()) {
       const { error } = await client.from(section).insert(payload);
       if (error) {
-        this.error.set(error.message);
+        this.error.set(databaseErrorMessage(error.message));
         return null;
       }
     } else {
@@ -702,7 +712,7 @@ export class DiaryDataService {
     if (client && this.auth.user()) {
       const { error } = await client.from(section).update(value).eq('id', id);
       if (error) {
-        this.error.set(error.message);
+        this.error.set(databaseErrorMessage(error.message));
         return false;
       }
     } else {
@@ -720,6 +730,7 @@ export class DiaryDataService {
     childId: string,
     value: Record<string, unknown>,
     fromDate?: string,
+    throughDate?: string,
   ): Promise<boolean> {
     this.error.set('');
     const client = this.supabase.client;
@@ -730,6 +741,7 @@ export class DiaryDataService {
         .eq('recurrence_group_id', recurrenceGroupId)
         .eq('child_id', childId);
       if (fromDate) query = query.gte('date', fromDate);
+      if (throughDate) query = query.lte('date', throughDate);
       const { error } = await query;
       if (error) {
         this.error.set(error.message);
@@ -739,7 +751,8 @@ export class DiaryDataService {
       this.local['calendar_events'] = (this.local['calendar_events'] ?? []).map((row) =>
         row['recurrence_group_id'] === recurrenceGroupId &&
         row['child_id'] === childId &&
-        (!fromDate || String(row['date'] ?? '') >= fromDate)
+        (!fromDate || String(row['date'] ?? '') >= fromDate) &&
+        (!throughDate || String(row['date'] ?? '') <= throughDate)
           ? { ...row, ...value }
           : row,
       );
