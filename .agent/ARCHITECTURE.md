@@ -1,6 +1,6 @@
 # Architecture Map
 
-> Aggiornato automaticamente il 16/10/2026, 15:50:43.
+> Aggiornato automaticamente il 16/10/2026, 15:58:06.
 
 ## Struttura
 
@@ -25,12 +25,15 @@
 - [Confirmation Service](../src/app/core/confirmation.service.ts)
 - [Data Export Service](../src/app/core/data-export.service.ts)
 - [Diary Data Service](../src/app/core/diary-data.service.ts)
+- [Modal Service](../src/app/core/modal.service.ts)
 - [Pdf Export Service](../src/app/core/pdf-export.service.ts)
 - [Storage Service](../src/app/core/storage.service.ts)
 - [Supabase Client Service](../src/app/core/supabase-client.service.ts)
 - [Ui State Service](../src/app/core/ui-state.service.ts)
 - [Dashboard Component](../src/app/dashboard/dashboard.component.ts)
 - [Pdf Redaction Component](../src/app/documents/pdf-redaction.component.ts)
+- [Calendar Event Form Dialog Component](../src/app/features/calendar/calendar-event-form-dialog.component.html)
+- [Calendar Event Form Dialog Component](../src/app/features/calendar/calendar-event-form-dialog.component.ts)
 - [Calendar Component](../src/app/features/calendar/calendar.component.html)
 - [Calendar Component](../src/app/features/calendar/calendar.component.ts)
 - [Feature Page Component](../src/app/features/feature-page.component.ts)
@@ -40,6 +43,7 @@
 - [App Confirm Dialog Component](../src/app/shared/app-confirm-dialog.component.ts)
 - [App Datepicker Component](../src/app/shared/app-datepicker.component.ts)
 - [App Dropdown Component](../src/app/shared/app-dropdown.component.ts)
+- [App Modal Host Component](../src/app/shared/app-modal-host.component.ts)
 - [App Timepicker Component](../src/app/shared/app-timepicker.component.ts)
 - [Tooltip Directive](../src/app/shared/directives/tooltip.directive.ts)
 - [Document Association Picker Component](../src/app/shared/document-association-picker.component.ts)

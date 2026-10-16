@@ -1,6 +1,6 @@
 # API Catalog
 
-> Generato da `npm run update-context` il 16/10/2026, 15:50:43.
+> Generato da `npm run update-context` il 16/10/2026, 15:58:06.
 
 ## Servizi
 
@@ -104,6 +104,13 @@ File: [src/app/core/diary-data.service.ts](../src/app/core/diary-data.service.ts
     throughDate?: string,
   )`: `Promise<boolean>`
 
+### ModalService
+
+File: [src/app/core/modal.service.ts](../src/app/core/modal.service.ts)
+
+- `open(component: Type<unknown>, inputs: Record<string, unknown> = {})`: `void`
+- `close()`: `void`
+
 ### PdfExportService
 
 File: [src/app/core/pdf-export.service.ts](../src/app/core/pdf-export.service.ts)
@@ -149,6 +156,7 @@ File: [src/app/core/ui-state.service.ts](../src/app/core/ui-state.service.ts)
 - [CalendarPreviewComponent](../src/app/components/calendar-preview/calendar-preview.component.ts)
 - [DashboardComponent](../src/app/dashboard/dashboard.component.ts)
 - [PdfRedactionComponent](../src/app/documents/pdf-redaction.component.ts)
+- [CalendarEventFormDialogComponent](../src/app/features/calendar/calendar-event-form-dialog.component.ts)
 - [CalendarComponent](../src/app/features/calendar/calendar.component.ts)
 - [FeaturePageComponent](../src/app/features/feature-page.component.ts)
 - [ChildProfileComponent](../src/app/features/section-wrappers.ts)
@@ -156,5 +164,6 @@ File: [src/app/core/ui-state.service.ts](../src/app/core/ui-state.service.ts)
 - [AppConfirmDialogComponent](../src/app/shared/app-confirm-dialog.component.ts)
 - [AppDatepickerComponent](../src/app/shared/app-datepicker.component.ts)
 - [AppDropdownComponent](../src/app/shared/app-dropdown.component.ts)
+- [AppModalHostComponent](../src/app/shared/app-modal-host.component.ts)
 - [AppTimepickerComponent](../src/app/shared/app-timepicker.component.ts)
 - [DocumentAssociationPickerComponent](../src/app/shared/document-association-picker.component.ts)

@@ -9,12 +9,13 @@ import { StorageService } from './core/storage.service';
 import { LoginComponent } from './auth/login.component';
 import { SECTIONS } from './models/diary.models';
 import { AppConfirmDialogComponent } from './shared/app-confirm-dialog.component';
+import { AppModalHostComponent } from './shared/app-modal-host.component';
 import { TooltipDirective } from './shared/directives/tooltip.directive';
 
 @Component({
   selector: 'tc-root',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, LoginComponent, AppConfirmDialogComponent, TooltipDirective],
+  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, LoginComponent, AppConfirmDialogComponent, AppModalHostComponent, TooltipDirective],
   template: ` @if (!auth.user()) {
       <tc-login />
     } @else if (biometricLocked()) {
@@ -55,6 +56,7 @@ import { TooltipDirective } from './shared/directives/tooltip.directive';
         [class.sidebar-collapsed]="sidebarCollapsed()"
       >
         <app-confirm-dialog />
+        <app-modal-host />
         <aside class="sidebar hidden lg:flex">
           <a routerLink="/dashboard" class="brand-lockup" aria-label="TrialCare Diary"
             ><span class="brand-mark"
@@ -245,9 +247,6 @@ import { TooltipDirective } from './shared/directives/tooltip.directive';
                   <path d="M20 14.5v8M16 18.5h8" /></svg></span
               ><span><strong>trialcare</strong><small>DIARY</small></span></a
             >
-            <div class="hidden text-sm text-slate-500 lg:block">
-              Un posto gentile per tenere il filo.
-            </div>
             <div class="ml-auto flex items-center gap-2">
               <span
                 class="connection-pill"

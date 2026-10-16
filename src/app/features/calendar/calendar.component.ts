@@ -12,15 +12,18 @@ import {
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth.service';
 import { ConfirmationService } from '../../core/confirmation.service';
+import { ModalService } from '../../core/modal.service';
 import { DiaryDataService, SearchableDiaryItem } from '../../core/diary-data.service';
 import { DiaryRow } from '../../models/diary.models';
-import { AppAutocompleteComponent } from '../../shared/app-autocomplete.component';
-import { DocumentAssociationPickerComponent } from '../../shared/document-association-picker.component';
 import { AppDatepickerComponent } from '../../shared/app-datepicker.component';
 import { AppDropdownComponent } from '../../shared/app-dropdown.component';
 import { AppTimepickerComponent } from '../../shared/app-timepicker.component';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { LucideMapPin, LucideUsersRound } from '@lucide/angular';
+import {
+  CalendarEventFormDialogComponent,
+  CalendarEventFormController,
+} from './calendar-event-form-dialog.component';
 import { StorageService } from '../../core/storage.service';
 import { SupabaseClientService } from '../../core/supabase-client.service';
 import { Subscription } from 'rxjs';
@@ -49,15 +52,16 @@ interface CalendarEvent {
 @Component({
   selector: 'tc-calendar',
   standalone: true,
-  imports: [CommonModule, RouterLink, AppAutocompleteComponent, AppDatepickerComponent, AppDropdownComponent, AppTimepickerComponent, TooltipDirective, DocumentAssociationPickerComponent, LucideMapPin, LucideUsersRound],
+  imports: [CommonModule, RouterLink, AppDatepickerComponent, AppDropdownComponent, AppTimepickerComponent, TooltipDirective, LucideMapPin, LucideUsersRound],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './calendar.component.html',
 })
-export class CalendarComponent implements OnInit, OnDestroy {
+export class CalendarComponent implements OnInit, OnDestroy, CalendarEventFormController {
   private readonly route = inject(ActivatedRoute);
   private readonly host = inject(ElementRef<HTMLElement>);
   private readonly auth = inject(AuthService);
   private readonly confirmation = inject(ConfirmationService);
+  private readonly modal = inject(ModalService);
   readonly data = inject(DiaryDataService);
   readonly weekdays = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
   readonly entries = signal<SearchableDiaryItem[]>([]);
@@ -236,6 +240,7 @@ export class CalendarComponent implements OnInit, OnDestroy {
     });
   }
   ngOnDestroy(): void {
+    if (this.formOpen()) this.closeForm();
     this.routeSubscription?.unsubscribe();
     if (this.documentSearchTimer) clearTimeout(this.documentSearchTimer);
     if (this.contactSearchTimer) clearTimeout(this.contactSearchTimer);
@@ -287,6 +292,7 @@ export class CalendarComponent implements OnInit, OnDestroy {
     }
     this.saveError.set('');
     this.formOpen.set(true);
+    this.modal.open(CalendarEventFormDialogComponent, { controller: this });
     this.closeFocusedEvent();
   }
   async deleteCalendarEvent(event: CalendarEvent): Promise<void> {
@@ -445,12 +451,14 @@ export class CalendarComponent implements OnInit, OnDestroy {
     this.associatedFiles.set([]);
     this.saveError.set('');
     this.formOpen.set(true);
+    this.modal.open(CalendarEventFormDialogComponent, { controller: this });
   }
   closeForm(): void {
     if (this.documentSearchTimer) clearTimeout(this.documentSearchTimer);
     this.documentSearchRequest++;
     this.documentSearchLoading.set(false);
     this.formOpen.set(false);
+    this.modal.close();
     this.editingEvent.set(null);
     this.recurrenceScopePrompt.set(false);
     this.associatedFiles.set([]);
