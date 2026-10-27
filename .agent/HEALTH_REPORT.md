@@ -1,10 +1,10 @@
 # Project Health
 
-> Generato il 27/10/2026, 18:53:25.
+> Generato il 27/10/2026, 21:06:56.
 
 - Servizi Angular: 10
-- Componenti standalone: 16
-- File applicativi: 34
+- Componenti standalone: 17
+- File applicativi: 35
 
 ## TODO e FIXME
 

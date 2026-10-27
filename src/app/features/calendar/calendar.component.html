@@ -21,7 +21,8 @@
   </p>
   }
   @if (successMessage()) {
-  <p role="status" aria-live="polite" class="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-900 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-100">
+  <p role="status" aria-live="polite"
+    class="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-900 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-100">
     {{ successMessage() }}
   </p>
   }
@@ -119,7 +120,7 @@
       }
     </div>
   </section>
-  <section class="panel">
+  <section #selectedDayPanel class="panel">
     <div class="flex items-center justify-between">
       <div>
         <p class="eyebrow">{{ dayLabel(selectedDate()) }}</p>
@@ -132,107 +133,119 @@
     @if (selectedEvents().length) {
     <div class="mt-4 divide-y divide-slate-100 dark:divide-slate-800">
       @for (event of selectedEvents(); track event.id) {
-      <article class="flex flex-wrap items-start gap-3 rounded-xl py-3" [class.opacity-75]="isInactive(event)"
+      <article class="flex flex-wrap items-start gap-3 rounded-xl py-3 px-2" [class.opacity-75]="isInactive(event)"
         [ngClass]="event.medicationId && !event.doseTaken && !event.doseSkipped ? 'my-2 border border-amber-300 border-l-4 bg-amber-50 px-3 shadow-sm dark:border-amber-700 dark:bg-amber-950/40' : event.medicationId && event.doseTaken ? 'rounded-lg bg-slate-50/70 dark:bg-slate-900/40' : ''"
         [attr.data-calendar-event-id]="event.section === 'calendar_events' ? event.id : null">
-        <span class="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" [class]="eventDotTone(event)" [class.opacity-50]="event.medicationId && event.doseTaken"></span>
+        <span class="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" [class]="eventDotTone(event)"
+          [class.opacity-50]="event.medicationId && event.doseTaken"></span>
         @if (isSkipped(event) || isCompletedDose(event)) {
-        <button type="button" class="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 rounded-lg py-1 text-left"
+        <button type="button"
+          class="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 rounded-lg py-1 text-left"
           [attr.aria-expanded]="!!expandedSkippedEvents()[event.id]" (click)="toggleSkippedEvent(event.id)">
           <span class="min-w-0 flex-1 truncate text-sm font-medium text-slate-600 dark:text-slate-300"
             [class.line-through]="isCanceled(event)">{{ event.title }}</span>
-          <span class="text-xs text-slate-500">{{ event.time || 'Intera giornata' }}@if (event.category) { · {{ event.category }} }</span>
+          <span class="text-xs text-slate-500">{{ event.time || 'Intera giornata' }}@if (event.category) { · {{
+            event.category }} }</span>
           @if (isSkipped(event)) {
-          <span class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900 dark:bg-amber-900/50 dark:text-amber-100">Saltato</span>
+          <span
+            class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900 dark:bg-amber-900/50 dark:text-amber-100">Saltato</span>
           } @else {
-          <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ doseTakenLabel(event) }}</span>
+          <span
+            class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{
+            doseTakenLabel(event) }}</span>
           }
-          <span class="text-xs font-semibold text-teal-700 dark:text-teal-300">{{ expandedSkippedEvents()[event.id] ? 'Nascondi dettagli' : event.doseTaken ? 'Modifica somministrazione' : 'Mostra dettagli' }}</span>
+          <span class="text-xs font-semibold text-teal-700 dark:text-teal-300">{{ expandedSkippedEvents()[event.id] ?
+            'Nascondi dettagli' : event.doseTaken ? 'Modifica somministrazione' : 'Mostra dettagli' }}</span>
         </button>
         }
         @if ((!isSkipped(event) && !isCompletedDose(event)) || expandedSkippedEvents()[event.id]) {
-        <div class="grid w-full basis-full min-w-0 gap-x-6 gap-y-3" [ngClass]="event.medicationId ? 'lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.8fr)]' : 'grid-cols-1'">
+        <div class="grid w-full basis-full min-w-0 gap-x-6 gap-y-3"
+          [ngClass]="event.medicationId ? 'lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.8fr)]' : 'grid-cols-1'">
           <div class="min-w-0">
-          @if (!isSkipped(event) && !isCompletedDose(event)) {
-          <strong class="block text-sm" [class.line-through]="isCanceled(event)" [class.text-slate-500]="event.medicationId && event.doseTaken" [class.font-medium]="event.medicationId && event.doseTaken">{{ event.title }}</strong><span
-            class="mt-1 block text-xs text-slate-500">{{ event.time || 'Intera giornata' }}@if (event.category) { · {{
-            event.category
-            }} }@if (event.location) { · {{ event.location }} }</span>
-          }
-          @if (event.specialist) {
-          <span class="mt-1 block text-xs text-slate-500">Specialista o terapista: {{ event.specialist }}</span>
-          }
-          @if (contactNames(event).length) {
-          <span class="mt-1 block text-xs text-slate-500">Presenti: {{ contactNames(event).join(', ') }}</span>
-          }
-          @if (event.detail) {
-          <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">{{ event.detail }}</p>
-          }
-          @if (event.section === 'calendar_events' && !isSkipped(event)) {
-          <span class="mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold"
-            [class]="eventStatusTone(event)">{{ eventStatusLabel(event) || 'Confermato' }}</span>
-          }
-          @if (event.medicationId && !isCompletedDose(event) && !isSkipped(event)) {
-          <span class="mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold"
-            [ngClass]="event.doseTaken ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' : event.doseSkipped ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200' : 'bg-amber-200 text-amber-950 dark:bg-amber-800 dark:text-amber-50'">
-            {{ event.doseTaken ? doseTakenLabel(event) : event.doseSkipped ? 'SOMMINISTRAZIONE SALTATA' : 'DOSE DA FARE'
-            }}
-          </span>
-          }
+            @if (!isSkipped(event) && !isCompletedDose(event)) {
+            <strong class="block text-sm" [class.line-through]="isCanceled(event)"
+              [class.text-slate-500]="event.medicationId && event.doseTaken"
+              [class.font-medium]="event.medicationId && event.doseTaken">{{ event.title }}</strong><span
+              class="mt-1 block text-xs text-slate-500">{{ event.time || 'Intera giornata' }}@if (event.category) { · {{
+              event.category
+              }} }@if (event.location) { · {{ event.location }} }</span>
+            }
+            @if (event.specialist) {
+            <span class="mt-1 block text-xs text-slate-500">Specialista o terapista: {{ event.specialist }}</span>
+            }
+            @if (contactNames(event).length) {
+            <span class="mt-1 block text-xs text-slate-500">Presenti: {{ contactNames(event).join(', ') }}</span>
+            }
+            @if (event.detail) {
+            <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">{{ event.detail }}</p>
+            }
+            @if (event.section === 'calendar_events' && !isSkipped(event)) {
+            <span class="mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold"
+              [class]="eventStatusTone(event)">{{ eventStatusLabel(event) || 'Confermato' }}</span>
+            }
+            @if (event.medicationId && !isCompletedDose(event) && !isSkipped(event)) {
+            <span class="mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold"
+              [ngClass]="event.doseTaken ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' : event.doseSkipped ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200' : 'bg-amber-200 text-amber-950 dark:bg-amber-800 dark:text-amber-50'">
+              {{ event.doseTaken ? doseTakenLabel(event) : event.doseSkipped ? 'SOMMINISTRAZIONE SALTATA' : 'DOSE DA
+              FARE'
+              }}
+            </span>
+            }
           </div>
           <div class="min-w-0">
-          @if (event.medicationId) {
-          @if (!event.doseTaken && !event.doseSkipped && doseAvailable(event)) {
-          <div>
-            <button type="button" class="button-primary w-full !px-3 !py-2 text-sm sm:w-auto" [disabled]="saving()"
-              (click)="markDoseTaken(event)">Segna come somministrata ora</button>
-          </div>
-          }
-          @if (event.date <= today) {
-          <div class="mt-3 grid min-w-0 gap-3">
-            <label class="block min-w-0 text-xs font-medium">Data effettiva
-              <app-datepicker class="mt-1 block w-full" label="Giorno effettivo della somministrazione"
-                [value]="doseDate(event)" (dateChange)="setDoseDate(event, $event)" />
-            </label>
-            <label class="block min-w-0 text-xs font-medium">Ora effettiva
-              <app-timepicker class="mt-1 block w-full" label="Ora effettiva della somministrazione"
-                [value]="doseTime(event)" (timeChange)="setDoseTime(event, $event)" />
-            </label>
-            <button type="button" class="button-secondary w-full !px-3 !py-2 text-xs"
-              [disabled]="saving() || !canSaveDose(event)"
-              (click)="markDoseTaken(event, doseDate(event), doseTime(event))">
-              {{ saving() ? 'Salvataggio…' : event.doseTaken ? 'Aggiorna somministrazione' : 'Registra somministrazione' }}
-            </button>
+            @if (event.medicationId) {
+            @if (!event.doseTaken && !event.doseSkipped && doseAvailable(event)) {
+            <div>
+              <button type="button" class="button-primary w-full !px-3 !py-2 text-sm sm:w-auto" [disabled]="saving()"
+                (click)="markDoseTaken(event)">Segna come somministrata ora</button>
+            </div>
+            }
+            @if (event.date <= today) { <div class="mt-3 grid min-w-0 gap-3">
+              <label class="block min-w-0 text-xs font-medium">Data effettiva
+                <app-datepicker class="mt-1 block w-full" label="Giorno effettivo della somministrazione"
+                  [value]="doseDate(event)" (dateChange)="setDoseDate(event, $event)" />
+              </label>
+              <label class="block min-w-0 text-xs font-medium">Ora effettiva
+                <app-timepicker class="mt-1 block w-full" label="Ora effettiva della somministrazione"
+                  [value]="doseTime(event)" (timeChange)="setDoseTime(event, $event)" />
+              </label>
+              <button type="button" class="button-secondary w-full !px-3 !py-2 text-xs"
+                [disabled]="saving() || !canSaveDose(event)"
+                (click)="markDoseTaken(event, doseDate(event), doseTime(event))">
+                {{ saving() ? 'Salvataggio…' : event.doseTaken ? 'Aggiorna somministrazione' : 'Registra
+                somministrazione' }}
+              </button>
           </div>
           @if (doseDateTimeError(event)) {
           <p class="mt-2 text-xs text-rose-700 dark:text-rose-300" role="alert">{{ doseDateTimeError(event) }}</p>
           }
           }
           @if (!event.doseSkipped && event.date <= today) { <button type="button"
-          class="mt-3 text-left text-xs font-semibold text-rose-700 underline dark:text-rose-300" (click)="openSkip(event)">
-          {{ event.doseTaken ? 'Correggi: segna la somministrazione come saltata' : 'Segna somministrazione come saltata' }}</button>
-          }
-          }
-          </div>
-          @if (isSkipped(event) && event.skippedReason) {
-          <p class="mt-1 text-sm text-rose-800 dark:text-rose-200">
-            {{ event.medicationId ? 'Motivo della somministrazione saltata:' : 'Motivo del mancato evento:' }}
-            {{ event.skippedReason }}
-          </p>
-          }
-          @if (event.section === 'calendar_events' && !isInactive(event)) {
-          <div class="mt-2 flex flex-wrap gap-2">
-            @if (event.status === 'Da confermare') {
-            <button class="button-secondary !px-3 !py-1.5 text-xs" type="button"
-              (click)="setStatus(event, 'Confermato')">
-              Conferma
-            </button>
+            class="mt-3 text-left text-xs font-semibold text-rose-700 underline dark:text-rose-300"
+            (click)="openSkip(event)">
+            {{ event.doseTaken ? 'Correggi: segna la somministrazione come saltata' : 'Segna somministrazione come
+            saltata' }}</button>
             }
-            <button class="button-secondary !px-3 !py-1.5 text-xs" type="button" (click)="openSkip(event)">
-              Segna come saltato
-            </button>
-          </div>
+            }
+        </div>
+        @if (isSkipped(event) && event.skippedReason) {
+        <p class="mt-1 text-sm text-rose-800 dark:text-rose-200">
+          {{ event.medicationId ? 'Motivo della somministrazione saltata:' : 'Motivo del mancato evento:' }}
+          {{ event.skippedReason }}
+        </p>
+        }
+        @if (event.section === 'calendar_events' && !isInactive(event)) {
+        <div class="mt-2 flex flex-wrap gap-2">
+          @if (event.status === 'Da confermare') {
+          <button class="button-secondary !px-3 !py-1.5 text-xs" type="button" (click)="setStatus(event, 'Confermato')">
+            Conferma
+          </button>
           }
+          <button class="button-secondary !px-3 !py-1.5 text-xs" type="button" (click)="openSkip(event)">
+            Segna come saltato
+          </button>
+        </div>
+        }
     </div>
     @if (event.section === 'calendar_events') {
     <button type="button" (click)="openSectionEvent(event)"
@@ -241,10 +254,11 @@
     } @else {
     <a [routerLink]="'/' + event.section"
       [queryParams]="{ highlight: event.medicationId || event.id.replace(event.section + '-', '').replace('-end', ''), child: event.childId }"
-      class="shrink-0 basis-full text-right text-xs text-teal-700 dark:text-teal-300 lg:basis-auto">{{ sectionLabel(event.section) }} →</a>
+      class="shrink-0 basis-full text-right text-xs text-teal-700 dark:text-teal-300 lg:basis-auto">{{
+      sectionLabel(event.section) }} →</a>
     }
-        }
-        </article>
+    }
+    </article>
     }
     </div>
     } @else {
@@ -287,16 +301,23 @@
         (click)="openSectionEvent(event)">
         <div class="min-w-0 flex-1">
           <div class="flex flex-wrap items-center gap-2">
-            <strong class="text-sm" [class.line-through]="isSkipped(event)" [class.text-slate-500]="isSkipped(event) || isCompleted(event)" [class.font-medium]="isCompleted(event)">{{ event.title }}</strong>
+            <strong class="text-sm" [class.line-through]="isSkipped(event)"
+              [class.text-slate-500]="isSkipped(event) || isCompleted(event)"
+              [class.font-medium]="isCompleted(event)">{{ event.title }}</strong>
             @if (isSkipped(event)) {
-            <span class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900 dark:bg-amber-900/60 dark:text-amber-100"
+            <span
+              class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900 dark:bg-amber-900/60 dark:text-amber-100"
               [appTooltip]="event.skippedReason || 'Motivazione non specificata'">
               <span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>Saltato
             </span>
             }
             @if (isCompleted(event)) {
-            <span class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-              <svg aria-hidden="true" class="h-3 w-3" viewBox="0 0 16 16" fill="none"><path d="m3.5 8.2 2.8 2.8 6.2-6.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            <span
+              class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              <svg aria-hidden="true" class="h-3 w-3" viewBox="0 0 16 16" fill="none">
+                <path d="m3.5 8.2 2.8 2.8 6.2-6.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
               Svolto
             </span>
             }
@@ -309,7 +330,8 @@
             {{ contactNames(event).join(', ') }}
           </span>
           }
-          @if (event.specialist) {<span class="mt-1 block text-xs text-slate-500 dark:text-slate-400">{{ event.specialist }}</span>}
+          @if (event.specialist) {<span class="mt-1 block text-xs text-slate-500 dark:text-slate-400">{{
+            event.specialist }}</span>}
           @if (event.location) {
           <span class="mt-1 inline-flex items-center gap-0.5 text-xs leading-4 text-slate-500 dark:text-slate-400">
             <svg lucideMapPin aria-hidden="true" class="h-3.5 w-3.5 shrink-0"></svg>
@@ -317,7 +339,8 @@
           </span>
           }
         </div>
-        <span class="shrink-0 text-xs font-semibold text-teal-700 group-hover:underline dark:text-teal-300">Apri →</span>
+        <span class="shrink-0 text-xs font-semibold text-teal-700 group-hover:underline dark:text-teal-300">Apri
+          →</span>
       </button>
       }
     </div>
@@ -360,23 +383,29 @@
         <p class="eyebrow">EVENTO RICORRENTE</p>
         <h2 id="recurrence-scope-title" class="text-xl font-semibold">Dove applicare le modifiche?</h2>
         <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
-          Titolo, categoria, professionista, orario, luogo e persone presenti possono essere aggiornati per questo appuntamento, per questo e quelli precedenti o successivi, oppure per tutta la serie. Note e data restano legate a questo appuntamento.
+          Titolo, categoria, professionista, orario, luogo e persone presenti possono essere aggiornati per questo
+          appuntamento, per questo e quelli precedenti o successivi, oppure per tutta la serie. Note e data restano
+          legate a questo appuntamento.
         </p>
       </div>
       <div class="grid gap-2 p-5">
-        <button type="button" class="button-secondary justify-start" [disabled]="saving()" (click)="saveEvent('single')">
+        <button type="button" class="button-secondary justify-start" [disabled]="saving()"
+          (click)="saveEvent('single')">
           Solo questo appuntamento
         </button>
-        <button type="button" class="button-secondary justify-start" [disabled]="saving()" (click)="saveEvent('preceding')">
+        <button type="button" class="button-secondary justify-start" [disabled]="saving()"
+          (click)="saveEvent('preceding')">
           Questo e i precedenti
         </button>
-        <button type="button" class="button-secondary justify-start" [disabled]="saving()" (click)="saveEvent('following')">
+        <button type="button" class="button-secondary justify-start" [disabled]="saving()"
+          (click)="saveEvent('following')">
           Questo e i successivi
         </button>
         <button type="button" class="button-primary justify-start" [disabled]="saving()" (click)="saveEvent('all')">
           Tutta la serie, passati e futuri
         </button>
-        <button type="button" class="mt-1 text-sm text-slate-500 hover:underline" (click)="recurrenceScopePrompt.set(false)">
+        <button type="button" class="mt-1 text-sm text-slate-500 hover:underline"
+          (click)="recurrenceScopePrompt.set(false)">
           Torna alla modifica
         </button>
       </div>

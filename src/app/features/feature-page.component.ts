@@ -12,6 +12,7 @@ import { DataExportService } from '../core/data-export.service';
 import { SupabaseClientService } from '../core/supabase-client.service';
 import { StorageService } from '../core/storage.service';
 import { PdfRedactionComponent } from '../documents/pdf-redaction.component';
+import { ImageToPdfComponent } from '../documents/image-to-pdf.component';
 import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { AppDropdownComponent } from '../shared/app-dropdown.component';
 import { AppDatepickerComponent } from '../shared/app-datepicker.component';
@@ -104,6 +105,7 @@ function normalizeMedicationTime(value: string): string | null {
     DocumentAssociationPickerComponent,
     TooltipDirective,
     PdfRedactionComponent,
+    ImageToPdfComponent,
   ],
   template: `
     @if (section) {
@@ -381,7 +383,7 @@ function normalizeMedicationTime(value: string): string | null {
                   </div>
                 </div>
                 <div class="mt-3 flex flex-wrap gap-2">
-                  @for (field of visibleFields(row); track field.key) {
+                  @for (field of visibleCardFields(row); track field.key) {
                     @if (value(row, field.key)) {
                       <span class="tag"
                         ><b>{{ field.label }}:</b>
@@ -408,6 +410,37 @@ function normalizeMedicationTime(value: string): string | null {
                   <p class="mt-2 text-xs font-medium text-teal-700 dark:text-teal-300">
                     {{ medicationSchedulePeriods(row).length }} periodi di terapia
                   </p>
+                }
+                @if (section.id === 'medications') {
+                  @let summary = medicationQuickSummary(row);
+                  <section class="mt-4 space-y-2 rounded-xl border border-teal-100 bg-teal-50/70 p-3 dark:border-teal-900 dark:bg-teal-950/30" aria-label="Riepilogo rapido della terapia">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <h3 class="text-xs font-semibold uppercase tracking-wide text-teal-900 dark:text-teal-100">Riepilogo rapido</h3>
+                      <span class="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-teal-800 dark:bg-slate-900 dark:text-teal-200">{{ summary.status }}</span>
+                    </div>
+                    @for (period of summary.periods; track $index; let index = $index) {
+                      <div class="text-sm text-slate-700 dark:text-slate-200">
+                        @if (summary.periods.length > 1) {
+                          <p class="text-xs font-semibold text-slate-500 dark:text-slate-400">Regime {{ index + 1 }}</p>
+                        }
+                        <p><strong>{{ period.dosage || 'Dosaggio non indicato' }}</strong>@if (period.formulation) { <span> · {{ period.formulation }}</span> }</p>
+                        <p class="mt-0.5 text-xs">Orari: {{ period.schedule_times || 'non indicati' }}</p>
+                        @if (period.start_date || period.end_date) {
+                          <p class="mt-0.5 text-xs">Periodo: {{ period.start_date ? (period.start_date | date: 'd MMM y') : 'inizio non indicato' }}@if (period.end_date) { – {{ period.end_date | date: 'd MMM y' }} }</p>
+                        }
+                        @if (period.spray_count != null || period.administration_duration_seconds != null) {
+                          <p class="mt-0.5 text-xs">
+                            @if (period.spray_count != null) { {{ period.spray_count }} puff o spruzzi }
+                            @if (period.spray_count != null && period.administration_duration_seconds != null) { · }
+                            @if (period.administration_duration_seconds != null) { {{ period.administration_duration_seconds }} secondi }
+                          </p>
+                        }
+                        @if (period.planned_pause) {
+                          <p class="mt-0.5 whitespace-pre-wrap text-xs">Pause previste: {{ period.planned_pause }}</p>
+                        }
+                      </div>
+                    }
+                  </section>
                 }
                 @if (value(row, 'voice_note_data')) {
                   <audio
@@ -662,6 +695,9 @@ function normalizeMedicationTime(value: string): string | null {
                           Il testo estratto o scritto a mano viene salvato con il documento per la
                           ricerca.</small
                         >
+                        @if (section.id === 'documents' && isImageAttachment()) {
+                          <tc-image-to-pdf [file]="attachedFile!" (converted)="setImagePdfFile($event)" />
+                        }
                         @if (section.id === 'documents' && isEditing() && hasExistingPdf() && !isPdfAttachment()) {
                           <button type="button" class="button-secondary mt-2" [disabled]="loadingExistingPdf()" (click)="loadExistingPdf()">
                             {{ loadingExistingPdf() ? 'Apertura del PDF…' : 'Apri il PDF allegato per oscurarlo' }}
@@ -1418,6 +1454,40 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         !['file', 'name', 'expiry_precision'].includes(field.key) && field.key !== 'title' && row[field.key] != null,
     );
   }
+  visibleCardFields(row: DiaryRow): FieldDefinition[] {
+    const fields = this.visibleFields(row);
+    if (this.sectionId !== 'medications') return fields;
+    const summaryFields = new Set([
+      'dosage',
+      'formulation',
+      'spray_count',
+      'administration_duration_seconds',
+      'start_date',
+      'end_date',
+      'schedule_times',
+      'planned_pause',
+    ]);
+    return fields.filter((field) => !summaryFields.has(field.key));
+  }
+  medicationQuickSummary(row: DiaryRow): { status: string; periods: MedicationSchedulePeriod[] } {
+    const periods = this.medicationSchedulePeriods(row);
+    const today = medicationDateKey(new Date());
+    const current = periods.filter((period) =>
+      (!period.start_date || period.start_date <= today) &&
+      (!period.end_date || period.end_date >= today),
+    );
+    if (current.length) return { status: 'In corso', periods: current };
+
+    const upcoming = periods
+      .filter((period) => !!period.start_date && period.start_date > today)
+      .sort((left, right) => String(left.start_date).localeCompare(String(right.start_date)))[0];
+    if (upcoming) return { status: 'Prossimo periodo', periods: [upcoming] };
+
+    const last = [...periods].sort((left, right) =>
+      String(right.end_date ?? right.start_date ?? '').localeCompare(String(left.end_date ?? left.start_date ?? '')),
+    )[0];
+    return { status: 'Terapia conclusa', periods: last ? [last] : [] };
+  }
   detailFields(row: DiaryRow): FieldDefinition[] {
     const fields = this.visibleFields(row);
     if (this.sectionId === 'medicine_cabinet') {
@@ -1481,6 +1551,10 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   isPdfAttachment(): boolean {
     return !!this.attachedFile &&
       (this.attachedFile.type === 'application/pdf' || this.attachedFile.name.toLowerCase().endsWith('.pdf'));
+  }
+  isImageAttachment(): boolean {
+    return !!this.attachedFile && !this.isPdfAttachment() &&
+      (this.attachedFile.type.startsWith('image/') || /\.(?:jpe?g|png|webp|heic)$/i.test(this.attachedFile.name));
   }
   isEditing(): boolean {
     return !!this.editingId;
@@ -1547,6 +1621,15 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.attachmentModified = true;
     this.form['file'] = file.name;
     this.form['extracted_text'] = '';
+    this.pdfTextForSaving = null;
+    this.documentTextProcessing.set(true);
+  }
+  setImagePdfFile(file: File): void {
+    this.attachedFile = file;
+    this.attachmentModified = true;
+    this.form['file'] = file.name;
+    this.form['extracted_text'] = '';
+    this.pdfTextSeed = '';
     this.pdfTextForSaving = null;
     this.documentTextProcessing.set(true);
   }

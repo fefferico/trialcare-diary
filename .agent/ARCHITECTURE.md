@@ -1,6 +1,6 @@
 # Architecture Map
 
-> Aggiornato automaticamente il 27/10/2026, 18:53:25.
+> Aggiornato automaticamente il 27/10/2026, 21:06:56.
 
 ## Struttura
 
@@ -31,6 +31,7 @@
 - [Supabase Client Service](../src/app/core/supabase-client.service.ts)
 - [Ui State Service](../src/app/core/ui-state.service.ts)
 - [Dashboard Component](../src/app/dashboard/dashboard.component.ts)
+- [Image To Pdf Component](../src/app/documents/image-to-pdf.component.ts)
 - [Pdf Redaction Component](../src/app/documents/pdf-redaction.component.ts)
 - [Calendar Event Form Dialog Component](../src/app/features/calendar/calendar-event-form-dialog.component.html)
 - [Calendar Event Form Dialog Component](../src/app/features/calendar/calendar-event-form-dialog.component.ts)

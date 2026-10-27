@@ -57,7 +57,13 @@ import { DiaryRow } from '../models/diary.models';
         <ul class="mt-2 space-y-1 text-xs text-slate-600 dark:text-slate-300">
           @for (file of files; track $index) {
             <li class="flex items-center justify-between gap-2"><span class="truncate">{{ file.name }}</span>
-              <button type="button" class="text-rose-700 underline dark:text-rose-300" (click)="removeFile($index)">Rimuovi</button>
+              @if (allowFileEditing) {
+                <button type="button" class="shrink-0 text-teal-700 underline dark:text-teal-300"
+                  [disabled]="editingDisabled" [attr.aria-label]="'Apri editor OCR per ' + file.name"
+                  (click)="editFile.emit(file)">{{ editingDisabled && busyFile === file ? 'Elaborazione…' : 'Apri editor OCR' }}</button>
+              }
+              <button type="button" class="text-rose-700 underline dark:text-rose-300"
+                [disabled]="busyFile === file" (click)="removeFile($index)">Rimuovi</button>
             </li>
           }
         </ul>
@@ -70,9 +76,13 @@ export class DocumentAssociationPickerComponent {
   @Input() selectedDocuments: DiaryRow[] = [];
   @Input() files: File[] = [];
   @Input() searching = false;
+  @Input() allowFileEditing = false;
+  @Input() editingDisabled = false;
+  @Input() busyFile: File | null = null;
   @Output() selectedDocumentsChange = new EventEmitter<DiaryRow[]>();
   @Output() searchChange = new EventEmitter<string>();
   @Output() filesChange = new EventEmitter<File[]>();
+  @Output() editFile = new EventEmitter<File>();
   query = '';
 
   documentDate(doc: DiaryRow): string {

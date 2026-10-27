@@ -115,7 +115,13 @@ export class CalendarComponent implements OnInit, OnDestroy, CalendarEventFormCo
   readonly contactSearchLoading = signal(false);
   readonly documentSearchLoading = signal(false);
   readonly associatedFiles = signal<File[]>([]);
+  readonly editingImageFile = signal<File | null>(null);
+  readonly editingDocumentFile = signal<File | null>(null);
+  readonly eventPdfTextSeed = signal('');
+  readonly documentTextProcessing = signal(false);
+  readonly associatedFileTexts = signal<{ file: File; text: string }[]>([]);
   readonly focusedDocuments = signal<DiaryRow[]>([]);
+  readonly activeAssociatedFile = signal<File | null>(null);
   private readonly contactSearchTerm = signal('');
   private contactSearchTimer?: ReturnType<typeof setTimeout>;
   private pendingDocumentTargetIds: string[] = [];
@@ -286,6 +292,8 @@ export class CalendarComponent implements OnInit, OnDestroy, CalendarEventFormCo
     this.documentSearchResults.set([]);
     this.selectedDocuments.set([]);
     this.associatedFiles.set([]);
+    this.associatedFileTexts.set([]);
+    this.resetAssociatedFileEditor();
     if (event.childId) {
       const ids = await this.data.loadDocumentLinks(
         'calendar_events', event.id.replace('calendar_events-', ''), event.childId,
@@ -490,6 +498,8 @@ export class CalendarComponent implements OnInit, OnDestroy, CalendarEventFormCo
     this.documentSearchResults.set([]);
     this.selectedDocuments.set([]);
     this.associatedFiles.set([]);
+    this.associatedFileTexts.set([]);
+    this.resetAssociatedFileEditor();
     this.saveError.set('');
     this.formOpen.set(true);
     this.modal.open(CalendarEventFormDialogComponent, { controller: this });
@@ -503,6 +513,8 @@ export class CalendarComponent implements OnInit, OnDestroy, CalendarEventFormCo
     this.editingEvent.set(null);
     this.recurrenceScopePrompt.set(false);
     this.associatedFiles.set([]);
+    this.associatedFileTexts.set([]);
+    this.resetAssociatedFileEditor();
     this.documentSearchResults.set([]);
     this.selectedDocuments.set([]);
     this.pendingDocumentTargetIds = [];
@@ -518,11 +530,17 @@ export class CalendarComponent implements OnInit, OnDestroy, CalendarEventFormCo
     this.documentSearchResults.set([]);
     this.selectedDocuments.set([]);
     this.associatedFiles.set([]);
+    this.associatedFileTexts.set([]);
+    this.resetAssociatedFileEditor();
   }
   async saveEvent(
     recurrenceScope?: 'single' | 'preceding' | 'following' | 'all',
     markPastOccurrencesCompleted?: boolean,
   ): Promise<void> {
+    if (this.documentTextProcessing()) {
+      this.saveError.set('Attendi che l’elaborazione del documento sia completata prima di salvare l’evento.');
+      return;
+    }
     if (!this.title().trim() || !this.eventDate()) return;
     const availableContactIds = new Set(this.availableContacts().map((contact) => contact.id));
     const selectedContactIds = [...new Set(this.selectedContactIds())];
@@ -799,6 +817,88 @@ export class CalendarComponent implements OnInit, OnDestroy, CalendarEventFormCo
   documentsForSelectedChild(): DiaryRow[] {
     return this.documentSearchResults();
   }
+  selectedChildName(): string {
+    return this.children().find((child) => child.id === this.childId())?.name ?? '';
+  }
+  setAssociatedFiles(files: File[]): void {
+    const nextFiles = [...files];
+    this.associatedFiles.set(nextFiles);
+    const retained = new Set(nextFiles);
+    this.associatedFileTexts.update((items) => items.filter((item) => retained.has(item.file)));
+    const activeFile = this.activeAssociatedFile();
+    if (activeFile && !retained.has(activeFile)) this.closeAssociatedFileEditor();
+  }
+  editAssociatedFile(file: File): void {
+    if (!this.associatedFiles().includes(file)) return;
+    this.resetAssociatedFileEditor();
+    this.data.error.set('');
+    this.saveError.set('');
+    this.activeAssociatedFile.set(file);
+    this.eventPdfTextSeed.set(this.associatedFileTexts().find((item) => item.file === file)?.text ?? '');
+    if (isImageFile(file)) {
+      this.editingImageFile.set(file);
+      return;
+    }
+    if (!isPdfFile(file)) {
+      this.resetAssociatedFileEditor();
+      this.saveError.set('L’editor supporta PDF e immagini.');
+      return;
+    }
+    this.documentTextProcessing.set(true);
+    this.editingDocumentFile.set(file);
+  }
+  closeAssociatedFileEditor(): void {
+    this.resetAssociatedFileEditor();
+  }
+  setImageConversionProcessing(processing: boolean): void {
+    if (this.editingImageFile() && this.activeAssociatedFile() === this.editingImageFile())
+      this.documentTextProcessing.set(processing);
+  }
+  setImagePdfFile(file: File): void {
+    const currentFile = this.activeAssociatedFile();
+    if (!currentFile || currentFile !== this.editingImageFile()) return;
+    const files = this.associatedFiles();
+    const index = files.indexOf(currentFile);
+    if (index < 0) return;
+    this.associatedFiles.set(files.map((item, itemIndex) => itemIndex === index ? file : item));
+    const text = this.associatedFileTexts().find((item) => item.file === currentFile)?.text ?? '';
+    this.associatedFileTexts.update((items) => [
+      ...items.filter((item) => item.file !== currentFile && item.file !== file),
+      ...(text ? [{ file, text }] : []),
+    ]);
+    this.activeAssociatedFile.set(file);
+    this.editingImageFile.set(null);
+    this.eventPdfTextSeed.set(text);
+    this.documentTextProcessing.set(true);
+    this.editingDocumentFile.set(file);
+  }
+  setEventRedactedFile(file: File): void {
+    const currentFile = this.activeAssociatedFile();
+    if (!currentFile) return;
+    const files = this.associatedFiles();
+    const index = files.indexOf(currentFile);
+    if (index < 0) return;
+    this.associatedFiles.set(files.map((item, itemIndex) => itemIndex === index ? file : item));
+    const text = this.associatedFileTexts().find((item) => item.file === currentFile)?.text ?? '';
+    this.associatedFileTexts.update((items) => [
+      ...items.filter((item) => item.file !== currentFile && item.file !== file),
+      ...(text ? [{ file, text }] : []),
+    ]);
+    this.activeAssociatedFile.set(file);
+    this.editingDocumentFile.set(file);
+    this.eventPdfTextSeed.set(text);
+  }
+  setEventPdfTextForSaving(value: { file: File; text: string }): void {
+    const activeFile = this.activeAssociatedFile();
+    if (!activeFile || value.file !== this.editingDocumentFile()) return;
+    this.associatedFileTexts.update((items) => [
+      ...items.filter((item) => item.file !== activeFile),
+      { file: activeFile, text: value.text },
+    ]);
+  }
+  setEventPdfTextProcessing(value: { file: File; processing: boolean }): void {
+    if (value.file === this.editingDocumentFile()) this.documentTextProcessing.set(value.processing);
+  }
   searchDocuments(query: string): void {
     if (this.documentSearchTimer) clearTimeout(this.documentSearchTimer);
     const request = ++this.documentSearchRequest;
@@ -853,6 +953,13 @@ export class CalendarComponent implements OnInit, OnDestroy, CalendarEventFormCo
     if (url) window.open(url, '_blank', 'noopener');
     else this.data.error.set('Impossibile aprire il file. Accedi al tuo account e riprova.');
   }
+  private resetAssociatedFileEditor(): void {
+    this.editingImageFile.set(null);
+    this.editingDocumentFile.set(null);
+    this.eventPdfTextSeed.set('');
+    this.documentTextProcessing.set(false);
+    this.activeAssociatedFile.set(null);
+  }
   private async saveEventDocuments(targetIds: string[]): Promise<boolean> {
     const childId = this.childId();
     if (!childId) return false;
@@ -873,11 +980,13 @@ export class CalendarComponent implements OnInit, OnDestroy, CalendarEventFormCo
           return false;
         }
       }
+      const extractedText = this.associatedFileTexts().find((item) => item.file === file)?.text.trim();
       const savedId = await this.data.saveWithId('documents', {
         id: documentId,
         title: file.name,
         category: 'Altro',
         date: dateKey(new Date()),
+        ...(extractedText ? { extracted_text: extractedText } : {}),
         ...(storagePath ? { storage_path: storagePath } : { local_file_id: localFileId }),
       }, childId);
       if (!savedId) return false;
@@ -889,7 +998,7 @@ export class CalendarComponent implements OnInit, OnDestroy, CalendarEventFormCo
         category: 'Altro',
         date: dateKey(new Date()),
       } as DiaryRow]);
-      this.associatedFiles.set(this.associatedFiles().filter((pending) => pending !== file));
+      this.setAssociatedFiles(this.associatedFiles().filter((pending) => pending !== file));
     }
     for (const targetId of targetIds) {
       if (!(await this.data.setDocumentLinks('calendar_events', targetId, childId, documentIds)))
@@ -1118,4 +1227,10 @@ function makeEvent(row: DiaryRow, section: string, date: string): CalendarEvent 
 }
 function validDate(value: string): boolean {
   return !!parseDate(value);
+}
+function isPdfFile(file: File): boolean {
+  return file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+}
+function isImageFile(file: File): boolean {
+  return file.type.startsWith('image/') || /\.(?:avif|bmp|gif|heic|heif|jpe?g|png|webp)$/i.test(file.name);
 }

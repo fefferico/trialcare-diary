@@ -6,12 +6,12 @@ Diario clinico digitale in Angular 21 per famiglie che accompagnano un bambino d
 
 - Profili per più bambini, con identificativo trial, gruppo sanguigno, allergie e informazioni cliniche essenziali.
 - Storico di peso, altezza e circonferenza della testa con grafici di andamento per bambino.
-- Registro farmaci con dosaggi, formulazioni, date, pause e orari.
+- Registro farmaci con dosaggi, formulazioni, date, pause e orari, più un riepilogo rapido per scheda con il regime attivo o il prossimo periodo previsto.
 - Inventario dei farmaci in casa con quantità, prezzo, dosaggio previsto e date di apertura e scadenza.
 - Inventario di ortesi e ausili, come tutori, scarpe ortopediche, tutine e pantaloncini, con taglia, lato e periodo di utilizzo.
 - Diario di sintomi, traumi ed eventi avversi.
 - Calendario mensile con appuntamenti singoli o ricorrenti (settimanali, bisettimanali e mensili), conferma degli eventi futuri e motivazione per quelli saltati; riepilogo homepage di eventi, terapie e scadenze nei successivi 30 giorni.
-- Percorsi terapeutici, documenti e ricevute in Storage privato. Per i PDF clinici è disponibile una redazione locale manuale o basata su testo selezionabile: la copia viene appiattita in immagini prima dell’upload. L’OCR locale legge anche le scansioni; il testo riconosciuto può essere corretto o scritto a mano e viene salvato con il documento per la ricerca.
+- Percorsi terapeutici, documenti e ricevute in Storage privato. Le foto dei documenti possono essere ruotate, ritagliate e convertite in PDF direttamente nel browser. Per i PDF clinici è disponibile una redazione locale manuale o basata su testo selezionabile: la copia viene appiattita in immagini prima dell’upload. L’OCR locale legge anche le scansioni; il testo riconosciuto può essere corretto o scritto a mano e viene salvato con il documento per la ricerca.
 - Note spese con calcolo della quota chilometrica (`km × tariffa/km`).
 - Riepilogo PDF per la visita, filtrabile per bambino e periodo, con appuntamenti, eventi e sintomi, terapie e dosi registrate o saltate, misure, documenti e spese; include uno spazio per preparare domande. Report PDF, accesso Supabase Auth e dati isolati da RLS.
 - Avatar profilo personalizzabile: in Supabase l’immagine è privata e accessibile solo al proprietario; in modalità demo resta nel browser.
