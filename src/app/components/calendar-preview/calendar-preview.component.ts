@@ -11,6 +11,8 @@ import {
 import { RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth.service';
 import { DiaryDataService, SearchableDiaryItem } from '../../core/diary-data.service';
+import { medicineCabinetExpiry } from '../../models/medicine-cabinet-expiry';
+import { ToastService } from '../../core/toast.service';
 
 interface PreviewItem {
   id: string;
@@ -46,6 +48,7 @@ export class CalendarPreviewComponent implements OnInit {
   private readonly host = inject(ElementRef<HTMLElement>);
   private readonly auth = inject(AuthService);
   private readonly data = inject(DiaryDataService);
+  private readonly toast = inject(ToastService);
   readonly entries = signal<SearchableDiaryItem[]>([]);
   readonly loading = signal(true);
   readonly savingDose = signal(false);
@@ -201,9 +204,16 @@ export class CalendarPreviewComponent implements OnInit {
   readonly deadlines = computed(() =>
     this.entries()
       .flatMap((item) => {
+        const medicineExpiry = item.section === 'medicine_cabinet'
+          ? medicineCabinetExpiry(item.row)
+          : null;
         const dates =
-          item.section === 'medicine_cabinet' && item.row['expiry_date']
-            ? [{ date: String(item.row['expiry_date']), kind: 'Scadenza farmaco', monthOnly: item.row['expiry_precision'] === 'month' }]
+          medicineExpiry?.effectiveDate
+            ? [{
+                date: medicineExpiry.effectiveDate,
+                kind: medicineExpiry.effectiveSource === 'after-opening' ? 'Scadenza dopo apertura' : 'Scadenza farmaco',
+                monthOnly: medicineExpiry.monthOnly,
+              }]
             : ['medications', 'therapies'].includes(item.section) && item.row['end_date']
               ? [
                 {
@@ -232,13 +242,16 @@ export class CalendarPreviewComponent implements OnInit {
   readonly medicineWarnings = computed(() =>
     this.entries()
       .filter((item) => item.section === 'medicine_cabinet')
-      .map((item) => ({
-        id: item.row.id,
-        childId: item.row['child_id'] ? String(item.row['child_id']) : undefined,
-        title: String(item.row['name'] ?? 'Farmaco'),
-        date: String(item.row['expiry_date'] ?? '').slice(0, 10),
-        monthOnly: item.row['expiry_precision'] === 'month',
-      }))
+      .map((item) => {
+        const expiry = medicineCabinetExpiry(item.row);
+        return {
+          id: item.row.id,
+          childId: item.row['child_id'] ? String(item.row['child_id']) : undefined,
+          title: String(item.row['name'] ?? 'Farmaco'),
+          date: expiry.effectiveDate ?? '',
+          monthOnly: expiry.monthOnly,
+        };
+      })
       .filter((item) => isBetween(item.date, this.today, this.windowEnd))
       .sort(byDate),
   );
@@ -261,12 +274,33 @@ export class CalendarPreviewComponent implements OnInit {
   completedDoseTimes(doses: Array<{ actualTime: string; label: string }>): string {
     return doses.map((dose) => dose.actualTime || dose.label).join(' · ');
   }
-  async markDoseTaken(item: { id: string; childId?: string }, dose: { id: string; taken: boolean }): Promise<void> {
+  async markDoseTaken(
+    item: { id: string; childId?: string; title: string },
+    dose: { id: string; taken: boolean; label: string },
+  ): Promise<void> {
     if (!item.childId || dose.taken || !this.canMarkDose(dose.id) || this.savingDose()) return;
     const now = new Date();
     const actualDate = parseDate(this.today);
     if (!actualDate) return;
-    actualDate.setHours(now.getHours(), now.getMinutes(), 0, 0);
+    const slot = this.scheduledDoseSlot(item.id, dose.id);
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const startMinutes = slot ? timeToMinutes(slot.start) : null;
+    const endMinutes = slot?.end ? timeToMinutes(slot.end) : null;
+    if (
+      startMinutes !== null &&
+      endMinutes !== null &&
+      (currentMinutes < startMinutes || currentMinutes > endMinutes)
+    ) {
+      const midpointSeconds = Math.floor((startMinutes + endMinutes) * 30);
+      actualDate.setHours(
+        Math.floor(midpointSeconds / 3600),
+        Math.floor((midpointSeconds % 3600) / 60),
+        midpointSeconds % 60,
+        0,
+      );
+    } else {
+      actualDate.setHours(now.getHours(), now.getMinutes(), 0, 0);
+    }
     this.savingDose.set(true);
     this.doseError.set('');
     const saved = await this.data.markMedicationDoseTaken(
@@ -281,7 +315,34 @@ export class CalendarPreviewComponent implements OnInit {
       this.doseError.set(this.data.error() || 'Non è stato possibile registrare la somministrazione.');
       return;
     }
+    const recordedTime = actualDate.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    const scheduledLabel = dose.label.startsWith('Fascia ')
+      ? dose.label
+      : `Orario previsto ${dose.label}`;
+    this.toast.showSuccess(
+      'Somministrazione registrata',
+      `${item.title} · ${scheduledLabel} · registrata alle ${recordedTime}`,
+    );
     this.entries.set(await this.data.loadAllForSearch());
+  }
+  private scheduledDoseSlot(
+    medicationId: string,
+    scheduledTime: string,
+  ): { start: string; end?: string } | undefined {
+    const medication = this.entries().find(
+      (entry) => entry.section === 'medications' && String(entry.row.id) === medicationId,
+    );
+    if (!medication) return undefined;
+
+    const periods = medicationSchedulePeriods(medication.row);
+    for (const period of periods) {
+      const startDate = period.start_date || String(medication.row['start_date'] ?? '');
+      const endDate = period.end_date || (periods.length === 1 ? String(medication.row['end_date'] ?? '') : '');
+      if ((startDate && startDate > this.today) || (endDate && endDate < this.today)) continue;
+      const slot = parseScheduleTimes(period.schedule_times).find((candidate) => candidate.start === scheduledTime);
+      if (slot) return slot;
+    }
+    return undefined;
   }
   openSkipDose(item: { id: string; childId?: string }, dose: { id: string; label: string }): void {
     if (!item.childId || !this.canMarkDose(dose.id) || this.savingDose()) return;
@@ -412,4 +473,8 @@ function normalizeTime(value: string): string | null {
   const [hour, minute] = value.split(':').map(Number);
   if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+function timeToMinutes(value: string): number {
+  const [hour, minute] = value.split(':').map(Number);
+  return hour * 60 + minute;
 }

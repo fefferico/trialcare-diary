@@ -10,12 +10,23 @@ import { LoginComponent } from './auth/login.component';
 import { SECTIONS } from './models/diary.models';
 import { AppConfirmDialogComponent } from './shared/app-confirm-dialog.component';
 import { AppModalHostComponent } from './shared/app-modal-host.component';
+import { AppToastContainerComponent } from './shared/app-toast-container.component';
 import { TooltipDirective } from './shared/directives/tooltip.directive';
 
 @Component({
   selector: 'tc-root',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, LoginComponent, AppConfirmDialogComponent, AppModalHostComponent, TooltipDirective],
+  imports: [
+    CommonModule,
+    RouterOutlet,
+    RouterLink,
+    RouterLinkActive,
+    LoginComponent,
+    AppConfirmDialogComponent,
+    AppModalHostComponent,
+    AppToastContainerComponent,
+    TooltipDirective,
+  ],
   template: ` @if (!auth.user()) {
       <tc-login />
     } @else if (biometricLocked()) {
@@ -57,6 +68,7 @@ import { TooltipDirective } from './shared/directives/tooltip.directive';
       >
         <app-confirm-dialog />
         <app-modal-host />
+        <tc-toast-container />
         <aside class="sidebar hidden lg:flex">
           <a routerLink="/dashboard" class="brand-lockup" aria-label="TrialCare Diary"
             ><span class="brand-mark"

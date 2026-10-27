@@ -81,7 +81,8 @@ create table if not exists public.contacts (
 create table if not exists public.medicine_cabinet (
   id uuid primary key default gen_random_uuid(), child_id uuid not null references public.children(id) on delete cascade,
   name text not null check (char_length(name) between 1 and 200), quantity text, planned_dosage text,
-  price numeric(10,2) check (price is null or price >= 0), purchase_date date, opened_date date, expiry_date date,
+  price numeric(10,2) check (price is null or price >= 0), purchase_date date, opened_date date,
+  opened_expiry_days integer check (opened_expiry_days is null or opened_expiry_days > 0), expiry_date date,
   notes text, created_at timestamptz not null default now(), updated_at timestamptz not null default now()
 );
 create table if not exists public.child_measurements (

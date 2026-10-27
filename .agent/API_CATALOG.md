@@ -1,6 +1,6 @@
 # API Catalog
 
-> Generato da `npm run update-context` il 27/10/2026, 21:06:56.
+> Generato da `npm run update-context` il 27/10/2026, 22:08:57.
 
 ## Servizi
 
@@ -115,7 +115,7 @@ File: [src/app/core/modal.service.ts](../src/app/core/modal.service.ts)
 
 File: [src/app/core/pdf-export.service.ts](../src/app/core/pdf-export.service.ts)
 
-- `exportVisitSummary(rows: DiaryRow[], childName: string, from: string, to: string)`: `void`
+- `exportVisitSummary(summary: VisitSummaryDocument)`: `void`
 - `export(section: SectionDefinition, rows: DiaryRow[], childName: string)`: `void`
 
 ### StorageService
@@ -140,6 +140,14 @@ File: [src/app/core/storage.service.ts](../src/app/core/storage.service.ts)
 File: [src/app/core/supabase-client.service.ts](../src/app/core/supabase-client.service.ts)
 
 Methods are defined in the source file.
+
+### ToastService
+
+File: [src/app/core/toast.service.ts](../src/app/core/toast.service.ts)
+
+- `showSuccess(title: string, message: string, duration = 5000)`: `void`
+- `dismiss()`: `void`
+- `ngOnDestroy()`: `void`
 
 ### UiStateService
 
@@ -167,4 +175,5 @@ File: [src/app/core/ui-state.service.ts](../src/app/core/ui-state.service.ts)
 - [AppDropdownComponent](../src/app/shared/app-dropdown.component.ts)
 - [AppModalHostComponent](../src/app/shared/app-modal-host.component.ts)
 - [AppTimepickerComponent](../src/app/shared/app-timepicker.component.ts)
+- [AppToastContainerComponent](../src/app/shared/app-toast-container.component.ts)
 - [DocumentAssociationPickerComponent](../src/app/shared/document-association-picker.component.ts)

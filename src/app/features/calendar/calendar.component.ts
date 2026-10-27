@@ -15,6 +15,7 @@ import { ConfirmationService } from '../../core/confirmation.service';
 import { ModalService } from '../../core/modal.service';
 import { DiaryDataService, SearchableDiaryItem } from '../../core/diary-data.service';
 import { DiaryRow } from '../../models/diary.models';
+import { medicineCabinetExpiry } from '../../models/medicine-cabinet-expiry';
 import { AppDatepickerComponent } from '../../shared/app-datepicker.component';
 import { AppDropdownComponent } from '../../shared/app-dropdown.component';
 import { AppTimepickerComponent } from '../../shared/app-timepicker.component';
@@ -35,6 +36,7 @@ interface CalendarEvent {
   title: string;
   date: string;
   time: string;
+  endTime?: string;
   category: string;
   recurrenceGroupId?: string;
   specialist: string;
@@ -370,7 +372,81 @@ export class CalendarComponent implements OnInit, OnDestroy, CalendarEventFormCo
           : 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200';
   }
   eventDotTone(event: CalendarEvent): string {
-    return this.isSkipped(event) ? 'bg-amber-500' : this.isCanceled(event) ? 'bg-rose-600' : 'bg-teal-600';
+    if (this.isSkipped(event)) return 'bg-amber-500';
+    if (this.isCanceled(event) || this.isDoseOutOfWindow(event)) return 'bg-rose-600';
+    if (this.isDoseInTolerance(event)) return 'bg-orange-500';
+    return 'bg-teal-600';
+  }
+  medicationCardTone(event: CalendarEvent): string {
+    if (!event.medicationId) return '';
+    const windowState = this.doseWindowState(event);
+    if (windowState === 'out') {
+      return 'my-2 border border-rose-300 border-l-4 bg-rose-50 px-3 shadow-sm dark:border-rose-700 dark:bg-rose-950/40';
+    }
+    if (windowState === 'tolerance') {
+      return 'my-2 border border-orange-400 border-l-4 bg-orange-50 px-3 shadow-sm dark:border-orange-600 dark:bg-orange-950/40';
+    }
+    if (!event.doseTaken && !event.doseSkipped) {
+      return 'my-2 border border-amber-300 border-l-4 bg-amber-50 px-3 shadow-sm dark:border-amber-700 dark:bg-amber-950/40';
+    }
+    if (event.doseTaken) {
+      return 'rounded-lg bg-slate-50/70 dark:bg-slate-900/40';
+    }
+    return '';
+  }
+  doseWindowState(event: CalendarEvent): 'ok' | 'tolerance' | 'out' {
+    if (!event.medicationId || event.doseSkipped || this.isSkipped(event)) return 'ok';
+    const scheduledDate = parseDate(event.date);
+    if (!scheduledDate || !event.time) return 'ok';
+    const [startHour, startMinute] = event.time.split(':').map(Number);
+    const endTime = event.endTime || event.time;
+    const [endHour, endMinute] = endTime.split(':').map(Number);
+    const startMs = new Date(
+      scheduledDate.getFullYear(),
+      scheduledDate.getMonth(),
+      scheduledDate.getDate(),
+      startHour,
+      startMinute,
+    ).getTime();
+    const endMs = new Date(
+      scheduledDate.getFullYear(),
+      scheduledDate.getMonth(),
+      scheduledDate.getDate(),
+      endHour,
+      endMinute,
+    ).getTime();
+    if (event.doseTaken) {
+      if (!event.takenAt) return 'ok';
+      const taken = new Date(event.takenAt);
+      if (Number.isNaN(taken.getTime())) return 'ok';
+      const takenMs = new Date(
+        taken.getFullYear(),
+        taken.getMonth(),
+        taken.getDate(),
+        taken.getHours(),
+        taken.getMinutes(),
+      ).getTime();
+      if (takenMs >= startMs && takenMs <= endMs) return 'ok';
+      const diffMinutes = takenMs < startMs ? (startMs - takenMs) / 60000 : (takenMs - endMs) / 60000;
+      return diffMinutes <= 30 ? 'tolerance' : 'out';
+    }
+    const now = new Date();
+    const nowMs = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      now.getHours(),
+      now.getMinutes(),
+    ).getTime();
+    if (nowMs <= endMs) return 'ok';
+    const diffMinutes = (nowMs - endMs) / 60000;
+    return diffMinutes <= 30 ? 'tolerance' : 'out';
+  }
+  isDoseInTolerance(event: CalendarEvent): boolean {
+    return this.doseWindowState(event) === 'tolerance';
+  }
+  isDoseOutOfWindow(event: CalendarEvent): boolean {
+    return this.doseWindowState(event) === 'out';
   }
   eventStatusLabel(event: CalendarEvent): string {
     if (this.isSkipped(event)) return 'Saltato';
@@ -1098,11 +1174,12 @@ function toEvents(entries: SearchableDiaryItem[], month: Date): CalendarEvent[] 
   const output: CalendarEvent[] = [];
   for (const { section, row } of entries) {
     if (section === 'medicine_cabinet') {
-      const expiry = String(row['expiry_date'] ?? '').slice(0, 10);
-      if (validDate(expiry))
+      const expiry = medicineCabinetExpiry(row);
+      const date = expiry.effectiveDate ?? '';
+      if (validDate(date))
         output.push({
-          ...makeEvent(row, section, expiry),
-          title: `Scadenza: ${String(row['name'] ?? 'Farmaco')}`,
+          ...makeEvent(row, section, date),
+          title: `${expiry.effectiveSource === 'after-opening' ? 'Da consumare entro' : 'Scadenza'}: ${String(row['name'] ?? 'Farmaco')}`,
         });
     } else if (section === 'calendar_events') {
       const date = String(row['date'] ?? '').slice(0, 10);
@@ -1144,6 +1221,7 @@ function toEvents(entries: SearchableDiaryItem[], month: Date): CalendarEvent[] 
               id: `dose-${row.id}-${date}-${time}`,
               title: `${String(row['name'] ?? 'Farmaco')} · ${period.dosage}`.trim(),
               time,
+              endTime: slot.end,
               category: slot.end ? `Fascia ${slot.start}–${slot.end}` : `Orario ${slot.start}`,
               medicationId: row.id,
               doseTaken: !!dose && String(dose.row['status'] ?? 'Somministrata') !== 'Saltata',

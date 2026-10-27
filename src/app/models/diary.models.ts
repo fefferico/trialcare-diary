@@ -126,7 +126,7 @@ export const SECTIONS: SectionDefinition[] = [
     shortLabel: 'Scorte',
     title: 'Inventario dei farmaci in casa',
     description:
-      'Tieni sotto controllo confezioni, dosaggio previsto, prezzo e date di apertura e scadenza.',
+      'Tieni sotto controllo confezioni, dosaggio previsto, prezzo e scadenze, anche dopo l’apertura.',
     icon: 'pill',
     fields: [
       { key: 'name', label: 'Nome del farmaco', kind: 'text', required: true },
@@ -145,8 +145,14 @@ export const SECTIONS: SectionDefinition[] = [
       { key: 'price', label: 'Prezzo (€)', kind: 'number' },
       { key: 'purchase_date', label: 'Data di acquisto', kind: 'date' },
       { key: 'opened_date', label: 'Data di apertura', kind: 'date' },
+      {
+        key: 'opened_expiry_days',
+        label: 'Durata dopo apertura (giorni)',
+        kind: 'number',
+        placeholder: 'Es. 28',
+      },
       { key: 'expiry_precision', label: 'Precisione scadenza', kind: 'select', options: ['Data completa', 'Mese e anno'] },
-      { key: 'expiry_date', label: 'Data di scadenza', kind: 'date' },
+      { key: 'expiry_date', label: 'Scadenza riportata sulla confezione', kind: 'date' },
       { key: 'notes', label: 'Note', kind: 'textarea' },
     ],
   },

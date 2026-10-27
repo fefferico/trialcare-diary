@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, Input, OnDestroy, OnInit, effect, inject, signal } from '@angular/core';
+import { Component, ElementRef, Input, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
@@ -28,6 +28,7 @@ import {
   SectionId,
   sectionById,
 } from '../models/diary.models';
+import { medicineCabinetExpiry } from '../models/medicine-cabinet-expiry';
 
 interface MedicationScheduleDraft {
   start_date: string;
@@ -157,10 +158,16 @@ function normalizeMedicationTime(value: string): string | null {
                 </p>
               </div>
               <div class="flex flex-wrap gap-2">
-                <button type="button" class="button-primary" [disabled]="!selectedChildId() || invalidReportPeriod" (click)="exportVisitSummary()">
-                  Riepilogo visita PDF
-                </button>
-                <button type="button" class="button-secondary" (click)="exportReport()">Esporta elenco</button>
+                @if (reportPreviewOpen()) {
+                  <button type="button" class="button-secondary" (click)="closeReportPreview()">Modifica filtri</button>
+                  <button type="button" class="button-primary" [disabled]="!selectedChildId() || invalidReportPeriod" (click)="exportVisitSummary()">
+                    Genera PDF
+                  </button>
+                } @else {
+                  <button type="button" class="button-primary" [disabled]="!selectedChildId() || invalidReportPeriod" (click)="openReportPreview()">
+                    Visualizza riepilogo
+                  </button>
+                }
               </div>
             </div>
             <div class="border-t border-slate-100 pt-4 dark:border-slate-800">
@@ -308,6 +315,191 @@ function normalizeMedicationTime(value: string): string | null {
               {{ section.id === 'children' ? 'Aggiungi un bambino' : 'Aggiungi una voce' }}
             </button>
           </div>
+        } @else if (section.id === 'reports' && reportPreviewOpen()) {
+          <article id="visit-report-preview" class="panel mx-auto max-w-4xl space-y-6" aria-labelledby="visit-report-preview-title">
+            <header class="space-y-3 border-b border-slate-100 pb-5 dark:border-slate-800">
+              <p class="eyebrow">REPORT PER IL TEAM CLINICO</p>
+              <h2 id="visit-report-preview-title" class="text-2xl font-semibold">Riepilogo per la visita</h2>
+              <dl class="grid gap-3 rounded-2xl bg-slate-50 p-4 text-sm dark:bg-slate-800/60 sm:grid-cols-2">
+                <div><dt class="text-slate-500 dark:text-slate-400">Profilo</dt><dd class="mt-1 font-semibold">{{ visitSummaryDocument().profile }}</dd></div>
+                <div><dt class="text-slate-500 dark:text-slate-400">Periodo</dt><dd class="mt-1 font-semibold">{{ visitSummaryDocument().period }}</dd></div>
+                <div class="sm:col-span-2"><dt class="text-slate-500 dark:text-slate-400">Voci incluse</dt><dd class="mt-1 font-semibold">{{ visitSummaryDocument().entryCount }}</dd></div>
+              </dl>
+              <p class="text-sm text-slate-600 dark:text-slate-300">
+                Promemoria da discutere con il team clinico. Le informazioni sono state registrate dalla famiglia.
+              </p>
+            </header>
+
+            @if (visitSummaryDocument().groups.length) {
+              <div class="flex gap-2 overflow-x-auto pb-2" role="tablist" aria-label="Categorie del riepilogo">
+                @for (group of visitSummaryDocument().groups; track group.key) {
+                  <button
+                    type="button"
+                    role="tab"
+                    class="inline-flex shrink-0 items-center whitespace-nowrap rounded-xl border px-3 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
+                    [class.border-teal-700]="activeVisitSummaryGroup().key === group.key"
+                    [class.bg-teal-700]="activeVisitSummaryGroup().key === group.key"
+                    [class.text-white]="activeVisitSummaryGroup().key === group.key"
+                    [class.border-slate-200]="activeVisitSummaryGroup().key !== group.key"
+                    [class.bg-white]="activeVisitSummaryGroup().key !== group.key"
+                    [class.text-slate-700]="activeVisitSummaryGroup().key !== group.key"
+                    [class.dark:border-slate-700]="activeVisitSummaryGroup().key !== group.key"
+                    [class.dark:bg-slate-900]="activeVisitSummaryGroup().key !== group.key"
+                    [class.dark:text-slate-200]="activeVisitSummaryGroup().key !== group.key"
+                    [attr.id]="'visit-report-tab-' + group.key"
+                    [attr.aria-controls]="'visit-report-panel-' + group.key"
+                    [attr.aria-selected]="activeVisitSummaryGroup().key === group.key"
+                    [attr.tabindex]="activeVisitSummaryGroup().key === group.key ? 0 : -1"
+                    [attr.data-report-tab]="group.key"
+                    [attr.aria-label]="group.label + ', ' + group.entries.length + ' voci'"
+                    (click)="reportCategoryTab.set(group.key)"
+                    (keydown)="onReportTabKeydown($event, group.key)"
+                  >
+                    {{ group.label }}
+                    <span class="ml-2 rounded-full px-1.5 text-xs" [class.bg-white/20]="activeVisitSummaryGroup().key === group.key" [class.bg-slate-100]="activeVisitSummaryGroup().key !== group.key" [class.dark:bg-slate-800]="activeVisitSummaryGroup().key !== group.key">{{ group.entries.length }}</span>
+                  </button>
+                }
+              </div>
+              @if (activeVisitSummaryGroup(); as group) {
+                <section
+                  class="space-y-3"
+                  role="tabpanel"
+                  tabindex="0"
+                  [attr.id]="'visit-report-panel-' + group.key"
+                  [attr.aria-labelledby]="'visit-report-tab-' + group.key"
+                >
+                  <h3 class="flex items-center justify-between border-b border-slate-100 pb-2 font-semibold dark:border-slate-800">
+                    <span>{{ group.label }}</span>
+                    <span class="rounded-full bg-teal-50 px-2.5 py-1 text-xs text-teal-800 dark:bg-teal-900/40 dark:text-teal-200">{{ group.entries.length }}</span>
+                  </h3>
+                  @if (group.key === 'medication_doses') {
+                    <div class="grid gap-3 lg:grid-cols-2">
+                      @for (medication of group.medicationGroups; track medication.id) {
+                        <article class="rounded-2xl border border-slate-200 p-3 dark:border-slate-700">
+                          <header class="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <p class="text-xs font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-300">Farmaco</p>
+                              <h4 class="mt-1 font-semibold">{{ medication.name }}</h4>
+                            </div>
+                            <span class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                              {{ medication.entries.length }} dosi
+                            </span>
+                          </header>
+
+                          <section class="mt-3 border-t border-slate-100 pt-3 dark:border-slate-800" [attr.aria-label]="'Periodi terapeutici di ' + medication.name">
+                            <h5 class="text-sm font-semibold">Periodi della terapia</h5>
+                            @if (medication.periods.length) {
+                              <ol class="mt-2 space-y-2">
+                                @for (period of medication.periods; track period.id) {
+                                  <li class="rounded-xl bg-teal-50/70 p-3 text-sm dark:bg-teal-950/30">
+                                    <div class="flex flex-wrap items-start justify-between gap-2">
+                                      <p class="font-semibold text-teal-950 dark:text-teal-100">{{ period.heading }}</p>
+                                      <span class="rounded-full bg-teal-100 px-2 py-0.5 text-[11px] font-semibold text-teal-900 dark:bg-teal-900/60 dark:text-teal-100">{{ period.entries.length }} dosi</span>
+                                    </div>
+                                    <p class="mt-1 text-slate-700 dark:text-slate-200">{{ period.regimen }}</p>
+                                    @if (period.pause) { <p class="mt-1 text-xs text-slate-600 dark:text-slate-300">{{ period.pause }}</p> }
+                                    @if (period.recentEntries.length) {
+                                      <ol class="mt-2 space-y-1 border-t border-teal-200/70 pt-2 dark:border-teal-900/70">
+                                        @for (entry of period.recentEntries; track entry.id) {
+                                          <li class="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
+                                            <time class="font-semibold">{{ entry.date || 'Data non specificata' }}</time>
+                                            @for (detail of entry.details; track detail.label) {
+                                              <span><b class="font-medium text-slate-600 dark:text-slate-300">{{ detail.label }}:</b> {{ detail.value }}</span>
+                                            }
+                                          </li>
+                                        }
+                                      </ol>
+                                    } @else {
+                                      <p class="mt-2 border-t border-teal-200/70 pt-2 text-xs text-slate-600 dark:border-teal-900/70 dark:text-slate-300">Nessuna somministrazione nel periodo selezionato.</p>
+                                    }
+                                    @if (period.additionalEntries.length) {
+                                      <details class="mt-2 border-t border-teal-200/70 pt-2 dark:border-teal-900/70">
+                                        <summary class="cursor-pointer text-xs font-semibold text-teal-900 dark:text-teal-100">Mostra altre {{ period.additionalEntries.length }} somministrazioni</summary>
+                                        <ol class="mt-2 space-y-1">
+                                          @for (entry of period.additionalEntries; track entry.id) {
+                                            <li class="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
+                                              <time class="font-semibold">{{ entry.date || 'Data non specificata' }}</time>
+                                              @for (detail of entry.details; track detail.label) {
+                                                <span><b class="font-medium text-slate-600 dark:text-slate-300">{{ detail.label }}:</b> {{ detail.value }}</span>
+                                              }
+                                            </li>
+                                          }
+                                        </ol>
+                                      </details>
+                                    }
+                                  </li>
+                                }
+                              </ol>
+                            } @else {
+                              <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Periodi terapeutici non disponibili.</p>
+                            }
+                          </section>
+
+                          @if (medication.unassignedEntries.length) {
+                            <details class="mt-3 border-t border-slate-100 pt-3 dark:border-slate-800">
+                              <summary class="cursor-pointer text-xs font-semibold text-slate-600 dark:text-slate-300">Somministrazioni senza periodo associato ({{ medication.unassignedEntries.length }})</summary>
+                              <ol class="mt-2 space-y-1.5">
+                                @for (entry of medication.unassignedEntries; track entry.id) {
+                                  <li class="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg bg-slate-50 px-3 py-2 text-xs dark:bg-slate-800/60">
+                                    <time class="font-semibold">{{ entry.date || 'Data non specificata' }}</time>
+                                    @for (detail of entry.details; track detail.label) {
+                                      <span><b class="font-medium text-slate-500 dark:text-slate-400">{{ detail.label }}:</b> {{ detail.value }}</span>
+                                    }
+                                  </li>
+                                }
+                              </ol>
+                            </details>
+                          }
+                        </article>
+                      }
+                    </div>
+                  } @else {
+                    <div class="grid gap-3 md:grid-cols-2">
+                      @for (entry of group.entries; track entry.id) {
+                        <article class="rounded-2xl border border-slate-200 p-3 dark:border-slate-700">
+                          <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                            <p class="text-xs font-medium text-slate-500 dark:text-slate-400">{{ entry.date || 'Data non specificata' }}</p>
+                            <h4 class="font-semibold">{{ entry.title }}</h4>
+                          </div>
+                          @if (entry.schedulePeriods.length) {
+                            <div class="mt-3 grid gap-2 sm:grid-cols-2">
+                              @for (period of entry.schedulePeriods; track period.id) {
+                                <div class="rounded-xl bg-slate-50 p-2.5 text-sm dark:bg-slate-800/60">
+                                  <h5 class="font-semibold">{{ period.heading }}</h5>
+                                  <p class="mt-1 text-slate-600 dark:text-slate-300">{{ period.regimen }}</p>
+                                  @if (period.pause) { <p class="mt-1 text-xs text-slate-600 dark:text-slate-300">{{ period.pause }}</p> }
+                                </div>
+                              }
+                            </div>
+                          }
+                          @if (entry.details.length) {
+                            <dl class="mt-3 grid gap-x-3 gap-y-1.5 border-t border-slate-100 pt-2.5 text-sm dark:border-slate-700">
+                              @for (detail of entry.details; track detail.label) {
+                                <div class="grid grid-cols-[minmax(5.5rem,auto)_minmax(0,1fr)] gap-x-3"><dt class="text-xs font-medium text-slate-500 dark:text-slate-400">{{ detail.label }}</dt><dd class="whitespace-pre-wrap">{{ detail.value }}</dd></div>
+                              }
+                            </dl>
+                          }
+                        </article>
+                      }
+                    </div>
+                  }
+                </section>
+              }
+            } @else {
+              <p class="rounded-2xl bg-slate-50 p-5 text-center text-sm text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
+                Nessuna voce registrata nel periodo selezionato.
+              </p>
+            }
+
+            <section class="space-y-3 border-t border-slate-100 pt-5 dark:border-slate-800" aria-labelledby="visit-report-questions">
+              <h3 id="visit-report-questions" class="font-semibold">Domande e punti da discutere</h3>
+              <div class="space-y-5" aria-label="Spazio per annotazioni">
+                <div class="border-b border-slate-300 dark:border-slate-600"></div>
+                <div class="border-b border-slate-300 dark:border-slate-600"></div>
+                <div class="border-b border-slate-300 dark:border-slate-600"></div>
+              </div>
+            </section>
+          </article>
         } @else {
           <div class="grid gap-3 md:grid-cols-2">
             @for (row of filteredRows; track row['id']) {
@@ -406,6 +598,17 @@ function normalizeMedicationTime(value: string): string | null {
                     }
                   }
                 </div>
+                @if (section.id === 'medicine_cabinet') {
+                  @let expiry = medicineCabinetExpiry(row);
+                  <div class="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                    <span class="rounded-full px-2.5 py-1 font-semibold" [ngClass]="inventoryExpiryTone(row)">{{ inventoryExpiryLabel(row) }}</span>
+                    @if (expiry.effectiveDate) {
+                      <span class="text-slate-600 dark:text-slate-300">
+                        {{ expiry.effectiveSource === 'after-opening' ? 'Da consumare entro' : 'Scadenza effettiva' }} · {{ expiry.effectiveDate | date: (expiry.monthOnly ? 'MM/yyyy' : 'd MMM y') }}
+                      </span>
+                    }
+                  </div>
+                }
                 @if (section.id === 'medications' && medicationSchedulePeriods(row).length > 1) {
                   <p class="mt-2 text-xs font-medium text-teal-700 dark:text-teal-300">
                     {{ medicationSchedulePeriods(row).length }} periodi di terapia
@@ -604,6 +807,12 @@ function normalizeMedicationTime(value: string): string | null {
                   <span>Inserisci qui il primo dosaggio. Potrai aggiungere variazioni con date e orari diversi mantenendo lo storico nella stessa terapia.</span>
                 </div>
               }
+              @if (section.id === 'medicine_cabinet') {
+                <div class="rounded-2xl border border-teal-100 bg-teal-50/70 p-3 text-xs leading-5 text-slate-600 dark:border-teal-900/60 dark:bg-teal-950/20 dark:text-slate-300 sm:p-4">
+                  <strong class="block text-sm text-teal-900 dark:text-teal-200">Scadenza dopo apertura</strong>
+                  <span>Se il foglietto indica un numero di giorni dall’apertura, inserisci la durata e la data di apertura. Il promemoria considera la scadenza più vicina tra quella calcolata e quella riportata sulla confezione.</span>
+                </div>
+              }
               <div class="grid gap-4 sm:grid-cols-2">
                 @for (field of section.fields; track field.key) {
                   @if (
@@ -722,8 +931,8 @@ function normalizeMedicationTime(value: string): string | null {
                           [(ngModel)]="form[field.key]"
                           [required]="field.required ?? false"
                           [placeholder]="field.placeholder ?? ''"
-                          [step]="['spray_count', 'administration_duration_seconds'].includes(field.key) ? 1 : field.kind === 'number' ? 'any' : null"
-                          [min]="['spray_count', 'administration_duration_seconds'].includes(field.key) ? 1 : null"
+                          [step]="['spray_count', 'administration_duration_seconds', 'opened_expiry_days'].includes(field.key) ? 1 : field.kind === 'number' ? 'any' : null"
+                          [min]="['spray_count', 'administration_duration_seconds', 'opened_expiry_days'].includes(field.key) ? 1 : null"
                         />
                       }
                     }
@@ -764,7 +973,7 @@ function normalizeMedicationTime(value: string): string | null {
                     <button type="button" class="button-secondary shrink-0 !px-3 !py-2 text-xs" (click)="addMedicationSchedule()">＋ Aggiungi periodo</button>
                   </div>
                   @for (period of additionalMedicationSchedules(); track $index; let index = $index) {
-                    <article class="space-y-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-800/60">
+                    <article class="space-y-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-800/60" [attr.data-medication-schedule-index]="index">
                       <div class="flex items-center justify-between gap-2">
                         <h4 class="text-sm font-semibold">Periodo {{ index + 2 }}</h4>
                         <button type="button" class="text-xs font-semibold text-rose-700 hover:underline dark:text-rose-300" (click)="removeMedicationSchedule(index)">Rimuovi</button>
@@ -931,8 +1140,16 @@ function normalizeMedicationTime(value: string): string | null {
                     @if (value(row, 'opened_date')) {
                       <div><dt class="text-xs font-medium text-slate-500">Aperto il</dt><dd class="mt-1 text-sm">{{ value(row, 'opened_date') | date: 'd MMMM y' }}</dd></div>
                     }
-                    @if (value(row, 'expiry_date')) {
-                      <div><dt class="text-xs font-medium text-slate-500">Scadenza</dt><dd class="mt-1 text-sm font-semibold">{{ value(row, 'expiry_date') | date: (row['expiry_precision'] === 'month' ? 'MM/yyyy' : 'd MMMM y') }}</dd></div>
+                    @if (medicineCabinetExpiry(row); as expiry) {
+                      @if (expiry.packageDate) {
+                        <div><dt class="text-xs font-medium text-slate-500">Scadenza confezione</dt><dd class="mt-1 text-sm">{{ expiry.packageDate | date: (row['expiry_precision'] === 'month' ? 'MM/yyyy' : 'd MMMM y') }}</dd></div>
+                      }
+                      @if (value(row, 'opened_expiry_days')) {
+                        <div><dt class="text-xs font-medium text-slate-500">Validità dopo apertura</dt><dd class="mt-1 text-sm">{{ value(row, 'opened_expiry_days') }} giorni</dd></div>
+                      }
+                      @if (expiry.afterOpeningDate) {
+                        <div><dt class="text-xs font-medium text-slate-500">Da consumare entro dopo apertura</dt><dd class="mt-1 text-sm font-semibold">{{ expiry.afterOpeningDate | date: 'd MMMM y' }}</dd></div>
+                      }
                     }
                   </dl>
                 </section>
@@ -1046,6 +1263,7 @@ function normalizeMedicationTime(value: string): string | null {
   `,
 })
 export class FeaturePageComponent implements OnInit, OnDestroy {
+  private readonly host = inject(ElementRef<HTMLElement>);
   readonly contactRoleSuggestions = [
     'Medico',
     'Pediatra',
@@ -1104,6 +1322,24 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   readonly reportFrom = signal('');
   readonly reportTo = signal('');
   readonly reportCategory = signal('');
+  readonly reportPreviewOpen = signal(false);
+  readonly reportCategoryTab = signal('');
+  readonly visitSummaryDocument = computed(() =>
+    this.pdf.createVisitSummary(
+      this.visitSummaryRows,
+      this.selectedChildName(),
+      this.reportFrom(),
+      this.reportTo(),
+      this.data.rows().filter((row) => row['record_type'] === 'medications'),
+    ),
+  );
+  readonly activeVisitSummaryGroup = computed(() => {
+    const groups = this.visitSummaryDocument().groups;
+    return groups.find((group) => group.key === this.reportCategoryTab()) ??
+      groups.find((group) => group.key === 'medication_doses') ??
+      groups[0] ??
+      null;
+  });
   readonly reportCategories = [
     'Farmaci',
     'Eventi e sintomi',
@@ -1179,6 +1415,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   addMedicationSchedule(): void {
     const previous = this.additionalMedicationSchedules().at(-1);
     const source = previous ?? this.form;
+    const newIndex = this.additionalMedicationSchedules().length;
     this.additionalMedicationSchedules.update((periods) => [
       ...periods,
       {
@@ -1192,6 +1429,12 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         planned_pause: String(source['planned_pause'] ?? ''),
       },
     ]);
+    requestAnimationFrame(() => {
+      const target = this.host.nativeElement.querySelector(
+        `[data-medication-schedule-index="${newIndex}"]`,
+      ) as HTMLElement | null;
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
   }
   updateMedicationSchedule(
     index: number,
@@ -1299,17 +1542,61 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       );
     });
     const query = normalizeSearch(this.searchQuery().trim());
-    if (!query) return rows;
     const terms = query.split(/\s+/).filter(Boolean);
-    return rows.filter((row) => {
-      const values = Object.entries(row)
-        .filter(([key, value]) =>
-          !['id', 'user_id', 'child_id', 'created_at', 'updated_at', 'storage_path', 'receipt_path'].includes(key) &&
-          (typeof value === 'string' || typeof value === 'number'),
-        )
-        .map(([, value]) => normalizeSearch(String(value)));
-      return terms.every((term) => values.some((value) => fuzzyTermMatch(term, value)));
+    const filteredRows = query
+      ? rows.filter((row) => {
+          const values = Object.entries(row)
+            .filter(([key, value]) =>
+              !['id', 'user_id', 'child_id', 'created_at', 'updated_at', 'storage_path', 'receipt_path'].includes(key) &&
+              (typeof value === 'string' || typeof value === 'number'),
+            )
+            .map(([, value]) => normalizeSearch(String(value)));
+          return terms.every((term) => values.some((value) => fuzzyTermMatch(term, value)));
+        })
+      : rows;
+    return this.sectionId === 'medications' ? this.sortMedicationRows(filteredRows) : filteredRows;
+  }
+  private sortMedicationRows(rows: DiaryRow[]): DiaryRow[] {
+    const today = medicationDateKey(new Date());
+    const sortInfo = rows.map((row, index) => {
+      const periods = this.medicationSchedulePeriods(row);
+      const isCurrent = periods.some((period) =>
+        (!period.start_date || period.start_date <= today) &&
+        (!period.end_date || period.end_date >= today),
+      );
+      const upcomingStart = periods
+        .map((period) => period.start_date)
+        .filter((date): date is string => !!date && date > today)
+        .sort()[0];
+      const latestEnd = periods
+        .map((period) => period.end_date)
+        .filter((date): date is string => !!date && date < today)
+        .sort()
+        .at(-1);
+      const latestStart = periods
+        .map((period) => period.start_date)
+        .filter((date): date is string => !!date && date < today)
+        .sort()
+        .at(-1);
+
+      return {
+        row,
+        index,
+        group: isCurrent ? 0 : upcomingStart ? 1 : 2,
+        date: isCurrent ? '' : upcomingStart ?? latestEnd ?? latestStart ?? '',
+      };
     });
+
+    sortInfo.sort((left, right) => {
+      if (left.group !== right.group) return left.group - right.group;
+      if (left.date !== right.date) {
+        return left.group === 1
+          ? left.date.localeCompare(right.date)
+          : right.date.localeCompare(left.date);
+      }
+      return left.index - right.index;
+    });
+    return sortInfo.map(({ row }) => row);
   }
   get invalidReportPeriod(): boolean {
     return !!this.reportFrom() && !!this.reportTo() && this.reportFrom() > this.reportTo();
@@ -1456,6 +1743,9 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   }
   visibleCardFields(row: DiaryRow): FieldDefinition[] {
     const fields = this.visibleFields(row);
+    if (this.sectionId === 'medicine_cabinet') {
+      return fields.filter((field) => !['expiry_date', 'opened_expiry_days'].includes(field.key));
+    }
     if (this.sectionId !== 'medications') return fields;
     const summaryFields = new Set([
       'dosage',
@@ -1497,6 +1787,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         'price',
         'purchase_date',
         'opened_date',
+        'opened_expiry_days',
         'expiry_date',
       ]);
       return fields.filter((field) => !stockFields.has(field.key));
@@ -1515,8 +1806,14 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     return fields.filter((field) => !regimenFields.has(field.key));
   }
   inventoryExpiryLabel(row: DiaryRow): string {
-    const expiry = String(row['expiry_date'] ?? '').slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(expiry)) return 'Scadenza non indicata';
+    const medicineExpiry = medicineCabinetExpiry(row);
+    const expiry = medicineExpiry.effectiveDate ?? '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(expiry)) {
+      const shelfLifeDays = Number(row['opened_expiry_days']);
+      return Number.isSafeInteger(shelfLifeDays) && shelfLifeDays > 0 && !medicineExpiry.afterOpeningDate
+        ? 'Da calcolare all’apertura'
+        : 'Scadenza non indicata';
+    }
     const [year, month, day] = expiry.split('-').map(Number);
     const expiryDay = Date.UTC(year, month - 1, day);
     const now = new Date();
@@ -1533,6 +1830,9 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     if (label.startsWith('Scade')) return 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200';
     if (label === 'Scadenza oltre 30 giorni') return 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200';
     return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300';
+  }
+  medicineCabinetExpiry(row: DiaryRow) {
+    return medicineCabinetExpiry(row);
   }
   setField(field: FieldDefinition, value: string): void {
     this.form[field.key] = value;
@@ -2062,6 +2362,15 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         const [year, month] = expiry.split('-').map(Number);
         value['expiry_date'] = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`;
       }
+      const shelfLifeDays = value['opened_expiry_days'] === '' || value['opened_expiry_days'] == null
+        ? null
+        : Number(value['opened_expiry_days']);
+      if (shelfLifeDays !== null && (!Number.isInteger(shelfLifeDays) || shelfLifeDays < 1)) {
+        this.data.error.set('Inserisci un numero intero maggiore di zero per i giorni di validità dopo l’apertura.');
+        this.saving.set(false);
+        return;
+      }
+      value['opened_expiry_days'] = shelfLifeDays;
     }
     if (this.sectionId === 'medications') {
       const schedules = this.buildMedicationSchedules(value);
@@ -2363,17 +2672,54 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.shareNoticeId.set(id);
     this.shareNotice.set(message);
   }
-  exportReport(): void {
-    this.pdf.export(this.section, this.filteredRows, this.selectedChildName());
+  openReportPreview(): void {
+    if (!this.selectedChildId() || this.invalidReportPeriod) return;
+    this.reportPreviewOpen.set(true);
+    requestAnimationFrame(() =>
+      this.host.nativeElement
+        .querySelector('#visit-report-preview')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+    );
+  }
+  closeReportPreview(): void {
+    this.reportPreviewOpen.set(false);
+  }
+  onReportTabKeydown(event: KeyboardEvent, groupKey: string): void {
+    const groups = this.visitSummaryDocument().groups;
+    const currentIndex = groups.findIndex((group) => group.key === groupKey);
+    if (currentIndex < 0 || !groups.length) return;
+
+    let nextIndex: number;
+    switch (event.key) {
+      case 'ArrowRight':
+        nextIndex = (currentIndex + 1) % groups.length;
+        break;
+      case 'ArrowLeft':
+        nextIndex = (currentIndex - 1 + groups.length) % groups.length;
+        break;
+      case 'Home':
+        nextIndex = 0;
+        break;
+      case 'End':
+        nextIndex = groups.length - 1;
+        break;
+      default:
+        return;
+    }
+
+    event.preventDefault();
+    const nextGroup = groups[nextIndex];
+    this.reportCategoryTab.set(nextGroup.key);
+    requestAnimationFrame(() => {
+      const tab = this.host.nativeElement.querySelector(
+        `[data-report-tab="${nextGroup.key}"]`,
+      ) as HTMLButtonElement | null;
+      tab?.focus();
+    });
   }
   exportVisitSummary(): void {
     if (!this.selectedChildId() || this.invalidReportPeriod) return;
-    this.pdf.exportVisitSummary(
-      this.visitSummaryRows,
-      this.selectedChildName(),
-      this.reportFrom(),
-      this.reportTo(),
-    );
+    this.pdf.exportVisitSummary(this.visitSummaryDocument());
   }
   async exportData(format: 'json' | 'markdown' | 'doc'): Promise<void> {
     this.exporting.set(true);

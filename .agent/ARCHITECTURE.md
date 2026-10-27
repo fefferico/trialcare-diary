@@ -1,6 +1,6 @@
 # Architecture Map
 
-> Aggiornato automaticamente il 27/10/2026, 21:06:56.
+> Aggiornato automaticamente il 27/10/2026, 22:08:58.
 
 ## Struttura
 
@@ -29,6 +29,7 @@
 - [Pdf Export Service](../src/app/core/pdf-export.service.ts)
 - [Storage Service](../src/app/core/storage.service.ts)
 - [Supabase Client Service](../src/app/core/supabase-client.service.ts)
+- [Toast Service](../src/app/core/toast.service.ts)
 - [Ui State Service](../src/app/core/ui-state.service.ts)
 - [Dashboard Component](../src/app/dashboard/dashboard.component.ts)
 - [Image To Pdf Component](../src/app/documents/image-to-pdf.component.ts)
@@ -40,11 +41,13 @@
 - [Feature Page Component](../src/app/features/feature-page.component.ts)
 - [Section Wrappers](../src/app/features/section-wrappers.ts)
 - [Diary Models](../src/app/models/diary.models.ts)
+- [Medicine Cabinet Expiry](../src/app/models/medicine-cabinet-expiry.ts)
 - [App Autocomplete Component](../src/app/shared/app-autocomplete.component.ts)
 - [App Confirm Dialog Component](../src/app/shared/app-confirm-dialog.component.ts)
 - [App Datepicker Component](../src/app/shared/app-datepicker.component.ts)
 - [App Dropdown Component](../src/app/shared/app-dropdown.component.ts)
 - [App Modal Host Component](../src/app/shared/app-modal-host.component.ts)
 - [App Timepicker Component](../src/app/shared/app-timepicker.component.ts)
+- [App Toast Container Component](../src/app/shared/app-toast-container.component.ts)
 - [Tooltip Directive](../src/app/shared/directives/tooltip.directive.ts)
 - [Document Association Picker Component](../src/app/shared/document-association-picker.component.ts)
