@@ -55,7 +55,20 @@ import { Component, input, output, signal } from '@angular/core';
           </div>
           <div class="grid grid-cols-7 gap-1">
             @for (day of days(); track $index) {
-              <button type="button" class="h-8 rounded-lg text-sm hover:bg-teal-50 dark:hover:bg-slate-800" [disabled]="!day" (click)="choose(day)">{{ day || '' }}</button>
+              <button
+                type="button"
+                class="h-8 rounded-lg border border-transparent text-sm hover:bg-teal-50 dark:hover:bg-slate-800"
+                [class.border-teal-700]="isToday(day)"
+                [class.bg-teal-100]="isToday(day)"
+                [class.font-bold]="isToday(day)"
+                [class.text-teal-950]="isToday(day)"
+                [class.dark:border-teal-300]="isToday(day)"
+                [class.dark:bg-teal-900/60]="isToday(day)"
+                [class.dark:text-teal-100]="isToday(day)"
+                [attr.aria-current]="isToday(day) ? 'date' : null"
+                [disabled]="!day"
+                (click)="choose(day)"
+              >{{ day || '' }}</button>
             }
           </div>
         }
@@ -150,6 +163,12 @@ export class AppDatepickerComponent {
       `${this.cursor.getFullYear()}-${String(this.cursor.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
     );
     this.calendarOpen.set(false);
+  }
+  isToday(day: number | null): boolean {
+    if (!day) return false;
+    const now = new Date();
+    return this.cursor.getFullYear() === now.getFullYear() &&
+      this.cursor.getMonth() === now.getMonth() && day === now.getDate();
   }
   private refresh(): void {
     this.monthLabel.set(this.monthOnly() ? String(this.cursor.getFullYear()) :

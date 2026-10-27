@@ -1,6 +1,6 @@
 # API Catalog
 
-> Generato da `npm run update-context` il 16/10/2026, 15:58:06.
+> Generato da `npm run update-context` il 27/10/2026, 18:53:25.
 
 ## Servizi
 

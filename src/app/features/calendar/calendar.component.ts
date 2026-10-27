@@ -99,6 +99,8 @@ export class CalendarComponent implements OnInit, OnDestroy, CalendarEventFormCo
   readonly pastOccurrenceCount = signal(0);
   readonly skipReason = signal('');
   readonly doseTimes = signal<Record<string, string>>({});
+  readonly doseDates = signal<Record<string, string>>({});
+  readonly doseSaveError = signal('');
   readonly documentSearchResults = signal<DiaryRow[]>([]);
   readonly selectedDocuments = signal<DiaryRow[]>([]);
   readonly availableContacts = computed(() => this.selectedChildRows('contacts'));
@@ -400,7 +402,11 @@ export class CalendarComponent implements OnInit, OnDestroy, CalendarEventFormCo
   doseTakenLabel(event: CalendarEvent): string {
     if (!event.takenAt) return 'Fatto';
     const time = new Date(event.takenAt);
-    return Number.isNaN(time.getTime()) ? 'Fatto' : `Fatto alle ${time.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`;
+    if (Number.isNaN(time.getTime())) return 'Fatto';
+    const dateLabel = dateKey(time) === event.date
+      ? ''
+      : ` il ${time.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })}`;
+    return `Fatto${dateLabel} alle ${time.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`;
   }
   doseAvailable(event: CalendarEvent): boolean {
     if (event.date !== this.today) return false;
@@ -409,10 +415,45 @@ export class CalendarComponent implements OnInit, OnDestroy, CalendarEventFormCo
     return currentTime >= event.time;
   }
   doseTime(event: CalendarEvent): string {
-    return this.doseTimes()[event.id] ?? '';
+    const draft = this.doseTimes()[event.id];
+    if (draft !== undefined) return draft;
+    if (!event.takenAt) return '';
+    const takenAt = new Date(event.takenAt);
+    return Number.isNaN(takenAt.getTime())
+      ? ''
+      : `${String(takenAt.getHours()).padStart(2, '0')}:${String(takenAt.getMinutes()).padStart(2, '0')}`;
+  }
+  doseDate(event: CalendarEvent): string {
+    const draft = this.doseDates()[event.id];
+    if (draft !== undefined) return draft;
+    if (!event.takenAt) return event.date;
+    const takenAt = new Date(event.takenAt);
+    return Number.isNaN(takenAt.getTime()) ? event.date : dateKey(takenAt);
+  }
+  doseDateTimeError(event: CalendarEvent): string {
+    const date = this.doseDate(event);
+    const time = this.doseTime(event);
+    if (!validDate(date)) return date ? 'Inserisci una data valida.' : '';
+    if (date > this.today) return 'La data effettiva non può essere futura.';
+    if (!time || !validTime(time)) return '';
+    if (date === this.today) {
+      const now = new Date();
+      const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      if (time > currentTime) return 'L’ora effettiva non può essere futura.';
+    }
+    return '';
+  }
+  canSaveDose(event: CalendarEvent): boolean {
+    const time = this.doseTime(event);
+    return !this.doseDateTimeError(event) && !!time && validTime(time);
   }
   setDoseTime(event: CalendarEvent, time: string): void {
     this.doseTimes.update((times) => ({ ...times, [event.id]: time }));
+    this.doseSaveError.set('');
+  }
+  setDoseDate(event: CalendarEvent, date: string): void {
+    this.doseDates.update((dates) => ({ ...dates, [event.id]: date }));
+    this.doseSaveError.set('');
   }
   sectionLabel(section: string): string {
     return (
@@ -667,18 +708,24 @@ export class CalendarComponent implements OnInit, OnDestroy, CalendarEventFormCo
   async setStatus(event: CalendarEvent, status: string): Promise<void> {
     await this.updateEvent(event, { status, skipped_reason: null });
   }
-  async markDoseTaken(event: CalendarEvent, actualTime?: string): Promise<void> {
-    if (!event.medicationId || event.doseTaken || !event.childId) return;
+  async markDoseTaken(event: CalendarEvent, actualDate?: string, actualTime?: string): Promise<void> {
+    if (!event.medicationId || !event.childId) return;
     const now = new Date();
     const time = actualTime ?? `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    const actualDate = parseDate(event.date);
-    if (!actualDate || time < event.time || !validTime(time)) return;
-    if (actualTime ? (event.date > this.today || (event.date === this.today && time > `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`)) : !this.doseAvailable(event)) return;
+    const date = actualDate ?? event.date;
+    const takenDate = parseDate(date);
+    if (!takenDate || date > this.today || !validTime(time)) return;
+    if (actualDate === undefined && actualTime === undefined && !this.doseAvailable(event)) return;
+    if (date === this.today) {
+      const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      if (time > currentTime) return;
+    }
     const [hour, minute] = time.split(':').map(Number);
-    actualDate.setHours(hour, minute, 0, 0);
-    const takenAt = actualDate.toISOString();
+    takenDate.setHours(hour, minute, 0, 0);
+    const takenAt = takenDate.toISOString();
     this.saving.set(true);
-    this.saveError.set('');
+    this.doseSaveError.set('');
+    this.successMessage.set('');
     const ok = await this.data.markMedicationDoseTaken(
       event.medicationId,
       event.childId,
@@ -688,10 +735,21 @@ export class CalendarComponent implements OnInit, OnDestroy, CalendarEventFormCo
     );
     this.saving.set(false);
     if (!ok) {
-      this.saveError.set(this.data.error() || 'Non è stato possibile registrare la dose.');
+      this.doseSaveError.set(this.data.error() || 'Non è stato possibile registrare la somministrazione.');
       return;
     }
+    this.doseTimes.update((times) => {
+      const next = { ...times };
+      delete next[event.id];
+      return next;
+    });
+    this.doseDates.update((dates) => {
+      const next = { ...dates };
+      delete next[event.id];
+      return next;
+    });
     await this.refreshEntries();
+    this.successMessage.set(event.doseTaken ? 'Somministrazione aggiornata.' : 'Somministrazione registrata.');
   }
   async saveSkipped(): Promise<void> {
     const event = this.skipEvent();

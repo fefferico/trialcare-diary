@@ -38,6 +38,15 @@
     }
   </div>
   } @else {
+  @if (selectedView() === 'today' && allTodayMedicationDosesTaken()) {
+  <div class="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100" role="status" aria-live="polite">
+    <svg class="mt-0.5 h-5 w-5 shrink-0 text-emerald-700 dark:text-emerald-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8 12 2.5 2.5L16 9" />
+    </svg>
+    <p class="text-sm font-semibold">Tutte le somministrazioni previste per oggi risultano registrate.</p>
+  </div>
+  }
   @if ((selectedView() === 'today' ? todayMedicineWarnings() : futureMedicineWarnings()).length) {
   <section class="rounded-2xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/40"
     aria-live="polite">
@@ -125,11 +134,14 @@
             <a [routerLink]="item.path" [queryParams]="{ highlight: item.highlightId, child: item.childId || null }"
               class="min-w-0 truncate font-medium hover:text-teal-700 dark:hover:text-teal-300">{{ item.title }}</a>
             @for (dose of item.dosesToday; track dose.id) {
-            <span class="flex items-center gap-1.5">
-              <span>{{ dose.actualTime || dose.label }}</span>
+            <span class="flex flex-wrap items-center gap-2">
+              <span class="rounded-full bg-emerald-100 px-2 py-1 font-semibold text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200">
+                Somministrata alle {{ dose.actualTime || dose.label }}
+              </span>
               @if (canMarkDose(dose.id)) {
-              <button type="button" class="font-semibold text-rose-700 underline dark:text-rose-300"
-                [disabled]="savingDose() || !item.childId" (click)="openSkipDose(item, dose)">SALTATA</button>
+              <button type="button" class="rounded-full border border-rose-300 px-2 py-1 font-semibold text-rose-700 hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 dark:border-rose-700 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                [attr.aria-label]="'Segna come saltata: ' + item.title + ', dose prevista alle ' + dose.label"
+                [disabled]="savingDose() || !item.childId" (click)="openSkipDose(item, dose)">Segna come saltata</button>
               }
             </span>
             }

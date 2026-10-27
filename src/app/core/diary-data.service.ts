@@ -254,7 +254,7 @@ export class DiaryDataService {
           status: 'Somministrata',
           skipped_reason: null,
         },
-        { onConflict: 'medication_id,scheduled_date,scheduled_time', ignoreDuplicates: true },
+        { onConflict: 'medication_id,scheduled_date,scheduled_time' },
       );
       if (error) {
         this.error.set(error.message);
@@ -262,21 +262,32 @@ export class DiaryDataService {
       }
     } else {
       const rows = this.local.medication_doses ?? [];
-      if (!rows.some((row) => row['dose_key'] === key)) {
+      const existingIndex = rows.findIndex((row) =>
+        row['dose_key'] === key ||
+        (row['medication_id'] === medicationId &&
+          row['scheduled_date'] === scheduledDate &&
+          String(row['scheduled_time'] ?? '').slice(0, 5) === scheduledTime),
+      );
+      const updates = {
+        child_id: childId,
+        scheduled_date: scheduledDate,
+        scheduled_time: scheduledTime,
+        dose_key: key,
+        taken_at: takenAt,
+        status: 'Somministrata',
+        skipped_reason: null,
+      };
+      if (existingIndex >= 0) {
+        rows[existingIndex] = { ...rows[existingIndex], ...updates } as DiaryRow;
+      } else {
         rows.unshift({
           id: crypto.randomUUID(),
-          child_id: childId,
           medication_id: medicationId,
-          scheduled_date: scheduledDate,
-          scheduled_time: scheduledTime,
-          dose_key: key,
-          taken_at: takenAt,
-          status: 'Somministrata',
-          skipped_reason: null,
+          ...updates,
         });
-        this.local.medication_doses = rows;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.local));
       }
+      this.local.medication_doses = rows;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.local));
     }
     return true;
   }

@@ -191,6 +191,13 @@ export class CalendarPreviewComponent implements OnInit {
       })
       .sort((a, b) => Number(b.allDosesTaken) - Number(a.allDosesTaken)),
   );
+  readonly todayMedicationDoses = computed(() =>
+    this.activeTherapies().flatMap((item) => item.dosesToday),
+  );
+  readonly allTodayMedicationDosesTaken = computed(() => {
+    const doses = this.todayMedicationDoses();
+    return doses.length > 0 && doses.every((dose) => dose.taken);
+  });
   readonly deadlines = computed(() =>
     this.entries()
       .flatMap((item) => {

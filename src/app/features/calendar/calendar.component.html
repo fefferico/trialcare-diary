@@ -25,6 +25,9 @@
     {{ successMessage() }}
   </p>
   }
+  @if (doseSaveError()) {
+  <p role="alert" class="notice-error">{{ doseSaveError() }}</p>
+  }
   @if (loading()) {
   <div class="grid gap-3 sm:grid-cols-2" aria-label="Caricamento calendario" aria-busy="true">
     @for (placeholder of [1, 2]; track placeholder) {
@@ -78,12 +81,13 @@
               'border-transparent bg-slate-50': !cell.date,
               'border-slate-200 dark:border-slate-700': !!cell.date,
               'bg-slate-50 text-slate-400 dark:bg-slate-900/50 dark:text-slate-500':
-                !!cell.date && !cell.inCurrentMonth,
+                !!cell.date && !cell.inCurrentMonth && cell.date !== today,
               'bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100':
-                !!cell.date && cell.inCurrentMonth,
+                !!cell.date && cell.inCurrentMonth && cell.date !== today,
+              'border-2 border-teal-600 bg-teal-50 text-teal-950 shadow-md dark:border-teal-300 dark:bg-teal-900/40 dark:text-teal-50':
+                cell.date === today,
               'border-2 border-indigo-600 bg-indigo-50 shadow-sm dark:border-indigo-300 dark:bg-indigo-900/30':
                 cell.date === selectedDate() && cell.date !== today,
-              'border-2 border-teal-600 shadow-sm dark:border-teal-300': cell.date === today,
             }" [disabled]="!cell.date" [attr.aria-label]="
               cell.date ? dayLabel(cell.date) + ', ' + cell.events.length + ' eventi' : null
             " [attr.aria-current]="cell.date === today ? 'date' : null" (click)="cell.date && selectDate(cell.date)">
@@ -143,11 +147,11 @@
           } @else {
           <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ doseTakenLabel(event) }}</span>
           }
-          <span class="text-xs font-semibold text-teal-700 dark:text-teal-300">{{ expandedSkippedEvents()[event.id] ? 'Nascondi dettagli' : 'Mostra dettagli' }}</span>
+          <span class="text-xs font-semibold text-teal-700 dark:text-teal-300">{{ expandedSkippedEvents()[event.id] ? 'Nascondi dettagli' : event.doseTaken ? 'Modifica somministrazione' : 'Mostra dettagli' }}</span>
         </button>
         }
         @if ((!isSkipped(event) && !isCompletedDose(event)) || expandedSkippedEvents()[event.id]) {
-        <div class="grid min-w-0 flex-1 gap-x-6 gap-y-3" [ngClass]="event.medicationId ? 'lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.8fr)]' : 'grid-cols-1'">
+        <div class="grid w-full basis-full min-w-0 gap-x-6 gap-y-3" [ngClass]="event.medicationId ? 'lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.8fr)]' : 'grid-cols-1'">
           <div class="min-w-0">
           @if (!isSkipped(event) && !isCompletedDose(event)) {
           <strong class="block text-sm" [class.line-through]="isCanceled(event)" [class.text-slate-500]="event.medicationId && event.doseTaken" [class.font-medium]="event.medicationId && event.doseTaken">{{ event.title }}</strong><span
@@ -184,18 +188,26 @@
               (click)="markDoseTaken(event)">Segna come somministrata ora</button>
           </div>
           }
-          @if (!event.doseTaken && !event.doseSkipped && event.date <= today) { <div
-            class="mt-3 grid grid-cols-1 items-end gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-            <label class="block min-w-0 text-xs font-medium">Ora effettiva della somministrazione
+          @if (event.date <= today) {
+          <div class="mt-3 grid min-w-0 gap-3">
+            <label class="block min-w-0 text-xs font-medium">Data effettiva
+              <app-datepicker class="mt-1 block w-full" label="Giorno effettivo della somministrazione"
+                [value]="doseDate(event)" (dateChange)="setDoseDate(event, $event)" />
+            </label>
+            <label class="block min-w-0 text-xs font-medium">Ora effettiva
               <app-timepicker class="mt-1 block w-full" label="Ora effettiva della somministrazione"
                 [value]="doseTime(event)" (timeChange)="setDoseTime(event, $event)" />
             </label>
-            <button type="button" class="button-secondary w-full !px-3 !py-2 text-xs sm:w-auto"
-              [disabled]="saving() || !doseTime(event)" (click)="markDoseTaken(event, doseTime(event))">
-              Registra ora effettiva
+            <button type="button" class="button-secondary w-full !px-3 !py-2 text-xs"
+              [disabled]="saving() || !canSaveDose(event)"
+              (click)="markDoseTaken(event, doseDate(event), doseTime(event))">
+              {{ saving() ? 'Salvataggio…' : event.doseTaken ? 'Aggiorna somministrazione' : 'Registra somministrazione' }}
             </button>
-        </div>
-        }
+          </div>
+          @if (doseDateTimeError(event)) {
+          <p class="mt-2 text-xs text-rose-700 dark:text-rose-300" role="alert">{{ doseDateTimeError(event) }}</p>
+          }
+          }
           @if (!event.doseSkipped && event.date <= today) { <button type="button"
           class="mt-3 text-left text-xs font-semibold text-rose-700 underline dark:text-rose-300" (click)="openSkip(event)">
           {{ event.doseTaken ? 'Correggi: segna la somministrazione come saltata' : 'Segna somministrazione come saltata' }}</button>
