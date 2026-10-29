@@ -59,11 +59,18 @@ import { DocumentScannerComponent } from '../documents/document-scanner.componen
         <span>Aggiungi file</span>
         <input class="sr-only" type="file" multiple accept=".pdf,image/*" (change)="addFiles($event)" />
       </label>
-      <button type="button" class="button-secondary ml-2" (click)="scannerOpen.set(!scannerOpen())">
-        {{ scannerOpen() ? 'Chiudi scanner' : 'Scansiona pagine' }}
-      </button>
+      @if (!scannerOpen()) {
+        <button type="button" class="button-secondary ml-2 inline-flex items-center gap-2" (click)="scannerOpen.set(true)">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l1.5-2h7L17 7h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+          Scansiona pagine
+        </button>
+      }
       @if (scannerOpen()) {
-        <tc-document-scanner class="mt-3 block" (completed)="addScannedFile($event)" (dismiss)="scannerOpen.set(false)" />
+        @defer {
+          <tc-document-scanner class="mt-3 block" (completed)="addScannedFile($event)" (dismiss)="scannerOpen.set(false)" />
+        } @placeholder {
+          <p class="mt-3 text-sm text-slate-500" role="status">Preparazione scanner…</p>
+        }
       }
       @if (files.length) {
         <ul class="mt-2 space-y-1 text-xs text-slate-600 dark:text-slate-300">

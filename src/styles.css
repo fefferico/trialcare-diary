@@ -696,6 +696,38 @@ textarea:focus-visible {
   max-height: calc(100dvh - 40px);
 }
 
+@media (max-width: 639px) {
+  .modal-panel.document-scanner-modal {
+    height: 96dvh;
+    max-height: 96dvh;
+  }
+
+  .document-scanner-modal > form {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    gap: 8px;
+    padding: 8px 12px max(12px, env(safe-area-inset-bottom));
+  }
+
+  .document-scanner-modal > form > * + * {
+    margin-top: 0;
+  }
+
+  .document-scanner-modal .scanner-modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .document-scanner-modal tc-document-scanner {
+    display: block;
+  }
+}
+
 @media (min-width: 640px) {
   .modal-panel.pdf-preview-modal {
     max-width: min(96vw, 1100px);
@@ -707,7 +739,8 @@ textarea:focus-visible {
     max-width: min(98vw, 1500px);
   }
 
-  .modal-panel.medication-modal {
+  .modal-panel.medication-modal,
+  .modal-panel.document-modal:not(.pdf-preview-modal) {
     max-width: min(94vw, 1080px);
     max-height: calc(100dvh - 40px);
   }

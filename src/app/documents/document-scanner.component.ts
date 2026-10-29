@@ -3,7 +3,8 @@ import { Component, ElementRef, EventEmitter, OnDestroy, Output, ViewChild, comp
 import { jsPDF } from 'jspdf';
 import { AppDropdownComponent } from '../shared/app-dropdown.component';
 
-type ScanLook = 'colore' | 'grigio' | 'bianco-nero';
+type ScanLook = 'colore' | 'grigio' | 'bianco-nero' | 'testo';
+type PageOrientation = 'auto' | 'portrait' | 'landscape';
 
 interface ScanCrop {
   x: number;
@@ -22,9 +23,10 @@ interface ScanPage {
   brightness: number;
   contrast: number;
   warmth: number;
+  sharpness: number;
 }
 
-interface DetectionBox extends ScanCrop {}
+interface DetectionBox extends ScanCrop { }
 
 const MAX_SCAN_PAGES = 30;
 const MAX_SCAN_FILE_BYTES = 25 * 1024 * 1024;
@@ -35,28 +37,33 @@ const MAX_IMAGE_EDGE = 2800;
   standalone: true,
   imports: [CommonModule, AppDropdownComponent],
   template: `
-    <section class="space-y-3 rounded-xl border border-teal-200 bg-white p-3 dark:border-teal-800 dark:bg-slate-900" aria-labelledby="scanner-title">
-      <header class="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h3 id="scanner-title" class="font-semibold text-slate-800 dark:text-slate-100">Scanner documenti</h3>
-          <p class="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">Le immagini vengono elaborate solo su questo dispositivo. Puoi acquisire pagine, importare foto, riordinarle, ritagliarle e migliorarle prima di creare il PDF.</p>
+    <section class="space-y-2 rounded-xl border border-teal-200 bg-white p-2 dark:border-teal-800 dark:bg-slate-900 sm:space-y-3 sm:p-3" aria-labelledby="scanner-title">
+      <header class="flex items-center gap-2">
+        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-100 text-teal-800 dark:bg-teal-900/50 dark:text-teal-200" aria-hidden="true">
+          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="3.5"/></svg>
+        </span>
+        <div class="min-w-0 flex-1">
+          <h3 id="scanner-title" class="font-semibold text-slate-800 dark:text-slate-100">Scansiona documenti</h3>
+          <p class="text-xs text-slate-500 dark:text-slate-400">Pagine e ritocchi restano su questo dispositivo.</p>
         </div>
-        <button type="button" class="button-secondary !px-3 !py-1.5 text-xs" (click)="dismiss.emit()">Chiudi scanner</button>
+        <button type="button" class="icon-button !h-9 !w-9 shrink-0" aria-label="Chiudi scanner" (click)="dismiss.emit()"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
       </header>
 
-      <div class="flex flex-wrap gap-2">
-        <button type="button" class="button-secondary" [disabled]="busy()" (click)="cameraActive() ? stopCamera() : startCamera()">
-          {{ cameraActive() ? 'Spegni fotocamera' : 'Apri fotocamera' }}
+      <div class="flex items-center gap-2">
+        <button type="button" class="button-secondary inline-flex flex-1 items-center justify-center gap-2 !px-2.5 sm:flex-none sm:!px-3" [disabled]="busy() || cameraStarting()" (click)="cameraActive() ? stopCamera() : startCamera()">
+          <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l1.5-2h7L17 7h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+          {{ cameraStarting() ? 'Apertura fotocamera…' : cameraActive() ? 'Spegni fotocamera' : 'Apri fotocamera' }}
         </button>
-        <label class="button-secondary inline-flex cursor-pointer items-center">
+        <label class="button-secondary inline-flex flex-1 cursor-pointer items-center justify-center gap-2 !px-2.5 sm:flex-none sm:!px-3">
+          <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4m0 0L7 9m5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>
           Aggiungi foto
           <input class="sr-only" type="file" accept="image/*" multiple (change)="importImages($event)" [disabled]="busy()" />
         </label>
-        <span class="self-center text-xs text-slate-500">{{ pages().length }}/{{ maxPages }} pagine</span>
+        <span class="ml-auto whitespace-nowrap text-xs font-medium text-slate-500" aria-live="polite">{{ pages().length }}/{{ maxPages }}</span>
       </div>
 
-      <div class="relative mx-auto max-h-[55vh] overflow-hidden rounded-xl bg-slate-950" [hidden]="!cameraActive()">
-        <video #cameraVideo class="block max-h-[55vh] w-full object-contain" [srcObject]="cameraStream" autoplay playsinline muted aria-label="Inquadratura della fotocamera"></video>
+      <div #cameraFrame class="relative mx-auto max-h-[38dvh] overflow-hidden rounded-xl bg-slate-950 sm:max-h-[55vh]" [hidden]="!cameraActive()">
+        <video #cameraVideo class="block max-h-[38dvh] w-full object-contain sm:max-h-[55vh]" autoplay playsinline muted aria-label="Inquadratura della fotocamera"></video>
         @if (cameraDetection(); as box) {
           <div class="pointer-events-none absolute border-2 border-teal-300 shadow-[0_0_0_999px_rgba(15,23,42,0.22)]" [style.left.px]="cameraOverlay()?.left" [style.top.px]="cameraOverlay()?.top" [style.width.px]="cameraOverlay()?.width" [style.height.px]="cameraOverlay()?.height" aria-hidden="true"></div>
         }
@@ -65,17 +72,27 @@ const MAX_IMAGE_EDGE = 2800;
         }
       </div>
       @if (cameraActive()) {
-        <div class="space-y-2">
-          <p class="text-xs text-slate-500 dark:text-slate-400" role="status" aria-live="polite">
-            @if (cameraDetection()) { Pagina rilevata: centra il foglio e mantieni ferma la fotocamera. } @else { Inquadra un foglio ben illuminato; puoi scattare anche senza rilevamento automatico. }
-          </p>
-          <div class="flex flex-wrap items-center gap-2">
-            <button type="button" class="button-primary" [disabled]="busy()" (click)="capturePage()">Scatta pagina</button>
-            <label class="flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-700">
+        <div class="space-y-1.5">
+          @if (previewNeedsTap()) {
+            <p class="text-sm text-amber-800 dark:text-amber-200" role="status">La fotocamera è attiva, ma Chrome non ha avviato l’anteprima.</p>
+            <button type="button" class="button-primary" (click)="resumeCameraPreview()">Avvia anteprima</button>
+          } @else {
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <p class="min-w-0 flex-1 text-xs text-slate-500 dark:text-slate-400" role="status" aria-live="polite">
+                @if (cameraDetection()) { Foglio rilevato · mantieni fermo il telefono } @else { Inquadra il foglio; puoi scattare manualmente }
+              </p>
+              <div class="flex shrink-0 items-center gap-2">
+                @if (manualRefocusSupported()) {
+                  <button type="button" class="button-secondary !min-h-10 !px-2.5" aria-label="Rimetti a fuoco" title="Rimetti a fuoco" (click)="refocusCamera()"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-7-7m7 7a7 7 0 0 1-7 7m-7-7a7 7 0 0 0 7 7m-7-7a7 7 0 0 1 7-7"/></svg></button>
+                }
+                <button type="button" class="button-primary inline-flex items-center gap-2 !px-3" [disabled]="busy()" (click)="capturePage()"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg>Scatta</button>
+              </div>
+            </div>
+            <label class="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-2.5 dark:border-slate-700">
               <input type="checkbox" class="accent-teal-700" [checked]="autoCapture()" (change)="setAutoCapture($any($event.target).checked)" />
-              Scatto automatico quando il foglio è fermo
+              <span class="text-xs sm:text-sm">Scatto automatico</span>
             </label>
-          </div>
+          }
         </div>
       }
 
@@ -83,43 +100,51 @@ const MAX_IMAGE_EDGE = 2800;
         <div class="space-y-3 border-t border-slate-100 pt-3 dark:border-slate-800">
           <div class="flex items-center justify-between gap-2">
             <div class="flex items-center gap-2">
-              <button type="button" class="button-secondary !px-3 !py-1.5" aria-label="Pagina precedente" [disabled]="activeIndex() === 0 || busy()" (click)="selectPage(activeIndex() - 1)">‹</button>
+              <button type="button" class="button-secondary !min-h-11 !w-11 !p-0" aria-label="Pagina precedente" title="Pagina precedente" [disabled]="activeIndex() === 0 || busy()" (click)="selectPage(activeIndex() - 1)"><svg class="mx-auto h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
               <span class="text-sm font-medium">Pagina {{ activeIndex() + 1 }} di {{ pages().length }}</span>
-              <button type="button" class="button-secondary !px-3 !py-1.5" aria-label="Pagina successiva" [disabled]="activeIndex() >= pages().length - 1 || busy()" (click)="selectPage(activeIndex() + 1)">›</button>
+              <button type="button" class="button-secondary !min-h-11 !w-11 !p-0" aria-label="Pagina successiva" title="Pagina successiva" [disabled]="activeIndex() >= pages().length - 1 || busy()" (click)="selectPage(activeIndex() + 1)"><svg class="mx-auto h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
             </div>
             <div class="flex gap-2">
-              <button type="button" class="button-secondary !px-3 !py-1.5" aria-label="Ruota pagina a sinistra" [disabled]="busy()" (click)="rotate(-90)">Ruota a sinistra</button>
-              <button type="button" class="button-secondary !px-3 !py-1.5" aria-label="Ruota pagina a destra" [disabled]="busy()" (click)="rotate(90)">Ruota a destra</button>
+              <button type="button" class="button-secondary !min-h-9 !px-2.5" aria-label="Ruota pagina a sinistra" title="Ruota a sinistra" [disabled]="busy()" (click)="rotate(-90)"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
+              <button type="button" class="button-secondary !min-h-9 !px-2.5" aria-label="Ruota pagina a destra" title="Ruota a destra" [disabled]="busy()" (click)="rotate(90)"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
             </div>
           </div>
 
           <div class="overflow-hidden rounded-xl border border-slate-200 bg-slate-950 dark:border-slate-700">
-            <canvas #editorCanvas class="block h-auto max-h-[55vh] w-full touch-none object-contain" aria-label="Anteprima pagina; trascina per ritagliare" (pointerdown)="startCrop($event)" (pointermove)="moveCrop($event)" (pointerup)="finishCrop($event)" (pointercancel)="finishCrop($event)"></canvas>
+            <canvas #editorCanvas class="block h-auto max-h-[38dvh] w-full touch-none object-contain sm:max-h-[55vh]" aria-label="Anteprima pagina; trascina per ritagliare" (pointerdown)="startCrop($event)" (pointermove)="moveCrop($event)" (pointerup)="finishCrop($event)" (pointercancel)="finishCrop($event)"></canvas>
           </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <label class="form-field min-w-40 flex-1"><span>Colore</span><app-dropdown [options]="lookOptions" [value]="lookLabel()" placeholder="Scegli filtro" (selection)="setLook($event)" /></label>
-            <button type="button" class="button-secondary self-end" [disabled]="busy()" (click)="resetCrop()">Ripristina ritaglio</button>
-            <button type="button" class="button-secondary self-end" [disabled]="busy()" (click)="movePage(-1)">Sposta su</button>
-            <button type="button" class="button-secondary self-end" [disabled]="busy()" (click)="movePage(1)">Sposta giù</button>
-            <button type="button" class="button-secondary self-end !text-rose-700 dark:!text-rose-300" [disabled]="busy()" (click)="removePage()">Elimina pagina</button>
+          <div class="grid grid-cols-4 gap-2">
+            <button type="button" class="button-secondary !min-h-11 !px-2" aria-label="Ripristina ritaglio" title="Ripristina ritaglio" [disabled]="busy()" (click)="resetCrop()"><svg class="mx-auto h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 15v5h-5M5.6 5.6A8 8 0 0 1 19 9m-.6 9.4A8 8 0 0 1 5 15"/></svg></button>
+            <button type="button" class="button-secondary !min-h-11 !px-2" aria-label="Sposta pagina su" title="Sposta su" [disabled]="activeIndex() === 0 || busy()" (click)="movePage(-1)"><svg class="mx-auto h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5m-7 7 7-7 7 7"/></svg></button>
+            <button type="button" class="button-secondary !min-h-11 !px-2" aria-label="Sposta pagina giù" title="Sposta giù" [disabled]="activeIndex() >= pages().length - 1 || busy()" (click)="movePage(1)"><svg class="mx-auto h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14m7-7-7 7-7-7"/></svg></button>
+            <button type="button" class="button-secondary !min-h-11 !px-2 !text-rose-700 dark:!text-rose-300" aria-label="Elimina pagina" title="Elimina pagina" [disabled]="busy()" (click)="removePage()"><svg class="mx-auto h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m3 0-.8 14H5L4 6m5 4v6m6-6v6"/></svg></button>
           </div>
-          <div class="grid gap-x-4 gap-y-2 sm:grid-cols-2">
-            <label class="form-field"><span>Luminosità · {{ brightness() }}%</span><input class="w-full accent-teal-700" type="range" min="70" max="140" step="1" [value]="brightness()" (input)="setBrightness($any($event.target).value)" /></label>
-            <label class="form-field"><span>Contrasto · {{ contrast() }}%</span><input class="w-full accent-teal-700" type="range" min="70" max="160" step="1" [value]="contrast()" (input)="setContrast($any($event.target).value)" /></label>
-            <label class="form-field sm:col-span-2"><span>Temperatura colore · {{ warmth() > 0 ? 'calda' : warmth() < 0 ? 'fredda' : 'neutra' }} ({{ warmth() }})</span><input class="w-full accent-teal-700" type="range" min="-35" max="35" step="1" [value]="warmth()" (input)="setWarmth($any($event.target).value)" /><small class="text-xs text-slate-500">Sposta il cursore verso sinistra per raffreddare i colori o verso destra per scaldarli.</small></label>
-          </div>
-          <p class="text-xs text-slate-500 dark:text-slate-400">Trascina sulla pagina per scegliere il ritaglio. Le regolazioni si applicano solo a questa pagina.</p>
-          <div class="grid grid-cols-3 gap-2 sm:grid-cols-5">
+          <label class="form-field"><span>Migliora immagine</span><app-dropdown [options]="lookOptions" [value]="lookLabel()" placeholder="Scegli filtro" (selection)="setLook($event)" /></label>
+          <details class="rounded-xl border border-slate-200 px-3 dark:border-slate-700">
+            <summary class="flex min-h-11 cursor-pointer items-center font-medium">Regolazioni fini: luce, colore e nitidezza</summary>
+            <div class="grid gap-x-4 gap-y-2 pb-3 sm:grid-cols-2">
+              <label class="form-field"><span>Luminosità · {{ brightness() }}%</span><input class="w-full accent-teal-700" type="range" min="70" max="140" step="1" [value]="brightness()" (input)="setBrightness($any($event.target).value)" /></label>
+              <label class="form-field"><span>Contrasto · {{ contrast() }}%</span><input class="w-full accent-teal-700" type="range" min="70" max="160" step="1" [value]="contrast()" (input)="setContrast($any($event.target).value)" /></label>
+              <label class="form-field"><span>Nitidezza · {{ sharpness() }}%</span><input class="w-full accent-teal-700" type="range" min="0" max="100" step="1" [value]="sharpness()" (input)="setSharpness($any($event.target).value)" /><small class="text-xs text-slate-500">Aiuta con una lieve sfocatura; non può recuperare una foto fuori fuoco.</small></label>
+              <label class="form-field sm:col-span-2"><span>Temperatura colore · {{ warmth() > 0 ? 'calda' : warmth() < 0 ? 'fredda' : 'neutra' }} ({{ warmth() }})</span><input class="w-full accent-teal-700" type="range" min="-35" max="35" step="1" [value]="warmth()" (input)="setWarmth($any($event.target).value)" /><small class="text-xs text-slate-500">Sposta il cursore verso sinistra per raffreddare i colori o verso destra per scaldarli.</small></label>
+            </div>
+          </details>
+          @if (look() === 'testo') {
+            <p class="rounded-lg bg-teal-50 px-3 py-2 text-xs leading-5 text-teal-900 dark:bg-teal-950/30 dark:text-teal-100">Il filtro OCR uniforma lo sfondo con una soglia locale adattiva e aumenta la nitidezza del testo. Controlla l’anteprima: timbri, firme e annotazioni colorate possono risultare meno visibili in bianco e nero.</p>
+          }
+          <p class="text-xs text-slate-500 dark:text-slate-400">Trascina sulla pagina per ritagliare. Le regolazioni valgono per questa pagina.</p>
+          <div class="flex gap-2 overflow-x-auto pb-1">
             @for (page of pages(); track page.id; let index = $index) {
-              <div class="rounded-lg border p-1.5" [class.border-teal-500]="index === activeIndex()" [class.border-slate-200]="index !== activeIndex()" [class.dark:border-teal-500]="index === activeIndex()" [class.dark:border-slate-700]="index !== activeIndex()">
-                <button type="button" class="block w-full" [disabled]="busy()" (click)="selectPage(index)" [attr.aria-label]="'Modifica pagina ' + (index + 1)"><img class="mx-auto h-20 w-full object-contain" [src]="page.previewUrl" alt="" /><span class="block text-center text-xs">{{ index + 1 }}</span></button>
-                <div class="mt-1 flex justify-center gap-2"><button type="button" class="text-xs text-teal-700 underline dark:text-teal-300" [disabled]="index === 0 || busy()" (click)="movePageAt(index, -1)">Su</button><button type="button" class="text-xs text-teal-700 underline dark:text-teal-300" [disabled]="index === pages().length - 1 || busy()" (click)="movePageAt(index, 1)">Giù</button></div>
+              <div class="w-24 shrink-0 rounded-lg border p-1.5" [class.border-teal-500]="index === activeIndex()" [class.border-slate-200]="index !== activeIndex()" [class.dark:border-teal-500]="index === activeIndex()" [class.dark:border-slate-700]="index !== activeIndex()">
+                <button type="button" class="block min-h-11 w-full" [disabled]="busy()" (click)="selectPage(index)" [attr.aria-label]="'Modifica pagina ' + (index + 1)"><img class="mx-auto h-12 w-full object-contain" [src]="page.previewUrl" alt="" /><span class="block text-center text-xs">{{ index + 1 }}</span></button>
+                <div class="mt-1 flex justify-center gap-1"><button type="button" class="button-secondary !min-h-11 !w-10 !p-0" [attr.aria-label]="'Sposta pagina ' + (index + 1) + ' su'" title="Sposta su" [disabled]="index === 0 || busy()" (click)="movePageAt(index, -1)"><svg class="mx-auto h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5m-7 7 7-7 7 7"/></svg></button><button type="button" class="button-secondary !min-h-11 !w-10 !p-0" [attr.aria-label]="'Sposta pagina ' + (index + 1) + ' giù'" title="Sposta giù" [disabled]="index === pages().length - 1 || busy()" (click)="movePageAt(index, 1)"><svg class="mx-auto h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14m7-7-7 7-7-7"/></svg></button></div>
               </div>
             }
           </div>
-          <div class="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
-            <p class="max-w-xl text-xs leading-5 text-slate-500">Il PDF viene compresso localmente mantenendo alta risoluzione e qualità visiva. Il file resta entro il limite di archiviazione dell’app quando possibile.</p>
-            <button type="button" class="button-primary" [disabled]="busy() || !pages().length" (click)="createPdf()">{{ busy() ? 'Preparazione PDF…' : 'Crea PDF con ' + pages().length + (pages().length === 1 ? ' pagina' : ' pagine') }}</button>
+          <div class="sticky bottom-0 flex flex-col gap-2 border-t border-slate-100 bg-white/95 pt-2 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 sm:flex-row sm:items-end sm:justify-between">
+            <label class="form-field sm:min-w-48"><span>Orientamento pagina A4</span><app-dropdown [options]="orientationOptions" [value]="orientationLabel()" placeholder="Orientamento" (selection)="setPageOrientation($event)" /></label>
+            <button type="button" class="button-primary w-full !min-h-12 sm:w-auto" [disabled]="busy() || !pages().length" (click)="createPdf()">{{ busy() ? 'Preparazione PDF…' : 'Crea PDF · ' + pages().length + (pages().length === 1 ? ' pagina' : ' pagine') }}</button>
+            <p class="text-xs leading-5 text-slate-500 sm:max-w-xl">PDF in formato A4; l’orientamento automatico segue il foglio. Immagini compresse localmente ad alta qualità.</p>
           </div>
         </div>
       }
@@ -133,13 +158,16 @@ export class DocumentScannerComponent implements OnDestroy {
   @Output() readonly completed = new EventEmitter<File>();
   @Output() readonly dismiss = new EventEmitter<void>();
   @ViewChild('cameraVideo', { static: true }) private cameraVideo!: ElementRef<HTMLVideoElement>;
-  @ViewChild('editorCanvas', { static: true }) private editorCanvas!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('cameraFrame', { static: true }) private cameraFrame!: ElementRef<HTMLDivElement>;
+  @ViewChild('editorCanvas') private editorCanvas!: ElementRef<HTMLCanvasElement>;
   @ViewChild('detectorCanvas', { static: true }) private detectorCanvas!: ElementRef<HTMLCanvasElement>;
 
   readonly pages = signal<ScanPage[]>([]);
   readonly activeIndex = signal(0);
   readonly cameraActive = signal(false);
+  readonly cameraStarting = signal(false);
   readonly cameraDetection = signal<DetectionBox | null>(null);
+  readonly previewNeedsTap = signal(false);
   readonly cameraOverlay = computed(() => {
     const box = this.cameraDetection();
     const video = this.cameraVideo?.nativeElement;
@@ -158,16 +186,27 @@ export class DocumentScannerComponent implements OnDestroy {
   readonly autoCapture = signal(false);
   readonly busy = signal(false);
   readonly error = signal('');
+  readonly manualRefocusSupported = signal(false);
   readonly look = signal<ScanLook>('colore');
-  readonly lookOptions = ['Colore originale', 'Scala di grigi', 'Bianco e nero nitido'];
+  readonly lookOptions = ['Colore originale', 'Scala di grigi', 'Bianco e nero nitido', 'Testo nitido (OCR)'];
   readonly lookLabel = computed(() => this.look() === 'grigio'
     ? 'Scala di grigi'
     : this.look() === 'bianco-nero'
       ? 'Bianco e nero nitido'
-      : 'Colore originale');
+      : this.look() === 'testo'
+        ? 'Testo nitido (OCR)'
+        : 'Colore originale');
+  readonly orientationOptions = ['Automatico (A4)', 'A4 verticale', 'A4 orizzontale'];
+  readonly pageOrientation = signal<PageOrientation>('auto');
+  readonly orientationLabel = computed(() => this.pageOrientation() === 'portrait'
+    ? 'A4 verticale'
+    : this.pageOrientation() === 'landscape'
+      ? 'A4 orizzontale'
+      : 'Automatico (A4)');
   readonly brightness = signal(100);
   readonly contrast = signal(100);
   readonly warmth = signal(0);
+  readonly sharpness = signal(0);
   readonly maxPages = MAX_SCAN_PAGES;
   readonly currentPage = computed(() => this.pages()[this.activeIndex()] ?? null);
 
@@ -182,6 +221,9 @@ export class DocumentScannerComponent implements OnDestroy {
   private cropStart: { x: number; y: number } | null = null;
   private previousCrop: ScanCrop | null = null;
   private imageLoadVersion = 0;
+  private cameraRequest = 0;
+  private cameraFocusModes: string[] = [];
+  private focusResetTimer?: ReturnType<typeof setTimeout>;
 
   ngOnDestroy(): void {
     this.stopCamera();
@@ -190,36 +232,112 @@ export class DocumentScannerComponent implements OnDestroy {
   }
 
   async startCamera(): Promise<void> {
+    if (this.cameraStarting() || this.cameraActive()) return;
     this.error.set('');
     if (!navigator.mediaDevices?.getUserMedia) {
-      this.error.set('La fotocamera non è disponibile. Usa “Aggiungi foto” per selezionare immagini dal dispositivo.');
+      this.error.set(!window.isSecureContext
+        ? 'Chrome consente l’uso della fotocamera solo su una connessione sicura HTTPS. Usa “Aggiungi foto” oppure apri l’app tramite HTTPS.'
+        : 'La fotocamera non è disponibile in questo browser. Usa “Aggiungi foto” per selezionare immagini dal dispositivo.');
       return;
     }
+    const request = ++this.cameraRequest;
+    this.cameraStarting.set(true);
+    let stream: MediaStream | null = null;
+    let cameraError: unknown;
+    const constraints: MediaStreamConstraints[] = [
+      { audio: false, video: { facingMode: { exact: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } } },
+      { audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } } },
+      { audio: false, video: true },
+    ];
+    for (const constraint of constraints) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraint);
+        break;
+      } catch (error) {
+        cameraError = error;
+        if (request !== this.cameraRequest) return;
+        if (!['OverconstrainedError', 'NotFoundError'].includes(errorName(error))) break;
+      }
+    }
+    if (!stream) {
+      if (request !== this.cameraRequest) return;
+      this.error.set(cameraAccessError(cameraError));
+      this.cameraStarting.set(false);
+      return;
+    }
+
+    if (request !== this.cameraRequest) {
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
+
+    this.cameraStream = stream;
+    this.cameraStarting.set(false);
+    this.cameraActive.set(true);
+    this.previewNeedsTap.set(false);
+    this.prepareCameraFocus(stream);
+    const frame = this.cameraFrame.nativeElement;
+    frame.hidden = false;
+    const video = this.cameraVideo.nativeElement;
+    video.muted = true;
+    video.playsInline = true;
+    video.srcObject = stream;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } },
-      });
-      this.cameraStream = stream;
-      this.cameraActive.set(true);
-      const video = this.cameraVideo.nativeElement;
-      video.srcObject = stream;
+      await waitForVideoMetadata(video, 2500);
+      if (request !== this.cameraRequest) return;
       await video.play();
-      this.cameraTimer = setInterval(() => this.detectCameraPage(), 350);
     } catch {
-      this.stopCamera();
-      this.error.set('Impossibile aprire la fotocamera. Controlla i permessi del browser oppure aggiungi le foto dalla galleria.');
+      if (request !== this.cameraRequest) return;
+      this.previewNeedsTap.set(true);
+    }
+    if (request !== this.cameraRequest) return;
+    this.cameraTimer = setInterval(() => this.detectCameraPage(), 350);
+  }
+
+  async resumeCameraPreview(): Promise<void> {
+    const video = this.cameraVideo.nativeElement;
+    if (!this.cameraStream) return;
+    try {
+      video.muted = true;
+      video.playsInline = true;
+      await video.play();
+      this.previewNeedsTap.set(false);
+      this.error.set('');
+    } catch {
+      this.error.set('Chrome ha aperto la fotocamera ma non riproduce l’anteprima. Chiudi eventuali altre app che usano la fotocamera e riprova.');
+    }
+  }
+
+  async refocusCamera(): Promise<void> {
+    const track = this.cameraStream?.getVideoTracks()[0];
+    if (!track || !this.cameraFocusModes.includes('single-shot')) return;
+    try {
+      await applyFocusMode(track, 'single-shot');
+      if (this.cameraFocusModes.includes('continuous')) {
+        if (this.focusResetTimer) clearTimeout(this.focusResetTimer);
+        this.focusResetTimer = setTimeout(() => void applyFocusMode(track, 'continuous'), 800);
+      }
+    } catch {
+      this.manualRefocusSupported.set(false);
     }
   }
 
   stopCamera(): void {
+    this.cameraRequest++;
+    this.cameraStarting.set(false);
     if (this.cameraTimer) clearInterval(this.cameraTimer);
     this.cameraTimer = undefined;
+    if (this.focusResetTimer) clearTimeout(this.focusResetTimer);
+    this.focusResetTimer = undefined;
     this.cameraStream?.getTracks().forEach((track) => track.stop());
     this.cameraStream = null;
+    this.cameraFocusModes = [];
+    this.manualRefocusSupported.set(false);
     const video = this.cameraVideo?.nativeElement;
     if (video) video.srcObject = null;
+    if (this.cameraFrame?.nativeElement) this.cameraFrame.nativeElement.hidden = true;
     this.cameraActive.set(false);
+    this.previewNeedsTap.set(false);
     this.cameraDetection.set(null);
     this.stableCandidate = null;
     this.stableFrames = 0;
@@ -230,6 +348,23 @@ export class DocumentScannerComponent implements OnDestroy {
     this.stableCandidate = null;
     this.stableFrames = 0;
     this.waitingForPageChange = false;
+  }
+
+  private prepareCameraFocus(stream: MediaStream): void {
+    const track = stream.getVideoTracks()[0];
+    let modes: string[] = [];
+    try {
+      const capabilities = track?.getCapabilities() as MediaTrackCapabilities & { focusMode?: string[] };
+      modes = capabilities?.focusMode ?? [];
+    } catch {
+      modes = [];
+    }
+    this.cameraFocusModes = modes;
+    this.manualRefocusSupported.set(modes.includes('single-shot'));
+    const initialMode = modes.includes('continuous') ? 'continuous' : modes.includes('single-shot') ? 'single-shot' : null;
+    if (track && initialMode) {
+      void applyFocusMode(track, initialMode).catch(() => this.manualRefocusSupported.set(false));
+    }
   }
 
   async capturePage(automatic = false): Promise<void> {
@@ -352,12 +487,16 @@ export class DocumentScannerComponent implements OnDestroy {
       ? 'grigio'
       : value === 'Bianco e nero nitido'
         ? 'bianco-nero'
+        : value === 'Testo nitido (OCR)'
+          ? 'testo'
         : value === 'Colore originale'
           ? 'colore'
           : null;
     if (!look) return;
     this.look.set(look);
-    this.updateActivePage({ look });
+    const sharpness = look === 'testo' && this.sharpness() === 0 ? 35 : this.sharpness();
+    this.sharpness.set(sharpness);
+    this.updateActivePage({ look, sharpness });
     this.drawPreview();
   }
 
@@ -380,6 +519,24 @@ export class DocumentScannerComponent implements OnDestroy {
     this.warmth.set(warmth);
     this.updateActivePage({ warmth });
     this.drawPreview();
+  }
+
+  setSharpness(value: string): void {
+    const sharpness = clamp(Number(value) || 0, 0, 100);
+    this.sharpness.set(sharpness);
+    this.updateActivePage({ sharpness });
+    this.drawPreview();
+  }
+
+  setPageOrientation(value: string): void {
+    const orientation: PageOrientation | null = value === 'A4 verticale'
+      ? 'portrait'
+      : value === 'A4 orizzontale'
+        ? 'landscape'
+        : value === 'Automatico (A4)'
+          ? 'auto'
+          : null;
+    if (orientation) this.pageOrientation.set(orientation);
   }
 
   startCrop(event: PointerEvent): void {
@@ -432,7 +589,10 @@ export class DocumentScannerComponent implements OnDestroy {
         const image = await decodeImage(page.previewUrl);
         const prepared = renderPage(image, page);
         const jpeg = await encodeWithinBudget(prepared, targetBytesPerPage);
-        const orientation = prepared.width > prepared.height ? 'landscape' : 'portrait';
+        const requestedOrientation = this.pageOrientation();
+        const orientation: 'landscape' | 'portrait' = requestedOrientation === 'auto'
+          ? prepared.width > prepared.height ? 'landscape' : 'portrait'
+          : requestedOrientation === 'landscape' ? 'landscape' : 'portrait';
         if (!pdf) pdf = new jsPDF({ orientation, unit: 'mm', format: 'a4', compress: true });
         else pdf.addPage('a4', orientation);
         const width = pdf.internal.pageSize.getWidth();
@@ -465,6 +625,7 @@ export class DocumentScannerComponent implements OnDestroy {
     const page: ScanPage = {
       id: crypto.randomUUID(), blob, previewUrl, crop, rotation: 0,
       look: 'colore', brightness: 100, contrast: 100, warmth: 0,
+      sharpness: 0,
     };
     this.pages.update((pages) => [...pages, page]);
     this.activeIndex.set(this.pages().length - 1);
@@ -502,6 +663,7 @@ export class DocumentScannerComponent implements OnDestroy {
     this.brightness.set(page.brightness);
     this.contrast.set(page.contrast);
     this.warmth.set(page.warmth);
+    this.sharpness.set(page.sharpness);
   }
 
   private saveEditorState(): void {
@@ -510,7 +672,7 @@ export class DocumentScannerComponent implements OnDestroy {
     if (!page || !canvas) return;
     const crop = this.cropRect ?? { x: 0, y: 0, width: canvas.width, height: canvas.height };
     const normalized = pixelsToNormalized(crop, canvas.width, canvas.height);
-    this.updateActivePage({ crop: normalized, look: this.look(), brightness: this.brightness(), contrast: this.contrast(), warmth: this.warmth() });
+    this.updateActivePage({ crop: normalized, look: this.look(), brightness: this.brightness(), contrast: this.contrast(), warmth: this.warmth(), sharpness: this.sharpness() });
   }
 
   private updateActivePage(changes: Partial<ScanPage>): void {
@@ -527,6 +689,7 @@ export class DocumentScannerComponent implements OnDestroy {
     this.brightness.set(100);
     this.contrast.set(100);
     this.warmth.set(0);
+    this.sharpness.set(0);
   }
 
   private drawPreview(): void {
@@ -540,7 +703,7 @@ export class DocumentScannerComponent implements OnDestroy {
     canvas.width = Math.max(1, Math.round(width * scale));
     canvas.height = Math.max(1, Math.round(height * scale));
     const crop = this.cropRect ?? normalizedToPixels(page.crop, canvas.width, canvas.height);
-    drawAdjusted(canvas, image, page, this.look(), this.brightness(), this.contrast(), this.warmth());
+    drawAdjusted(canvas, image, page, this.look(), this.brightness(), this.contrast(), this.warmth(), this.sharpness());
     const context = canvas.getContext('2d');
     if (!context) return;
     context.fillStyle = 'rgba(15,23,42,.55)';
@@ -554,7 +717,8 @@ export class DocumentScannerComponent implements OnDestroy {
   }
 
   private canvasPoint(event: PointerEvent): { x: number; y: number } | null {
-    const canvas = this.editorCanvas.nativeElement;
+    const canvas = this.editorCanvas?.nativeElement;
+    if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
     if (!rect.width || !rect.height) return null;
     return {
@@ -678,6 +842,46 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function errorName(error: unknown): string {
+  return error && typeof error === 'object' && 'name' in error
+    ? String((error as { name: unknown }).name)
+    : '';
+}
+
+function cameraAccessError(error: unknown): string {
+  switch (errorName(error)) {
+    case 'NotAllowedError':
+    case 'SecurityError':
+      return 'Chrome o Android hanno negato l’accesso alla fotocamera. Controlla i permessi del sito e dell’app Chrome nelle impostazioni del dispositivo.';
+    case 'NotFoundError':
+      return 'Non è stata trovata una fotocamera disponibile. Puoi aggiungere le pagine dalla galleria.';
+    case 'NotReadableError':
+      return 'La fotocamera è autorizzata ma non disponibile. Chiudi le altre app che la stanno usando e riprova.';
+    case 'OverconstrainedError':
+      return 'La fotocamera non supporta le impostazioni richieste. Riprova o aggiungi le immagini dalla galleria.';
+    default:
+      return 'Chrome non è riuscito ad avviare la fotocamera. Chiudi le altre app che la usano oppure aggiungi le immagini dalla galleria.';
+  }
+}
+
+function applyFocusMode(track: MediaStreamTrack, mode: string): Promise<void> {
+  const focusConstraint = { focusMode: mode } as unknown as MediaTrackConstraintSet;
+  return track.applyConstraints({ advanced: [focusConstraint] });
+}
+
+function waitForVideoMetadata(video: HTMLVideoElement, timeoutMs: number): Promise<void> {
+  if (video.readyState >= HTMLMediaElement.HAVE_METADATA) return Promise.resolve();
+  return new Promise((resolve) => {
+    const finish = () => {
+      clearTimeout(timeout);
+      video.removeEventListener('loadedmetadata', finish);
+      resolve();
+    };
+    const timeout = setTimeout(finish, timeoutMs);
+    video.addEventListener('loadedmetadata', finish, { once: true });
+  });
+}
+
 function drawAdjusted(
   canvas: HTMLCanvasElement,
   image: HTMLImageElement | ImageBitmap | HTMLCanvasElement,
@@ -686,6 +890,7 @@ function drawAdjusted(
   brightness: number,
   contrast: number,
   warmth: number,
+  sharpness: number,
 ): void {
   const context = canvas.getContext('2d');
   if (!context) throw new Error('canvas-unavailable');
@@ -694,28 +899,116 @@ function drawAdjusted(
   context.save();
   context.translate(canvas.width / 2, canvas.height / 2);
   context.rotate((page.rotation * Math.PI) / 180);
-  context.filter = `brightness(${brightness}%) contrast(${contrast}%)${look === 'grigio' || look === 'bianco-nero' ? ' grayscale(1)' : ''}`;
+  context.filter = `brightness(${brightness}%) contrast(${contrast}%)${look === 'grigio' || look === 'bianco-nero' || look === 'testo' ? ' grayscale(1)' : ''}`;
   context.drawImage(image, -image.width / 2, -image.height / 2, image.width, image.height);
   context.restore();
-  if (warmth || look === 'bianco-nero') {
+  if (warmth || sharpness || look === 'bianco-nero' || look === 'testo') {
     const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
     const amount = warmth * 0.45;
-    for (let offset = 0; offset < pixels.data.length; offset += 4) {
-      if (look === 'bianco-nero') {
+    if (look === 'testo') {
+      enhanceTextLocally(pixels, sharpness);
+    } else {
+      if (sharpness) sharpenImage(pixels, sharpness);
+      for (let offset = 0; offset < pixels.data.length; offset += 4) {
+        if (look === 'bianco-nero') {
         const luminance = pixels.data[offset] * 0.299 + pixels.data[offset + 1] * 0.587 + pixels.data[offset + 2] * 0.114;
         const value = luminance > 174 ? 255 : 0;
         pixels.data[offset] = value;
         pixels.data[offset + 1] = value;
         pixels.data[offset + 2] = value;
-      } else {
-        pixels.data[offset] = clamp(pixels.data[offset] + amount, 0, 255);
-        pixels.data[offset + 1] = clamp(pixels.data[offset + 1] + amount * 0.12, 0, 255);
-        pixels.data[offset + 2] = clamp(pixels.data[offset + 2] - amount, 0, 255);
+        } else if (warmth) {
+          pixels.data[offset] = clamp(pixels.data[offset] + amount, 0, 255);
+          pixels.data[offset + 1] = clamp(pixels.data[offset + 1] + amount * 0.12, 0, 255);
+          pixels.data[offset + 2] = clamp(pixels.data[offset + 2] - amount, 0, 255);
+        }
       }
     }
     context.putImageData(pixels, 0, 0);
   }
   context.filter = 'none';
+}
+
+function sharpenImage(image: ImageData, amount: number): void {
+  const { data, width, height } = image;
+  const gray = new Uint8Array(width * height);
+  for (let pixel = 0, offset = 0; pixel < gray.length; pixel++, offset += 4) {
+    gray[pixel] = Math.round(data[offset] * 0.299 + data[offset + 1] * 0.587 + data[offset + 2] * 0.114);
+  }
+  const strength = (amount / 100) * 0.75;
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const pixel = y * width + x;
+      const average = (gray[pixel - 1] + gray[pixel + 1] + gray[pixel - width] + gray[pixel + width]) / 4;
+      const delta = (gray[pixel] - average) * strength;
+      const offset = pixel * 4;
+      data[offset] = clamp(data[offset] + delta, 0, 255);
+      data[offset + 1] = clamp(data[offset + 1] + delta, 0, 255);
+      data[offset + 2] = clamp(data[offset + 2] + delta, 0, 255);
+    }
+  }
+}
+
+function enhanceTextLocally(image: ImageData, sharpness: number): void {
+  const { data, width, height } = image;
+  const pixelCount = width * height;
+  const gray = new Uint8Array(pixelCount);
+  const tileSize = clamp(Math.round(Math.min(width, height) / 60), 24, 64);
+  const tileColumns = Math.ceil(width / tileSize);
+  const tileRows = Math.ceil(height / tileSize);
+  const tileSums = new Float64Array(tileColumns * tileRows);
+  const tileCounts = new Uint32Array(tileSums.length);
+
+  for (let pixel = 0, offset = 0; pixel < pixelCount; pixel++, offset += 4) {
+    const luminance = Math.round(data[offset] * 0.299 + data[offset + 1] * 0.587 + data[offset + 2] * 0.114);
+    gray[pixel] = luminance;
+    const x = pixel % width;
+    const y = (pixel / width) | 0;
+    const tile = ((y / tileSize) | 0) * tileColumns + ((x / tileSize) | 0);
+    tileSums[tile] += luminance;
+    tileCounts[tile]++;
+  }
+
+  const tileMeans = new Float32Array(tileSums.length);
+  for (let tile = 0; tile < tileSums.length; tile++) {
+    tileMeans[tile] = tileCounts[tile] ? tileSums[tile] / tileCounts[tile] : 255;
+  }
+  const smoothMeans = new Float32Array(tileMeans.length);
+  for (let y = 0; y < tileRows; y++) {
+    for (let x = 0; x < tileColumns; x++) {
+      let sum = 0;
+      let count = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const neighborX = x + dx;
+          const neighborY = y + dy;
+          if (neighborX < 0 || neighborY < 0 || neighborX >= tileColumns || neighborY >= tileRows) continue;
+          sum += tileMeans[neighborY * tileColumns + neighborX];
+          count++;
+        }
+      }
+      smoothMeans[y * tileColumns + x] = count ? sum / count : 255;
+    }
+  }
+
+  const strength = (sharpness / 100) * 0.75;
+  for (let y = 0, offset = 0; y < height; y++) {
+    const tileRow = ((y / tileSize) | 0) * tileColumns;
+    for (let x = 0; x < width; x++, offset += 4) {
+      const pixel = y * width + x;
+      let value = gray[pixel];
+      if (strength && x > 0 && y > 0 && x < width - 1 && y < height - 1) {
+        const average = (gray[pixel - 1] + gray[pixel + 1] + gray[pixel - width] + gray[pixel + width]) / 4;
+        value = clamp(value + (value - average) * strength, 0, 255);
+      }
+      const localMean = smoothMeans[tileRow + ((x / tileSize) | 0)];
+      const threshold = clamp(localMean * 0.92 - 12, 100, 238);
+      const binary = value < threshold ? 0 : 255;
+      data[offset] = binary;
+      data[offset + 1] = binary;
+      data[offset + 2] = binary;
+      data[offset + 3] = 255;
+    }
+  }
 }
 
 function renderPage(image: HTMLImageElement, page: ScanPage): HTMLCanvasElement {
@@ -731,7 +1024,7 @@ function renderPage(image: HTMLImageElement, page: ScanPage): HTMLCanvasElement 
   const scaledContext = scaledImage.getContext('2d');
   if (!scaledContext) throw new Error('canvas-unavailable');
   scaledContext.drawImage(image, 0, 0, scaledImage.width, scaledImage.height);
-  drawAdjusted(oriented, scaledImage, page, page.look, page.brightness, page.contrast, page.warmth);
+  drawAdjusted(oriented, scaledImage, page, page.look, page.brightness, page.contrast, page.warmth, page.sharpness);
   const crop = normalizedToPixels(page.crop, width, height);
   const left = clamp(Math.floor(crop.x), 0, width - 1);
   const top = clamp(Math.floor(crop.y), 0, height - 1);

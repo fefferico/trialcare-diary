@@ -955,6 +955,8 @@ function applyMedicationScheduleScope(
             aria-labelledby="dialog-title"
             class="modal-panel"
             [class.medication-modal]="section.id === 'medications'"
+            [class.document-modal]="section.id === 'documents'"
+            [class.document-scanner-modal]="section.id === 'documents' && documentScannerOpen()"
             [class.pdf-preview-modal]="section.id === 'documents' && isPdfAttachment()"
             (click)="$event.stopPropagation()"
           >
@@ -962,25 +964,36 @@ function applyMedicationScheduleScope(
               class="flex items-start justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800"
             >
               <div>
-                <p class="eyebrow">NUOVA REGISTRAZIONE</p>
+                <p class="eyebrow">{{ section.id === 'documents' && documentScannerOpen() ? 'SCANSIONE DOCUMENTI' : 'NUOVA REGISTRAZIONE' }}</p>
                 <h2 id="dialog-title" class="text-xl font-semibold">
                   {{
                     section.id === 'children'
                       ? 'Profilo bambino'
                       : section.id === 'contacts'
                         ? (isEditing() ? 'Modifica contatto' : 'Nuovo contatto')
+                        : section.id === 'documents' && documentScannerOpen()
+                          ? 'Scansiona documento'
                         : 'Aggiungi una voce'
                   }}
                 </h2>
               </div>
               <button type="button" class="icon-button" aria-label="Chiudi" (click)="closeForm()">
-                ×
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
               </button>
             </header>
             <form class="space-y-4 overflow-y-auto px-5 py-5" (ngSubmit)="save()">
               @if (data.error()) {
                 <p class="notice-error" role="alert">{{ data.error() }}</p>
               }
+              @if (section.id === 'documents' && documentScannerOpen()) {
+                <div class="scanner-modal-body">
+                  @defer {
+                    <tc-document-scanner (completed)="setScannedDocument($event)" (dismiss)="documentScannerOpen.set(false)" />
+                  } @placeholder {
+                    <p class="text-sm text-slate-500" role="status">Preparazione scanner…</p>
+                  }
+                </div>
+              } @else {
               @if (section.id === 'contacts') {
                 <div class="grid gap-3 rounded-2xl border border-teal-100 bg-teal-50/70 p-3 text-xs leading-5 dark:border-teal-900/60 dark:bg-teal-950/20 sm:grid-cols-2 sm:p-4">
                   <p class="text-slate-600 dark:text-slate-300">
@@ -1121,11 +1134,11 @@ function applyMedicationScheduleScope(
                           ricerca.</small
                         >
                         @if (section.id === 'documents') {
-                          <button type="button" class="button-secondary mt-2" (click)="documentScannerOpen.set(!documentScannerOpen())">
-                            {{ documentScannerOpen() ? 'Chiudi scanner' : 'Scansiona con la fotocamera' }}
-                          </button>
-                          @if (documentScannerOpen()) {
-                            <tc-document-scanner class="mt-3 block" (completed)="setScannedDocument($event)" (dismiss)="documentScannerOpen.set(false)" />
+                          @if (!documentScannerOpen()) {
+                            <button type="button" class="button-secondary mt-2 inline-flex items-center gap-2" (click)="documentScannerOpen.set(true)">
+                              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l1.5-2h7L17 7h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+                              Scansiona con la fotocamera
+                            </button>
                           }
                         }
                         @if (section.id === 'documents' && isImageAttachment()) {
@@ -1398,6 +1411,7 @@ function applyMedicationScheduleScope(
                   }}
                 </button>
               </footer>
+              }
             </form>
           </section>
         </div>
@@ -1447,6 +1461,7 @@ function applyMedicationScheduleScope(
             aria-labelledby="detail-dialog-title"
             class="modal-panel"
             [class.medication-modal]="section.id === 'medications'"
+            [class.document-modal]="section.id === 'documents'"
             (click)="$event.stopPropagation()"
           >
             <header class="flex items-start justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
