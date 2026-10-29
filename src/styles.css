@@ -698,8 +698,17 @@ textarea:focus-visible {
 
 @media (max-width: 639px) {
   .modal-panel.document-scanner-modal {
-    height: 96dvh;
-    max-height: 96dvh;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+
+  .document-scanner-modal > header {
+    padding: max(8px, env(safe-area-inset-top)) 12px 8px;
+  }
+
+  .document-scanner-modal tc-document-scanner > section > header {
+    display: none;
   }
 
   .document-scanner-modal > form {
@@ -725,6 +734,12 @@ textarea:focus-visible {
 
   .document-scanner-modal tc-document-scanner {
     display: block;
+  }
+
+  .document-scanner-modal tc-document-scanner > section.scanner-camera-mode {
+    padding: 6px !important;
+    border: 0;
+    border-radius: 0;
   }
 }
 

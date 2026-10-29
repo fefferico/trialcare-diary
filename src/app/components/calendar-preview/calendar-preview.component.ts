@@ -217,12 +217,12 @@ export class CalendarPreviewComponent implements OnInit {
                   const end = period.end_date || (periods.length === 1 ? String(item.row['end_date'] ?? '') : '');
                   return (!start || start <= this.today) && (!end || end >= this.today);
                 })
-                .map((period) => [period.dosage, period.schedule_times].filter(Boolean).join(' · '))
+                .map((period) => period.dosage)
                 .filter(Boolean)
                 .join(' | ')
               : [item.row['frequency'], item.row['facility']].filter(Boolean).join(' · ')) || 'In corso',
           dosesToday,
-          allDosesTaken: dosesToday.length > 0 && dosesToday.every((dose) => dose.taken),
+          allDosesTaken: dosesToday.length > 0 && dosesToday.every((dose) => dose.taken && !dose.skipped),
           path: item.section === 'medications' ? '/medications' : '/therapies',
         };
       })
@@ -231,9 +231,9 @@ export class CalendarPreviewComponent implements OnInit {
   readonly todayMedicationDoses = computed(() =>
     this.activeTherapies().flatMap((item) => item.dosesToday),
   );
-  readonly allTodayMedicationDosesTaken = computed(() => {
+  readonly allTodayMedicationDosesAccountedFor = computed(() => {
     const doses = this.todayMedicationDoses();
-    return doses.length > 0 && doses.every((dose) => dose.taken);
+    return doses.length > 0 && doses.every((dose) => dose.taken || dose.skipped);
   });
   readonly deadlines = computed(() =>
     this.entries()
@@ -421,7 +421,7 @@ export class CalendarPreviewComponent implements OnInit {
     );
     const nextDose = this.activeTherapies()
       .flatMap((item) => item.dosesToday)
-      .find((dose) => !dose.taken);
+      .find((dose) => !dose.taken && !dose.skipped);
     if (!next && !nextDose) return;
     requestAnimationFrame(() => {
       if (nextDose) {

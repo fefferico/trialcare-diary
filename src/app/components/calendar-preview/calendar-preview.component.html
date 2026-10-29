@@ -38,13 +38,13 @@
     }
   </div>
   } @else {
-  @if (selectedView() === 'today' && allTodayMedicationDosesTaken()) {
+  @if (selectedView() === 'today' && allTodayMedicationDosesAccountedFor()) {
   <div class="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100" role="status" aria-live="polite">
     <svg class="mt-0.5 h-5 w-5 shrink-0 text-emerald-700 dark:text-emerald-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <circle cx="12" cy="12" r="9" />
       <path d="m8 12 2.5 2.5L16 9" />
     </svg>
-    <p class="text-sm font-semibold">Tutte le somministrazioni previste per oggi risultano registrate.</p>
+    <p class="text-sm font-semibold">Tutte le dosi previste per oggi risultano registrate o segnate come saltate.</p>
   </div>
   }
   @if ((selectedView() === 'today' ? todayMedicineWarnings() : futureMedicineWarnings()).length) {

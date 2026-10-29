@@ -6,18 +6,18 @@ import { AppDropdownComponent } from '../shared/app-dropdown.component';
 type ScanLook = 'colore' | 'grigio' | 'bianco-nero' | 'testo';
 type PageOrientation = 'auto' | 'portrait' | 'landscape';
 
-interface ScanCrop {
+interface ScanPoint {
   x: number;
   y: number;
-  width: number;
-  height: number;
 }
+
+type ScanQuad = [ScanPoint, ScanPoint, ScanPoint, ScanPoint];
 
 interface ScanPage {
   id: string;
   blob: Blob;
   previewUrl: string;
-  crop: ScanCrop;
+  crop: ScanQuad;
   rotation: number;
   look: ScanLook;
   brightness: number;
@@ -26,7 +26,12 @@ interface ScanPage {
   sharpness: number;
 }
 
-interface DetectionBox extends ScanCrop { }
+interface DetectionBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 const MAX_SCAN_PAGES = 30;
 const MAX_SCAN_FILE_BYTES = 25 * 1024 * 1024;
@@ -37,16 +42,16 @@ const MAX_IMAGE_EDGE = 2800;
   standalone: true,
   imports: [CommonModule, AppDropdownComponent],
   template: `
-    <section class="space-y-2 rounded-xl border border-teal-200 bg-white p-2 dark:border-teal-800 dark:bg-slate-900 sm:space-y-3 sm:p-3" aria-labelledby="scanner-title">
+    <section class="space-y-2 rounded-xl border border-teal-200 bg-white p-2 dark:border-teal-800 dark:bg-slate-900 sm:space-y-3 sm:p-3" [class.scanner-camera-mode]="cameraActive()" aria-labelledby="scanner-title">
       <header class="flex items-center gap-2">
-        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-100 text-teal-800 dark:bg-teal-900/50 dark:text-teal-200" aria-hidden="true">
+        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-100 text-teal-800 dark:bg-teal-900/50 dark:text-teal-200" [class.hidden]="cameraActive()" aria-hidden="true">
           <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="3.5"/></svg>
         </span>
         <div class="min-w-0 flex-1">
           <h3 id="scanner-title" class="font-semibold text-slate-800 dark:text-slate-100">Scansiona documenti</h3>
-          <p class="text-xs text-slate-500 dark:text-slate-400">Pagine e ritocchi restano su questo dispositivo.</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400" [class.hidden]="cameraActive()">Pagine e ritocchi restano su questo dispositivo.</p>
         </div>
-        <button type="button" class="icon-button !h-9 !w-9 shrink-0" aria-label="Chiudi scanner" (click)="dismiss.emit()"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+        <button type="button" class="icon-button !h-11 !w-11 shrink-0" aria-label="Chiudi scanner" (click)="dismiss.emit()"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
       </header>
 
       <div class="flex items-center gap-2">
@@ -62,8 +67,8 @@ const MAX_IMAGE_EDGE = 2800;
         <span class="ml-auto whitespace-nowrap text-xs font-medium text-slate-500" aria-live="polite">{{ pages().length }}/{{ maxPages }}</span>
       </div>
 
-      <div #cameraFrame class="relative mx-auto max-h-[38dvh] overflow-hidden rounded-xl bg-slate-950 sm:max-h-[55vh]" [hidden]="!cameraActive()">
-        <video #cameraVideo class="block max-h-[38dvh] w-full object-contain sm:max-h-[55vh]" autoplay playsinline muted aria-label="Inquadratura della fotocamera"></video>
+      <div #cameraFrame class="relative mx-auto max-h-[66dvh] overflow-hidden rounded-xl bg-slate-950 sm:max-h-[55vh]" [hidden]="!cameraActive()">
+        <video #cameraVideo class="block h-[58dvh] max-h-[66dvh] w-full object-contain sm:h-auto sm:max-h-[55vh]" autoplay playsinline muted aria-label="Inquadratura della fotocamera"></video>
         @if (cameraDetection(); as box) {
           <div class="pointer-events-none absolute border-2 border-teal-300 shadow-[0_0_0_999px_rgba(15,23,42,0.22)]" [style.left.px]="cameraOverlay()?.left" [style.top.px]="cameraOverlay()?.top" [style.width.px]="cameraOverlay()?.width" [style.height.px]="cameraOverlay()?.height" aria-hidden="true"></div>
         }
@@ -111,7 +116,7 @@ const MAX_IMAGE_EDGE = 2800;
           </div>
 
           <div class="overflow-hidden rounded-xl border border-slate-200 bg-slate-950 dark:border-slate-700">
-            <canvas #editorCanvas class="block h-auto max-h-[38dvh] w-full touch-none object-contain sm:max-h-[55vh]" aria-label="Anteprima pagina; trascina per ritagliare" (pointerdown)="startCrop($event)" (pointermove)="moveCrop($event)" (pointerup)="finishCrop($event)" (pointercancel)="finishCrop($event)"></canvas>
+            <canvas #editorCanvas class="block h-auto max-h-[58dvh] w-full touch-none object-contain sm:max-h-[55vh]" aria-label="Anteprima pagina; trascina i vertici per correggere il foglio o trascina per disegnare il ritaglio" (pointerdown)="startCrop($event)" (pointermove)="moveCrop($event)" (pointerup)="finishCrop($event)" (pointercancel)="finishCrop($event)"></canvas>
           </div>
           <div class="grid grid-cols-4 gap-2">
             <button type="button" class="button-secondary !min-h-11 !px-2" aria-label="Ripristina ritaglio" title="Ripristina ritaglio" [disabled]="busy()" (click)="resetCrop()"><svg class="mx-auto h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 15v5h-5M5.6 5.6A8 8 0 0 1 19 9m-.6 9.4A8 8 0 0 1 5 15"/></svg></button>
@@ -132,7 +137,7 @@ const MAX_IMAGE_EDGE = 2800;
           @if (look() === 'testo') {
             <p class="rounded-lg bg-teal-50 px-3 py-2 text-xs leading-5 text-teal-900 dark:bg-teal-950/30 dark:text-teal-100">Il filtro OCR uniforma lo sfondo con una soglia locale adattiva e aumenta la nitidezza del testo. Controlla l’anteprima: timbri, firme e annotazioni colorate possono risultare meno visibili in bianco e nero.</p>
           }
-          <p class="text-xs text-slate-500 dark:text-slate-400">Trascina sulla pagina per ritagliare. Le regolazioni valgono per questa pagina.</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400">Trascina i punti agli angoli per adattare il foglio; trascina altrove per disegnare il ritaglio. Le regolazioni valgono per questa pagina.</p>
           <div class="flex gap-2 overflow-x-auto pb-1">
             @for (page of pages(); track page.id; let index = $index) {
               <div class="w-24 shrink-0 rounded-lg border p-1.5" [class.border-teal-500]="index === activeIndex()" [class.border-slate-200]="index !== activeIndex()" [class.dark:border-teal-500]="index === activeIndex()" [class.dark:border-slate-700]="index !== activeIndex()">
@@ -217,9 +222,11 @@ export class DocumentScannerComponent implements OnDestroy {
   private stableFrames = 0;
   private waitingForPageChange = false;
   private lastAutoCaptureAt = 0;
-  private cropRect: ScanCrop | null = null;
-  private cropStart: { x: number; y: number } | null = null;
-  private previousCrop: ScanCrop | null = null;
+  private cropQuad: ScanQuad | null = null;
+  private cropInteraction:
+    | { kind: 'draw'; start: ScanPoint; previous: ScanQuad | null }
+    | { kind: 'vertex'; index: number; previous: ScanQuad }
+    | null = null;
   private imageLoadVersion = 0;
   private cameraRequest = 0;
   private cameraFocusModes: string[] = [];
@@ -391,7 +398,7 @@ export class DocumentScannerComponent implements OnDestroy {
     const detected = this.cameraDetection();
     const crop = detected
       ? insetDetection(detected, canvas.width, canvas.height)
-      : { x: 0, y: 0, width: 1, height: 1 };
+      : fullImageQuad();
     try {
       const blob = await canvasToJpeg(canvas, 0.95);
       this.addPage(blob, crop);
@@ -427,7 +434,7 @@ export class DocumentScannerComponent implements OnDestroy {
           blob = await canvasToJpeg(canvas, 0.95);
         }
         bitmap.close();
-        this.addPage(blob, { x: 0, y: 0, width: 1, height: 1 });
+        this.addPage(blob, fullImageQuad());
       } catch {
         this.error.set(`Il browser non riesce a leggere “${file.name}”. Prova a convertirla in JPEG o PNG.`);
       }
@@ -471,14 +478,14 @@ export class DocumentScannerComponent implements OnDestroy {
   rotate(degrees: number): void {
     const page = this.currentPage();
     if (!page) return;
-    this.cropRect = null;
-    this.updateActivePage({ rotation: (page.rotation + degrees + 360) % 360, crop: { x: 0, y: 0, width: 1, height: 1 } });
+    this.cropQuad = null;
+    this.updateActivePage({ rotation: (page.rotation + degrees + 360) % 360, crop: fullImageQuad() });
     this.drawPreview();
   }
 
   resetCrop(): void {
-    this.cropRect = null;
-    this.updateActivePage({ crop: { x: 0, y: 0, width: 1, height: 1 } });
+    this.cropQuad = null;
+    this.updateActivePage({ crop: fullImageQuad() });
     this.drawPreview();
   }
 
@@ -545,33 +552,48 @@ export class DocumentScannerComponent implements OnDestroy {
     if (!point) return;
     event.preventDefault();
     this.editorCanvas.nativeElement.setPointerCapture(event.pointerId);
-    this.previousCrop = this.cropRect ? { ...this.cropRect } : null;
-    this.cropStart = point;
-    this.cropRect = { x: point.x, y: point.y, width: 1, height: 1 };
+    const current = this.currentCropQuad();
+    this.cropQuad = cloneQuad(current);
+    const handle = this.findCropHandle(point);
+    if (handle >= 0) {
+      this.cropInteraction = { kind: 'vertex', index: handle, previous: cloneQuad(current) };
+    } else {
+      this.cropInteraction = { kind: 'draw', start: point, previous: cloneQuad(current) };
+      this.cropQuad = quadFromRect(point, point);
+    }
     this.drawPreview();
   }
 
   moveCrop(event: PointerEvent): void {
-    if (!this.cropStart) return;
+    const interaction = this.cropInteraction;
+    if (!interaction) return;
     const point = this.canvasPoint(event);
     if (!point) return;
-    this.cropRect = areaFromPoints(this.cropStart, point);
+    if (interaction.kind === 'draw') {
+      this.cropQuad = quadFromRect(interaction.start, point);
+    } else {
+      const moved = moveQuadVertex(interaction.previous, interaction.index, point);
+      if (isValidQuad(moved)) this.cropQuad = moved;
+    }
     this.drawPreview();
   }
 
   finishCrop(event: PointerEvent): void {
-    if (!this.cropStart) return;
+    const interaction = this.cropInteraction;
+    if (!interaction) return;
     const point = this.canvasPoint(event);
-    if (point) this.cropRect = areaFromPoints(this.cropStart, point);
-    this.cropStart = null;
-    if (!this.cropRect || this.cropRect.width < 12 || this.cropRect.height < 12) {
-      this.cropRect = this.previousCrop;
+    if (point && interaction.kind === 'draw') this.cropQuad = quadFromRect(interaction.start, point);
+    this.cropInteraction = null;
+    if (interaction.kind === 'draw' && (!this.cropQuad || !isLargeEnoughQuad(this.cropQuad))) {
+      this.cropQuad = interaction.previous;
       this.error.set('Seleziona un’area più grande per ritagliare la pagina.');
+    } else if (!this.cropQuad || !isValidQuad(this.cropQuad)) {
+      this.cropQuad = interaction.previous;
+      this.error.set('Mantieni i quattro vertici all’interno della pagina.');
     } else {
       this.error.set('');
       this.saveEditorState();
     }
-    this.previousCrop = null;
     this.drawPreview();
   }
 
@@ -620,7 +642,7 @@ export class DocumentScannerComponent implements OnDestroy {
     }
   }
 
-  private addPage(blob: Blob, crop: ScanCrop): void {
+  private addPage(blob: Blob, crop: ScanQuad): void {
     const previewUrl = URL.createObjectURL(blob);
     const page: ScanPage = {
       id: crypto.randomUUID(), blob, previewUrl, crop, rotation: 0,
@@ -647,7 +669,7 @@ export class DocumentScannerComponent implements OnDestroy {
       this.currentImage = image;
       this.loadSettings(page);
       const previewScale = Math.min(1, 1400 / Math.max(orientedWidth(image, page.rotation), orientedHeight(image, page.rotation)));
-      this.cropRect = normalizedToPixels(
+      this.cropQuad = normalizedToPixels(
         page.crop,
         Math.round(orientedWidth(image, page.rotation) * previewScale),
         Math.round(orientedHeight(image, page.rotation) * previewScale),
@@ -670,7 +692,7 @@ export class DocumentScannerComponent implements OnDestroy {
     const page = this.currentPage();
     const canvas = this.editorCanvas?.nativeElement;
     if (!page || !canvas) return;
-    const crop = this.cropRect ?? { x: 0, y: 0, width: canvas.width, height: canvas.height };
+    const crop = this.currentCropQuad();
     const normalized = pixelsToNormalized(crop, canvas.width, canvas.height);
     this.updateActivePage({ crop: normalized, look: this.look(), brightness: this.brightness(), contrast: this.contrast(), warmth: this.warmth(), sharpness: this.sharpness() });
   }
@@ -682,7 +704,8 @@ export class DocumentScannerComponent implements OnDestroy {
 
   private clearEditor(): void {
     this.currentImage = null;
-    this.cropRect = null;
+    this.cropQuad = null;
+    this.cropInteraction = null;
     const canvas = this.editorCanvas?.nativeElement;
     canvas?.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
     this.look.set('colore');
@@ -702,18 +725,63 @@ export class DocumentScannerComponent implements OnDestroy {
     const scale = Math.min(1, 1400 / Math.max(width, height));
     canvas.width = Math.max(1, Math.round(width * scale));
     canvas.height = Math.max(1, Math.round(height * scale));
-    const crop = this.cropRect ?? normalizedToPixels(page.crop, canvas.width, canvas.height);
+    const crop = this.currentCropQuad();
     drawAdjusted(canvas, image, page, this.look(), this.brightness(), this.contrast(), this.warmth(), this.sharpness());
     const context = canvas.getContext('2d');
     if (!context) return;
+    context.save();
     context.fillStyle = 'rgba(15,23,42,.55)';
-    context.fillRect(0, 0, canvas.width, crop.y);
-    context.fillRect(0, crop.y + crop.height, canvas.width, canvas.height - crop.y - crop.height);
-    context.fillRect(0, crop.y, crop.x, crop.height);
-    context.fillRect(crop.x + crop.width, crop.y, canvas.width - crop.x - crop.width, crop.height);
+    context.beginPath();
+    context.rect(0, 0, canvas.width, canvas.height);
+    traceQuad(context, crop);
+    context.fill('evenodd');
+    context.restore();
+    context.save();
+    traceQuad(context, crop);
     context.strokeStyle = '#5eead4';
     context.lineWidth = Math.max(2, canvas.width / 350);
-    context.strokeRect(crop.x, crop.y, crop.width, crop.height);
+    context.stroke();
+    const handleRadius = Math.max(8, canvas.width / 70);
+    crop.forEach((point) => {
+      context.beginPath();
+      context.arc(point.x, point.y, handleRadius, 0, Math.PI * 2);
+      context.fillStyle = '#f8fafc';
+      context.fill();
+      context.lineWidth = Math.max(3, canvas.width / 250);
+      context.strokeStyle = '#0f766e';
+      context.stroke();
+    });
+    context.restore();
+  }
+
+  private currentCropQuad(): ScanQuad {
+    const canvas = this.editorCanvas?.nativeElement;
+    if (this.cropQuad) return this.cropQuad;
+    return canvas
+      ? normalizedToPixels(fullImageQuad(), canvas.width, canvas.height)
+      : fullImageQuad();
+  }
+
+  private findCropHandle(point: ScanPoint): number {
+    const canvas = this.editorCanvas?.nativeElement;
+    if (!canvas) return -1;
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width) return -1;
+    const radius = Math.max(canvas.width * 0.025, (28 / rect.width) * canvas.width);
+    const radiusSquared = radius * radius;
+    const quad = this.currentCropQuad();
+    let nearest = -1;
+    let nearestDistance = radiusSquared;
+    quad.forEach((handle, index) => {
+      const dx = handle.x - point.x;
+      const dy = handle.y - point.y;
+      const distance = dx * dx + dy * dy;
+      if (distance <= nearestDistance) {
+        nearest = index;
+        nearestDistance = distance;
+      }
+    });
+    return nearest;
   }
 
   private canvasPoint(event: PointerEvent): { x: number; y: number } | null {
@@ -806,10 +874,19 @@ function boxesAreClose(a: DetectionBox, b: DetectionBox): boolean {
   return Math.abs(a.x - b.x) < 0.035 && Math.abs(a.y - b.y) < 0.035 && Math.abs(a.width - b.width) < 0.05 && Math.abs(a.height - b.height) < 0.05;
 }
 
-function insetDetection(box: DetectionBox, width: number, height: number): ScanCrop {
+function insetDetection(box: DetectionBox, width: number, height: number): ScanQuad {
   const insetX = Math.min(0.012, 1 / Math.max(1, box.width * width));
   const insetY = Math.min(0.012, 1 / Math.max(1, box.height * height));
-  return { x: box.x + insetX, y: box.y + insetY, width: Math.max(0.1, box.width - insetX * 2), height: Math.max(0.1, box.height - insetY * 2) };
+  const left = box.x + insetX;
+  const top = box.y + insetY;
+  const right = box.x + box.width - insetX;
+  const bottom = box.y + box.height - insetY;
+  return [
+    { x: left, y: top },
+    { x: right, y: top },
+    { x: right, y: bottom },
+    { x: left, y: bottom },
+  ];
 }
 
 function decodeImage(url: string): Promise<HTMLImageElement> {
@@ -826,16 +903,76 @@ function orientedHeight(image: HTMLImageElement | ImageBitmap, rotation: number)
   return rotation % 180 ? image.width : image.height;
 }
 
-function normalizedToPixels(crop: ScanCrop, width: number, height: number): ScanCrop {
-  return { x: crop.x * width, y: crop.y * height, width: crop.width * width, height: crop.height * height };
+function fullImageQuad(): ScanQuad {
+  return [
+    { x: 0, y: 0 },
+    { x: 1, y: 0 },
+    { x: 1, y: 1 },
+    { x: 0, y: 1 },
+  ];
 }
 
-function pixelsToNormalized(crop: ScanCrop, width: number, height: number): ScanCrop {
-  return { x: crop.x / width, y: crop.y / height, width: crop.width / width, height: crop.height / height };
+function cloneQuad(quad: ScanQuad): ScanQuad {
+  return quad.map((point) => ({ ...point })) as ScanQuad;
 }
 
-function areaFromPoints(start: { x: number; y: number }, end: { x: number; y: number }): ScanCrop {
-  return { x: Math.min(start.x, end.x), y: Math.min(start.y, end.y), width: Math.abs(end.x - start.x), height: Math.abs(end.y - start.y) };
+function normalizedToPixels(quad: ScanQuad, width: number, height: number): ScanQuad {
+  return quad.map((point) => ({ x: point.x * width, y: point.y * height })) as ScanQuad;
+}
+
+function pixelsToNormalized(quad: ScanQuad, width: number, height: number): ScanQuad {
+  return quad.map((point) => ({ x: point.x / width, y: point.y / height })) as ScanQuad;
+}
+
+function quadFromRect(start: ScanPoint, end: ScanPoint): ScanQuad {
+  const left = Math.min(start.x, end.x);
+  const top = Math.min(start.y, end.y);
+  const right = Math.max(start.x, end.x);
+  const bottom = Math.max(start.y, end.y);
+  return [
+    { x: left, y: top },
+    { x: right, y: top },
+    { x: right, y: bottom },
+    { x: left, y: bottom },
+  ];
+}
+
+function moveQuadVertex(quad: ScanQuad, index: number, point: ScanPoint): ScanQuad {
+  const moved = cloneQuad(quad);
+  moved[index] = { ...point };
+  return moved;
+}
+
+function isValidQuad(quad: ScanQuad): boolean {
+  if (quad.some((point) => !Number.isFinite(point.x) || !Number.isFinite(point.y) || point.x < 0 || point.y < 0)) return false;
+  let direction = 0;
+  for (let index = 0; index < quad.length; index++) {
+    const current = quad[index];
+    const next = quad[(index + 1) % quad.length];
+    const after = quad[(index + 2) % quad.length];
+    const cross = (next.x - current.x) * (after.y - next.y) - (next.y - current.y) * (after.x - next.x);
+    if (Math.abs(cross) < 1) return false;
+    const sign = Math.sign(cross);
+    if (direction && sign !== direction) return false;
+    direction = sign;
+  }
+  return true;
+}
+
+function isLargeEnoughQuad(quad: ScanQuad): boolean {
+  return Math.max(distance(quad[0], quad[1]), distance(quad[3], quad[2])) >= 12
+    && Math.max(distance(quad[0], quad[3]), distance(quad[1], quad[2])) >= 12;
+}
+
+function traceQuad(context: CanvasRenderingContext2D, quad: ScanQuad): void {
+  context.beginPath();
+  context.moveTo(quad[0].x, quad[0].y);
+  for (let index = 1; index < quad.length; index++) context.lineTo(quad[index].x, quad[index].y);
+  context.closePath();
+}
+
+function distance(a: ScanPoint, b: ScanPoint): number {
+  return Math.hypot(b.x - a.x, b.y - a.y);
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -1026,23 +1163,105 @@ function renderPage(image: HTMLImageElement, page: ScanPage): HTMLCanvasElement 
   scaledContext.drawImage(image, 0, 0, scaledImage.width, scaledImage.height);
   drawAdjusted(oriented, scaledImage, page, page.look, page.brightness, page.contrast, page.warmth, page.sharpness);
   const crop = normalizedToPixels(page.crop, width, height);
-  const left = clamp(Math.floor(crop.x), 0, width - 1);
-  const top = clamp(Math.floor(crop.y), 0, height - 1);
-  const cropWidth = clamp(Math.ceil(crop.width), 1, width - left);
-  const cropHeight = clamp(Math.ceil(crop.height), 1, height - top);
+  const cropWidth = Math.max(distance(crop[0], crop[1]), distance(crop[3], crop[2]));
+  const cropHeight = Math.max(distance(crop[0], crop[3]), distance(crop[1], crop[2]));
+  const cropScale = Math.min(1, MAX_IMAGE_EDGE / Math.max(cropWidth, cropHeight));
   const output = document.createElement('canvas');
-  output.width = cropWidth;
-  output.height = cropHeight;
+  output.width = Math.max(1, Math.round(cropWidth * cropScale));
+  output.height = Math.max(1, Math.round(cropHeight * cropScale));
   const outputContext = output.getContext('2d');
   if (!outputContext) throw new Error('canvas-unavailable');
   outputContext.fillStyle = '#fff';
-  outputContext.fillRect(0, 0, cropWidth, cropHeight);
-  outputContext.drawImage(oriented, left, top, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+  outputContext.fillRect(0, 0, output.width, output.height);
+  outputContext.imageSmoothingEnabled = true;
+  outputContext.imageSmoothingQuality = 'high';
+  if (isAxisAlignedQuad(crop)) {
+    const left = Math.min(...crop.map((point) => point.x));
+    const top = Math.min(...crop.map((point) => point.y));
+    const right = Math.max(...crop.map((point) => point.x));
+    const bottom = Math.max(...crop.map((point) => point.y));
+    outputContext.drawImage(oriented, left, top, right - left, bottom - top, 0, 0, output.width, output.height);
+  } else {
+    warpQuadToCanvas(oriented, outputContext, crop, output.width, output.height);
+  }
   oriented.width = 0;
   oriented.height = 0;
   scaledImage.width = 0;
   scaledImage.height = 0;
   return output;
+}
+
+function warpQuadToCanvas(
+  source: HTMLCanvasElement,
+  output: CanvasRenderingContext2D,
+  quad: ScanQuad,
+  outputWidth: number,
+  outputHeight: number,
+): void {
+  const divisions = 16;
+  const mappedPoint = (u: number, v: number): ScanPoint => ({
+    x: (1 - u) * (1 - v) * quad[0].x + u * (1 - v) * quad[1].x + u * v * quad[2].x + (1 - u) * v * quad[3].x,
+    y: (1 - u) * (1 - v) * quad[0].y + u * (1 - v) * quad[1].y + u * v * quad[2].y + (1 - u) * v * quad[3].y,
+  });
+  const outputPoint = (u: number, v: number): ScanPoint => ({ x: u * outputWidth, y: v * outputHeight });
+  const drawTriangle = (sourcePoints: [ScanPoint, ScanPoint, ScanPoint], targetPoints: [ScanPoint, ScanPoint, ScanPoint]) => {
+    const transform = affineTransform(sourcePoints, targetPoints);
+    if (!transform) return;
+    output.save();
+    output.beginPath();
+    output.moveTo(targetPoints[0].x, targetPoints[0].y);
+    output.lineTo(targetPoints[1].x, targetPoints[1].y);
+    output.lineTo(targetPoints[2].x, targetPoints[2].y);
+    output.closePath();
+    output.clip();
+    output.setTransform(transform.a, transform.b, transform.c, transform.d, transform.e, transform.f);
+    output.drawImage(source, 0, 0);
+    output.restore();
+  };
+
+  for (let row = 0; row < divisions; row++) {
+    const v0 = row / divisions;
+    const v1 = (row + 1) / divisions;
+    for (let column = 0; column < divisions; column++) {
+      const u0 = column / divisions;
+      const u1 = (column + 1) / divisions;
+      const source00 = mappedPoint(u0, v0);
+      const source10 = mappedPoint(u1, v0);
+      const source11 = mappedPoint(u1, v1);
+      const source01 = mappedPoint(u0, v1);
+      const target00 = outputPoint(u0, v0);
+      const target10 = outputPoint(u1, v0);
+      const target11 = outputPoint(u1, v1);
+      const target01 = outputPoint(u0, v1);
+      drawTriangle([source00, source10, source11], [target00, target10, target11]);
+      drawTriangle([source00, source11, source01], [target00, target11, target01]);
+    }
+  }
+}
+
+function isAxisAlignedQuad(quad: ScanQuad): boolean {
+  const tolerance = 0.5;
+  return Math.abs(quad[0].x - quad[3].x) <= tolerance
+    && Math.abs(quad[1].x - quad[2].x) <= tolerance
+    && Math.abs(quad[0].y - quad[1].y) <= tolerance
+    && Math.abs(quad[3].y - quad[2].y) <= tolerance;
+}
+
+function affineTransform(
+  source: [ScanPoint, ScanPoint, ScanPoint],
+  target: [ScanPoint, ScanPoint, ScanPoint],
+): { a: number; b: number; c: number; d: number; e: number; f: number } | null {
+  const [p0, p1, p2] = source;
+  const [q0, q1, q2] = target;
+  const denominator = p0.x * (p1.y - p2.y) + p1.x * (p2.y - p0.y) + p2.x * (p0.y - p1.y);
+  if (Math.abs(denominator) < 0.0001) return null;
+  const a = (q0.x * (p1.y - p2.y) + q1.x * (p2.y - p0.y) + q2.x * (p0.y - p1.y)) / denominator;
+  const c = (q0.x * (p2.x - p1.x) + q1.x * (p0.x - p2.x) + q2.x * (p1.x - p0.x)) / denominator;
+  const e = (q0.x * (p1.x * p2.y - p2.x * p1.y) + q1.x * (p2.x * p0.y - p0.x * p2.y) + q2.x * (p0.x * p1.y - p1.x * p0.y)) / denominator;
+  const b = (q0.y * (p1.y - p2.y) + q1.y * (p2.y - p0.y) + q2.y * (p0.y - p1.y)) / denominator;
+  const d = (q0.y * (p2.x - p1.x) + q1.y * (p0.x - p2.x) + q2.y * (p1.x - p0.x)) / denominator;
+  const f = (q0.y * (p1.x * p2.y - p2.x * p1.y) + q1.y * (p2.x * p0.y - p0.x * p2.y) + q2.y * (p0.x * p1.y - p1.x * p0.y)) / denominator;
+  return { a, b, c, d, e, f };
 }
 
 async function encodeWithinBudget(canvas: HTMLCanvasElement, targetBytes: number): Promise<Blob> {
