@@ -1238,7 +1238,7 @@ function toEvents(entries: SearchableDiaryItem[], month: Date): CalendarEvent[] 
               title: `${String(row['name'] ?? 'Farmaco')} · ${period.dosage}`.trim(),
               time,
               endTime: slot.end,
-              category: slot.end ? `Fascia ${slot.start}–${slot.end}` : `Orario ${slot.start}`,
+              category: slot.end ? `Fascia ${slot.start}–${slot.end}` : '',
               medicationId: row.id,
               doseTaken: !!dose && String(dose.row['status'] ?? 'Somministrata') !== 'Saltata',
               doseSkipped: String(dose?.row['status'] ?? '') === 'Saltata',

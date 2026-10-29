@@ -952,6 +952,7 @@ function applyMedicationScheduleScope(
             aria-modal="true"
             aria-labelledby="dialog-title"
             class="modal-panel"
+            [class.medication-modal]="section.id === 'medications'"
             [class.pdf-preview-modal]="section.id === 'documents' && isPdfAttachment()"
             (click)="$event.stopPropagation()"
           >
@@ -1435,6 +1436,7 @@ function applyMedicationScheduleScope(
             aria-modal="true"
             aria-labelledby="detail-dialog-title"
             class="modal-panel"
+            [class.medication-modal]="section.id === 'medications'"
             (click)="$event.stopPropagation()"
           >
             <header class="flex items-start justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">

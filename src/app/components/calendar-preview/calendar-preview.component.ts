@@ -126,8 +126,7 @@ export class CalendarPreviewComponent implements OnInit {
             const date = dateKey(cursor);
             for (const slot of times) {
               const time = slot.start;
-              if (date === periodStart && period.start_time && time < period.start_time) continue;
-              if (date === periodEnd && period.end_time && time > period.end_time) continue;
+              if (!medicationDoseWithinPeriod(period, date, time, periodStart, periodEnd)) continue;
               const dose = doses.find((candidate) => candidate.row['is_spot'] !== true && candidate.row['scheduled_date'] === date && String(candidate.row['scheduled_time'] ?? '').slice(0, 5) === time);
               const taken = !!dose;
               output.push({
@@ -179,24 +178,30 @@ export class CalendarPreviewComponent implements OnInit {
               const end = period.end_date || (periods.length === 1 ? String(item.row['end_date'] ?? '') : '');
               return (!start || start <= this.today) && (!end || end >= this.today);
             })
-            .flatMap((period) => parseScheduleTimes(period.schedule_times).map((slot) => {
-            const dose = this.entries().find((entry) => entry.section === 'medication_doses' &&
-              entry.row['is_spot'] !== true &&
-              entry.row['medication_id'] === item.row.id && entry.row['scheduled_date'] === this.today &&
-              String(entry.row['scheduled_time'] ?? '').slice(0, 5) === slot.start);
-            const takenAt = dose?.row['taken_at'] ? new Date(String(dose.row['taken_at'])) : null;
-            return {
-              id: slot.start,
-              label: slot.end ? `Fascia ${slot.start}–${slot.end}` : slot.start,
-              taken: !!dose?.row['taken_at'] && !dose?.row['skipped_reason'],
-              skipped: !!dose?.row['skipped_reason'] || dose?.row['status'] === 'Saltata',
-              medicationId: String(item.row.id),
-              childId: item.row['child_id'] ? String(item.row['child_id']) : undefined,
-              actualTime: takenAt && !Number.isNaN(takenAt.getTime())
-                ? takenAt.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
-                : '',
-            };
-          }))
+            .flatMap((period, index, periods) => {
+              const start = period.start_date || String(item.row['start_date'] ?? '');
+              const end = period.end_date || (periods.length === 1 ? String(item.row['end_date'] ?? '') : '');
+              return parseScheduleTimes(period.schedule_times)
+                .filter((slot) => medicationDoseWithinPeriod(period, this.today, slot.start, start, end))
+                .map((slot) => {
+                  const dose = this.entries().find((entry) => entry.section === 'medication_doses' &&
+                    entry.row['is_spot'] !== true &&
+                    entry.row['medication_id'] === item.row.id && entry.row['scheduled_date'] === this.today &&
+                    String(entry.row['scheduled_time'] ?? '').slice(0, 5) === slot.start);
+                  const takenAt = dose?.row['taken_at'] ? new Date(String(dose.row['taken_at'])) : null;
+                  return {
+                    id: slot.start,
+                    label: slot.end ? `Fascia ${slot.start}–${slot.end}` : slot.start,
+                    taken: !!dose?.row['taken_at'] && !dose?.row['skipped_reason'],
+                    skipped: !!dose?.row['skipped_reason'] || dose?.row['status'] === 'Saltata',
+                    medicationId: String(item.row.id),
+                    childId: item.row['child_id'] ? String(item.row['child_id']) : undefined,
+                    actualTime: takenAt && !Number.isNaN(takenAt.getTime())
+                      ? takenAt.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+                      : '',
+                  };
+                });
+            })
           : [];
         return {
           id: item.row.id,
@@ -501,6 +506,16 @@ function parseScheduleTimes(value: string): Array<{ start: string; end?: string 
     if (!start || (match[2] && (!end || end < start))) return [];
     return [{ start, ...(end ? { end } : {}) }];
   });
+}
+function medicationDoseWithinPeriod(
+  period: MedicationSchedulePeriod,
+  date: string,
+  time: string,
+  periodStart: string,
+  periodEnd: string,
+): boolean {
+  return !(date === periodStart && period.start_time && time < period.start_time) &&
+    !(date === periodEnd && period.end_time && time > period.end_time);
 }
 function normalizeTime(value: string): string | null {
   const [hour, minute] = value.split(':').map(Number);
