@@ -39,6 +39,8 @@ export interface DiaryRow {
 export interface MedicationSchedulePeriod {
   start_date: string | null;
   end_date: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
   dosage: string;
   formulation: string | null;
   spray_count: number | null;

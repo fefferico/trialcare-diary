@@ -222,6 +222,8 @@ export class PdfExportService {
         period['dosage'] ? `Dosaggio: ${period['dosage']}` : 'Dosaggio non indicato',
         period['formulation'] ? `Formulazione: ${period['formulation']}` : '',
         period['schedule_times'] ? `Orari: ${period['schedule_times']}` : '',
+        period['start_time'] ? `Nel primo giorno, da: ${period['start_time']}` : '',
+        period['end_time'] ? `Nell’ultimo giorno, fino a: ${period['end_time']}` : '',
         period['spray_count'] != null ? `Puff o spruzzi: ${period['spray_count']}` : '',
         period['administration_duration_seconds'] != null
           ? `Durata della somministrazione: ${period['administration_duration_seconds']} secondi`

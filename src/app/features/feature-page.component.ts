@@ -34,6 +34,8 @@ import { medicineCabinetExpiry } from '../models/medicine-cabinet-expiry';
 interface MedicationScheduleDraft {
   start_date: string;
   end_date: string;
+  start_time: string;
+  end_time: string;
   dosage: string;
   formulation: string;
   spray_count: string;
@@ -51,6 +53,8 @@ interface HistoricalMedicationDose {
 type MedicationScheduleScope = 'single' | 'preceding' | 'following' | 'all';
 
 const MEDICATION_SCHEDULE_FIELDS = [
+  'start_time',
+  'end_time',
   'dosage',
   'formulation',
   'spray_count',
@@ -116,6 +120,54 @@ function validMedicationDate(value: string | null): value is string {
   const [year, month, day] = value.split('-').map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+function parseMedicationScheduleTimes(value: string): Array<{ start: string; end?: string }> {
+  const entries = value.split(',').map((entry) => entry.trim());
+  if (!value.trim() || entries.some((entry) => !entry)) return [];
+  const slots = entries.flatMap((entry) => {
+    const match = entry.trim().match(/^(\d{1,2}:\d{2})(?:\s*[-–]\s*(\d{1,2}:\d{2}))?$/);
+    if (!match) return [];
+    const start = normalizeMedicationTime(match[1]);
+    const end = match[2] ? normalizeMedicationTime(match[2]) : null;
+    if (!start || (match[2] && (!end || end < start))) return [];
+    return [{ start, ...(end ? { end } : {}) }];
+  });
+  return slots.length === entries.length ? slots : [];
+}
+
+function timeToMinutes(value: string): number {
+  const [hour, minute] = value.split(':').map(Number);
+  return hour * 60 + minute;
+}
+
+function summarizeMedicationSchedule(period: MedicationScheduleDraft): { days: number; doses: number | null } | null {
+  const start = period.start_date.trim();
+  const end = period.end_date.trim();
+  if (!validMedicationDate(start) || !validMedicationDate(end) || end < start) return null;
+
+  const [startYear, startMonth, startDay] = start.split('-').map(Number);
+  const [endYear, endMonth, endDay] = end.split('-').map(Number);
+  const startDayNumber = Date.UTC(startYear, startMonth - 1, startDay) / 86_400_000;
+  const endDayNumber = Date.UTC(endYear, endMonth - 1, endDay) / 86_400_000;
+  const calendarDays = endDayNumber - startDayNumber + 1;
+  const startTime = period.start_time ? normalizeMedicationTime(period.start_time) : null;
+  const endTime = period.end_time ? normalizeMedicationTime(period.end_time) : null;
+  if ((period.start_time && !startTime) || (period.end_time && !endTime)) return null;
+  if (calendarDays === 1 && startTime && endTime && endTime < startTime) return null;
+  const startAt = startDayNumber * 86_400_000 + (startTime ? timeToMinutes(startTime) * 60_000 : 0);
+  const endAt = endDayNumber * 86_400_000 + (endTime ? timeToMinutes(endTime) * 60_000 : 86_400_000 - 1);
+  const days = Math.ceil((endAt - startAt + 1) / 86_400_000);
+  const slots = parseMedicationScheduleTimes(period.schedule_times);
+  if (!slots.length) return { days, doses: null };
+
+  if (calendarDays === 1) {
+    const doses = slots.filter((slot) => (!startTime || slot.start >= startTime) && (!endTime || slot.start <= endTime)).length;
+    return { days, doses };
+  }
+  const firstDaySlots = startTime ? slots.filter((slot) => slot.start >= startTime) : slots;
+  const lastDaySlots = endTime ? slots.filter((slot) => slot.start <= endTime) : slots;
+  return { days, doses: firstDaySlots.length + (calendarDays - 2) * slots.length + lastDaySlots.length };
 }
 
 function sameMedicationSchedule(
@@ -186,6 +238,13 @@ function applyMedicationScheduleScope(
       ...period,
       start_date: clippedStart,
       end_date: clippedEndExclusive ? addMedicationDays(clippedEndExclusive, -1) : null,
+      start_time: validMedicationDate(periodStart) && clippedStart === periodStart
+        ? period.start_time ?? null
+        : null,
+      end_time: validMedicationDate(periodEnd) && clippedEndExclusive &&
+        addMedicationDays(clippedEndExclusive, -1) === periodEnd
+        ? period.end_time ?? null
+        : null,
     };
     const previous = output.at(-1);
     if (
@@ -966,7 +1025,7 @@ function applyMedicationScheduleScope(
                 </div>
               }
               <div class="grid gap-4 sm:grid-cols-2">
-                @for (field of section.fields; track field.key) {
+                @for (field of formFields; track field.key) {
                   @if (
                     !(section.id === 'medications' &&
                       ['spray_count', 'administration_duration_seconds'].includes(field.key)) ||
@@ -1091,6 +1150,74 @@ function applyMedicationScheduleScope(
                       }
                     }
                   </div>
+                  @if (section.id === 'medications' && field.key === 'end_date') {
+                    <div class="sm:col-span-2 grid gap-3 sm:grid-cols-2">
+                      <label class="form-field">
+                        <span>Ora di avvio nel primo giorno (facoltativa)</span>
+                        <app-timepicker
+                          label="Ora di avvio del periodo 1"
+                          [value]="form['start_time']"
+                          (timeChange)="form['start_time'] = $event"
+                        />
+                      </label>
+                      <label class="form-field">
+                        <span>Ora di fine nell’ultimo giorno (facoltativa)</span>
+                        <app-timepicker
+                          label="Ora di fine del periodo 1"
+                          [value]="form['end_time']"
+                          (timeChange)="form['end_time'] = $event"
+                        />
+                      </label>
+                      @if (medicationScheduleRangeMessage(0); as rangeMessage) {
+                        <p class="text-xs font-medium text-rose-700 dark:text-rose-300 sm:col-span-2" role="alert">{{ rangeMessage }}</p>
+                      }
+                    </div>
+                  }
+                  @if (section.id === 'medications' && field.key === 'schedule_times') {
+                    <div class="sm:col-span-2 space-y-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                      <div>
+                        <h3 class="text-sm font-semibold">Imposta la durata prescritta</h3>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Calcolo la fine alla somministrazione che completa la durata indicata, partendo da data, orario iniziale e frequenza giornaliera.</p>
+                      </div>
+                      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                        <label class="form-field">
+                          <span>Durata</span>
+                          <input
+                            class="field-control"
+                            type="number"
+                            min="1"
+                            max="10000"
+                            step="1"
+                            [ngModel]="medicationDurationValue()"
+                            [ngModelOptions]="{ standalone: true }"
+                            (ngModelChange)="medicationDurationValue.set($event)"
+                          />
+                        </label>
+                        <label class="form-field">
+                          <span>Unità</span>
+                          <app-dropdown
+                            [options]="medicationDurationUnits"
+                            [value]="medicationDurationUnit()"
+                            (selection)="medicationDurationUnit.set($event)"
+                          />
+                        </label>
+                        <div class="flex items-end">
+                          <button type="button" class="button-secondary w-full lg:w-auto" [disabled]="!canCalculateMedicationEnd" (click)="calculateMedicationEnd()">Calcola fine prevista</button>
+                        </div>
+                      </div>
+                      <p class="text-xs text-slate-500 dark:text-slate-400">“Giorni” considera tutti gli orari prescritti ogni giorno; “Somministrazioni” imposta il numero totale. Il calcolo non applica le pause annotate sotto.</p>
+                      @if (medicationScheduleSummaryAt(0); as summary) {
+                        <p class="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700 dark:bg-slate-800/60 dark:text-slate-200" aria-live="polite" aria-atomic="true">
+                          Giorni previsti: <strong>{{ summary.days }}</strong>
+                          @if (summary.doses !== null) {
+                            <span> · Somministrazioni previste: <strong>{{ summary.doses }}</strong></span>
+                          } @else {
+                            <span> · Inserisci gli orari per calcolare le somministrazioni</span>
+                          }
+                        </p>
+                      }
+                    </div>
+                  }
                   }
                 }
               </div>
@@ -1141,9 +1268,6 @@ function applyMedicationScheduleScope(
                         <strong class="block truncate text-sm text-slate-700 dark:text-slate-200">{{ form['end_date'] ? (form['end_date'] | date: 'd MMM y') : (form['start_date'] ? 'In corso' : 'Data da definire') }}</strong>
                       </div>
                     </div>
-                    @if (medicationScheduleRangeMessage(0); as rangeMessage) {
-                      <p class="text-xs font-medium text-rose-700 dark:text-rose-300" role="alert">{{ rangeMessage }}</p>
-                    }
                   </article>
                   @for (period of additionalMedicationSchedules(); track $index; let index = $index) {
                     <article class="space-y-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-800/60" [attr.data-medication-schedule-index]="index">
@@ -1154,6 +1278,19 @@ function applyMedicationScheduleScope(
                       <div class="grid gap-3 sm:grid-cols-2">
                         <label class="form-field"><span>Dal <i class="text-rose-500">*</i></span><app-datepicker [label]="'Inizio periodo ' + (index + 2)" [value]="period.start_date" [rangeStart]="period.start_date" [rangeEnd]="period.end_date" (dateChange)="updateMedicationSchedule(index, 'start_date', $event)" /></label>
                         <label class="form-field"><span>Al</span><app-datepicker [label]="'Fine periodo ' + (index + 2)" [value]="period.end_date" [rangeStart]="period.start_date" [rangeEnd]="period.end_date" (dateChange)="updateMedicationSchedule(index, 'end_date', $event)" /></label>
+                        <label class="form-field"><span>Ora di avvio nel primo giorno (facoltativa)</span><app-timepicker [label]="'Ora di avvio del periodo ' + (index + 2)" [value]="period.start_time" (timeChange)="updateMedicationSchedule(index, 'start_time', $event)" /></label>
+                        <label class="form-field"><span>Ora di fine nell’ultimo giorno (facoltativa)</span><app-timepicker [label]="'Ora di fine del periodo ' + (index + 2)" [value]="period.end_time" (timeChange)="updateMedicationSchedule(index, 'end_time', $event)" /></label>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 sm:col-span-2">Nel primo e nell’ultimo giorno si contano solo gli orari compresi nell’intervallo indicato. Se lasci vuota un’ora, quel giorno viene conteggiato per intero. Ogni fascia vale al suo orario iniziale.</p>
+                        @if (medicationScheduleSummary(period); as summary) {
+                          <p class="rounded-lg bg-white px-3 py-2 text-sm text-slate-700 dark:bg-slate-900 sm:col-span-2 dark:text-slate-200" aria-live="polite" aria-atomic="true">
+                            Giorni previsti: <strong>{{ summary.days }}</strong>
+                            @if (summary.doses !== null) {
+                              <span> · Somministrazioni previste: <strong>{{ summary.doses }}</strong></span>
+                            } @else {
+                              <span> · Inserisci gli orari per calcolare le somministrazioni</span>
+                            }
+                          </p>
+                        }
                         <!-- <div class="grid grid-cols-[minmax(0,1fr)_3rem_minmax(0,1fr)] items-center gap-2 rounded-xl border border-white/80 bg-white/80 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900/60 sm:col-span-2">
                           <div class="min-w-0">
                             <span class="block text-[10px] font-bold uppercase tracking-wider text-teal-700 dark:text-teal-300">Dal</span>
@@ -1416,6 +1553,12 @@ function applyMedicationScheduleScope(
                           @if (period.schedule_times) {
                             <div><dt class="text-xs font-medium text-slate-500">Orari o fasce</dt><dd class="mt-0.5">{{ period.schedule_times }}</dd></div>
                           }
+                          @if (period.start_time) {
+                            <div><dt class="text-xs font-medium text-slate-500">Avvio del primo giorno</dt><dd class="mt-0.5">Dalle {{ period.start_time }}</dd></div>
+                          }
+                          @if (period.end_time) {
+                            <div><dt class="text-xs font-medium text-slate-500">Fine dell’ultimo giorno</dt><dd class="mt-0.5">Alle {{ period.end_time }}</dd></div>
+                          }
                           @if (period.spray_count != null) {
                             <div><dt class="text-xs font-medium text-slate-500">Puff o spruzzi per somministrazione</dt><dd class="mt-0.5">{{ period.spray_count }}</dd></div>
                           }
@@ -1660,6 +1803,9 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   private documentSearchTimer?: ReturnType<typeof setTimeout>;
   private documentSearchRequest = 0;
   readonly additionalMedicationSchedules = signal<MedicationScheduleDraft[]>([]);
+  readonly medicationDurationUnits = ['Giorni', 'Somministrazioni'];
+  readonly medicationDurationValue = signal<number | null>(null);
+  readonly medicationDurationUnit = signal('Giorni');
   attachedFile: File | null = null;
   pdfTextSeed = '';
   private attachmentModified = false;
@@ -1702,6 +1848,12 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   get section(): SectionDefinition {
     return sectionById(this.sectionId)!;
   }
+  get formFields(): FieldDefinition[] {
+    const fields = this.section.fields;
+    if (this.sectionId !== 'medications') return fields;
+    const order = ['name', 'dosage', 'start_date', 'end_date', 'formulation', 'spray_count', 'administration_duration_seconds', 'schedule_times', 'planned_pause', 'notes'];
+    return [...fields].sort((left, right) => order.indexOf(left.key) - order.indexOf(right.key));
+  }
   normalizeScheduleTimesInput(): void {
     this.form['schedule_times'] = (this.form['schedule_times'] ?? '')
       .split(',')
@@ -1717,6 +1869,8 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       {
         start_date: '',
         end_date: '',
+        start_time: '',
+        end_time: '',
         dosage: String(source['dosage'] ?? ''),
         formulation: String(source['formulation'] ?? ''),
         spray_count: String(source['spray_count'] ?? ''),
@@ -1748,6 +1902,8 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       {
         start_date: String(initial['start_date'] ?? ''),
         end_date: String(initial['end_date'] ?? ''),
+        start_time: String(initial['start_time'] ?? ''),
+        end_time: String(initial['end_time'] ?? ''),
         dosage: String(initial['dosage'] ?? ''),
         formulation: String(initial['formulation'] ?? ''),
         spray_count: String(initial['spray_count'] ?? ''),
@@ -1757,6 +1913,50 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       },
       ...this.additionalMedicationSchedules(),
     ];
+  }
+  medicationScheduleSummary(period: MedicationScheduleDraft): { days: number; doses: number | null } | null {
+    return summarizeMedicationSchedule(period);
+  }
+  medicationScheduleSummaryAt(index: number): { days: number; doses: number | null } | null {
+    const period = this.medicationScheduleDrafts()[index];
+    return period ? summarizeMedicationSchedule(period) : null;
+  }
+  get canCalculateMedicationEnd(): boolean {
+    const period = this.medicationScheduleDrafts()[0];
+    const value = Number(this.medicationDurationValue());
+    const slots = parseMedicationScheduleTimes(period?.schedule_times ?? '');
+    const amount = this.medicationDurationUnit() === 'Somministrazioni' ? value : value * slots.length;
+    return !!period && Number.isInteger(value) && value > 0 && value <= 10_000 &&
+      validMedicationDate(period.start_date) && slots.length > 0 &&
+      (!period.start_time || !!normalizeMedicationTime(period.start_time)) &&
+      Number.isSafeInteger(amount) && amount > 0 && amount <= 100_000;
+  }
+  calculateMedicationEnd(): void {
+    const period = this.medicationScheduleDrafts()[0];
+    if (!period || !this.canCalculateMedicationEnd) return;
+    const slots = parseMedicationScheduleTimes(period.schedule_times);
+    const duration = Number(this.medicationDurationValue());
+    let remaining = this.medicationDurationUnit() === 'Somministrazioni'
+      ? duration
+      : duration * slots.length;
+    const firstDayStartTime = period.start_time ? normalizeMedicationTime(period.start_time) : null;
+    let date = period.start_date;
+
+    for (let dayIndex = 0; dayIndex < 36_500; dayIndex++) {
+      const dailySlots = dayIndex === 0 && firstDayStartTime
+        ? slots.filter((slot) => slot.start >= firstDayStartTime)
+        : slots;
+      for (const slot of dailySlots) {
+        remaining--;
+        if (remaining === 0) {
+          this.form['end_date'] = date;
+          this.form['end_time'] = slot.start;
+          this.data.error.set('');
+          return;
+        }
+      }
+      date = addMedicationDays(date, 1);
+    }
   }
   medicationScheduleRangeMessage(index: number, periods = this.medicationScheduleDrafts()): string {
     const period = periods[index];
@@ -1768,6 +1968,13 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     if (end && !validMedicationDate(end)) return 'Inserisci una data di fine valida.';
     if (end && !start) return 'Indica la data di inizio prima della data di fine.';
     if (start && end && end < start) return 'La data di fine deve essere uguale o successiva alla data di inizio.';
+    if (period.start_time && !start) return 'Indica la data di inizio prima dell’orario di avvio.';
+    if (period.end_time && !end) return 'Indica la data di fine prima dell’orario di fine.';
+    if (period.start_time && !normalizeMedicationTime(period.start_time)) return 'Inserisci un orario di avvio valido per il primo giorno.';
+    if (period.end_time && !normalizeMedicationTime(period.end_time)) return 'Inserisci un orario di fine valido per l’ultimo giorno.';
+    if (start && start === end && period.start_time && period.end_time && period.end_time < period.start_time) {
+      return 'L’ora di fine deve essere uguale o successiva all’ora di avvio se il periodo dura un solo giorno.';
+    }
     if (periods.length > 1 && !start) return 'Indica la data di inizio di questo periodo.';
 
     if (index > 0) {
@@ -1799,6 +2006,8 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         .map((value) => ({
           start_date: value['start_date'] ? String(value['start_date']) : null,
           end_date: value['end_date'] ? String(value['end_date']) : null,
+          start_time: value['start_time'] ? String(value['start_time']) : null,
+          end_time: value['end_time'] ? String(value['end_time']) : null,
           dosage: String(value['dosage'] ?? ''),
           formulation: value['formulation'] ? String(value['formulation']) : null,
           spray_count: value['spray_count'] == null ? null : Number(value['spray_count']),
@@ -1810,6 +2019,8 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     return [{
       start_date: row['start_date'] ? String(row['start_date']) : null,
       end_date: row['end_date'] ? String(row['end_date']) : null,
+      start_time: null,
+      end_time: null,
       dosage: String(row['dosage'] ?? ''),
       formulation: row['formulation'] ? String(row['formulation']) : null,
       spray_count: row['spray_count'] == null ? null : Number(row['spray_count']),
@@ -2472,6 +2683,8 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.selectedDocuments.set([]);
     this.associatedFiles = [];
     this.additionalMedicationSchedules.set([]);
+    this.medicationDurationValue.set(null);
+    this.medicationDurationUnit.set('Giorni');
     this.attachedFile = null;
     this.attachmentModified = false;
     this.pdfTextSeed = '';
@@ -2629,6 +2842,8 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.form = {};
     this.documentSearchResults.set([]);
     this.medicationScopePrompt.set(false);
+    this.medicationDurationValue.set(null);
+    this.medicationDurationUnit.set('Giorni');
     this.selectedDocuments.set([]);
     this.documentLinksLoading.set(false);
     this.associatedFiles = [];
@@ -2657,6 +2872,8 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       for (const key of [
         'start_date',
         'end_date',
+        'start_time',
+        'end_time',
         'dosage',
         'formulation',
         'spray_count',
@@ -2670,6 +2887,8 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       this.additionalMedicationSchedules.set(savedSchedules.slice(1).map((period) => ({
         start_date: period.start_date ?? '',
         end_date: period.end_date ?? '',
+        start_time: period.start_time ?? '',
+        end_time: period.end_time ?? '',
         dosage: period.dosage,
         formulation: period.formulation ?? '',
         spray_count: period.spray_count == null ? '' : String(period.spray_count),
@@ -2818,6 +3037,8 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       output.push({
         start_date: period.start_date || null,
         end_date: period.end_date || null,
+        start_time: period.start_time || null,
+        end_time: period.end_time || null,
         dosage: period.dosage.trim(),
         formulation: formulation || null,
         spray_count: sprayCount,
@@ -2859,11 +3080,15 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         return [{ scheduledTime, actualTime }];
       });
       if (!slots.length) continue;
+      const firstDayStartTime = period.start_time ? normalizeMedicationTime(period.start_time) : null;
+      const lastDayEndTime = period.end_time ? normalizeMedicationTime(period.end_time) : null;
       const [year, month, day] = start.split('-').map(Number);
       const cursor = new Date(year, month - 1, day);
       while (medicationDateKey(cursor) <= lastDate) {
         const scheduledDate = medicationDateKey(cursor);
         for (const slot of slots) {
+          if (scheduledDate === start && firstDayStartTime && slot.scheduledTime < firstDayStartTime) continue;
+          if (scheduledDate === end && lastDayEndTime && slot.scheduledTime > lastDayEndTime) continue;
           const [hour, minute] = slot.actualTime.split(':').map(Number);
           const takenAt = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), hour, minute).toISOString();
           doses.push({ scheduledDate, scheduledTime: slot.scheduledTime, takenAt });
@@ -2923,6 +3148,8 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         this.saving.set(false);
         return;
       }
+      delete value['start_time'];
+      delete value['end_time'];
       const editingRow = this.editingId
         ? this.data.rows().find((row) => row.id === this.editingId)
         : undefined;

@@ -33,6 +33,8 @@ interface PreviewItem {
 interface MedicationSchedulePeriod {
   start_date: string;
   end_date: string;
+  start_time: string;
+  end_time: string;
   dosage: string;
   schedule_times: string;
 }
@@ -124,6 +126,8 @@ export class CalendarPreviewComponent implements OnInit {
             const date = dateKey(cursor);
             for (const slot of times) {
               const time = slot.start;
+              if (date === periodStart && period.start_time && time < period.start_time) continue;
+              if (date === periodEnd && period.end_time && time > period.end_time) continue;
               const dose = doses.find((candidate) => candidate.row['is_spot'] !== true && candidate.row['scheduled_date'] === date && String(candidate.row['scheduled_time'] ?? '').slice(0, 5) === time);
               const taken = !!dose;
               output.push({
@@ -452,6 +456,8 @@ function medicationSchedulePeriods(row: SearchableDiaryItem['row']): MedicationS
       .map((value) => ({
         start_date: String(value['start_date'] ?? '').slice(0, 10),
         end_date: String(value['end_date'] ?? '').slice(0, 10),
+        start_time: String(value['start_time'] ?? ''),
+        end_time: String(value['end_time'] ?? ''),
         dosage: String(value['dosage'] ?? row['dosage'] ?? ''),
         schedule_times: String(value['schedule_times'] ?? ''),
       }));
@@ -460,6 +466,8 @@ function medicationSchedulePeriods(row: SearchableDiaryItem['row']): MedicationS
   return [{
     start_date: String(row['start_date'] ?? '').slice(0, 10),
     end_date: String(row['end_date'] ?? '').slice(0, 10),
+    start_time: '',
+    end_time: '',
     dosage: String(row['dosage'] ?? ''),
     schedule_times: String(row['schedule_times'] ?? ''),
   }];

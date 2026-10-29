@@ -1226,6 +1226,8 @@ function toEvents(entries: SearchableDiaryItem[], month: Date): CalendarEvent[] 
           const date = dateKey(cursor);
           for (const slot of times) {
             const time = slot.start;
+            if (date === periodStart && period.start_time && time < period.start_time) continue;
+            if (date === periodEnd && period.end_time && time > period.end_time) continue;
             const dose = entries.find((item) => item.section === 'medication_doses' &&
               item.row['is_spot'] !== true &&
               item.row['medication_id'] === row.id && item.row['scheduled_date'] === date &&
@@ -1280,7 +1282,7 @@ function toEvents(entries: SearchableDiaryItem[], month: Date): CalendarEvent[] 
 }
 function medicationSchedulePeriods(
   row: DiaryRow,
-): Array<{ start_date: string; end_date: string; dosage: string; schedule_times: string }> {
+): Array<{ start_date: string; end_date: string; start_time: string; end_time: string; dosage: string; schedule_times: string }> {
   const stored = row['schedule_periods'];
   if (Array.isArray(stored) && stored.length) {
     const periods = stored
@@ -1288,6 +1290,8 @@ function medicationSchedulePeriods(
       .map((value) => ({
         start_date: String(value['start_date'] ?? '').slice(0, 10),
         end_date: String(value['end_date'] ?? '').slice(0, 10),
+        start_time: String(value['start_time'] ?? ''),
+        end_time: String(value['end_time'] ?? ''),
         dosage: String(value['dosage'] ?? row['dosage'] ?? ''),
         schedule_times: String(value['schedule_times'] ?? ''),
       }));
@@ -1296,6 +1300,8 @@ function medicationSchedulePeriods(
   return [{
     start_date: String(row['start_date'] ?? '').slice(0, 10),
     end_date: String(row['end_date'] ?? '').slice(0, 10),
+    start_time: '',
+    end_time: '',
     dosage: String(row['dosage'] ?? ''),
     schedule_times: String(row['schedule_times'] ?? ''),
   }];
