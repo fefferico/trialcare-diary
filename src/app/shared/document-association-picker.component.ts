@@ -1,11 +1,12 @@
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, signal } from '@angular/core';
 import { DiaryRow } from '../models/diary.models';
+import { DocumentScannerComponent } from '../documents/document-scanner.component';
 
 @Component({
   selector: 'tc-document-association-picker',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, DocumentScannerComponent],
   template: `
     <section class="form-field rounded-xl border border-slate-200 p-3 dark:border-slate-700">
       <div>
@@ -58,6 +59,12 @@ import { DiaryRow } from '../models/diary.models';
         <span>Aggiungi file</span>
         <input class="sr-only" type="file" multiple accept=".pdf,image/*" (change)="addFiles($event)" />
       </label>
+      <button type="button" class="button-secondary ml-2" (click)="scannerOpen.set(!scannerOpen())">
+        {{ scannerOpen() ? 'Chiudi scanner' : 'Scansiona pagine' }}
+      </button>
+      @if (scannerOpen()) {
+        <tc-document-scanner class="mt-3 block" (completed)="addScannedFile($event)" (dismiss)="scannerOpen.set(false)" />
+      }
       @if (files.length) {
         <ul class="mt-2 space-y-1 text-xs text-slate-600 dark:text-slate-300">
           @for (file of files; track $index) {
@@ -77,6 +84,7 @@ import { DiaryRow } from '../models/diary.models';
   `,
 })
 export class DocumentAssociationPickerComponent {
+  readonly scannerOpen = signal(false);
   @Input() documents: DiaryRow[] = [];
   @Input() selectedDocuments: DiaryRow[] = [];
   @Input() files: File[] = [];
@@ -121,6 +129,11 @@ export class DocumentAssociationPickerComponent {
     const added = Array.from(input.files ?? []);
     this.filesChange.emit([...this.files, ...added]);
     input.value = '';
+  }
+
+  addScannedFile(file: File): void {
+    this.filesChange.emit([...this.files, file]);
+    this.scannerOpen.set(false);
   }
 
   removeFile(index: number): void {

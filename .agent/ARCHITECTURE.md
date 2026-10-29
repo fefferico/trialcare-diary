@@ -1,6 +1,6 @@
 # Architecture Map
 
-> Aggiornato automaticamente il 29/10/2026, 20:04:21.
+> Aggiornato automaticamente il 29/10/2026, 20:13:54.
 
 ## Struttura
 
@@ -32,6 +32,7 @@
 - [Toast Service](../src/app/core/toast.service.ts)
 - [Ui State Service](../src/app/core/ui-state.service.ts)
 - [Dashboard Component](../src/app/dashboard/dashboard.component.ts)
+- [Document Scanner Component](../src/app/documents/document-scanner.component.ts)
 - [Image To Pdf Component](../src/app/documents/image-to-pdf.component.ts)
 - [Pdf Redaction Component](../src/app/documents/pdf-redaction.component.ts)
 - [Calendar Event Form Dialog Component](../src/app/features/calendar/calendar-event-form-dialog.component.html)

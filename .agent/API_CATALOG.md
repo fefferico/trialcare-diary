@@ -1,6 +1,6 @@
 # API Catalog
 
-> Generato da `npm run update-context` il 29/10/2026, 20:04:21.
+> Generato da `npm run update-context` il 29/10/2026, 20:13:54.
 
 ## Servizi
 
@@ -175,6 +175,7 @@ File: [src/app/core/ui-state.service.ts](../src/app/core/ui-state.service.ts)
 - [LoginComponent](../src/app/auth/login.component.ts)
 - [CalendarPreviewComponent](../src/app/components/calendar-preview/calendar-preview.component.ts)
 - [DashboardComponent](../src/app/dashboard/dashboard.component.ts)
+- [DocumentScannerComponent](../src/app/documents/document-scanner.component.ts)
 - [ImageToPdfComponent](../src/app/documents/image-to-pdf.component.ts)
 - [PdfRedactionComponent](../src/app/documents/pdf-redaction.component.ts)
 - [CalendarEventFormDialogComponent](../src/app/features/calendar/calendar-event-form-dialog.component.ts)

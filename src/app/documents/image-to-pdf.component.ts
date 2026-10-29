@@ -264,7 +264,7 @@ export class ImageToPdfComponent implements OnChanges, OnDestroy {
       const sideways = this.rotation % 180 !== 0;
       const orientedWidth = sideways ? source.naturalHeight : source.naturalWidth;
       const orientedHeight = sideways ? source.naturalWidth : source.naturalHeight;
-      const outputScale = Math.min(1, 4000 / Math.max(orientedWidth, orientedHeight));
+      const outputScale = Math.min(1, 3200 / Math.max(orientedWidth, orientedHeight));
       const fullWidth = orientedWidth * outputScale;
       const fullHeight = orientedHeight * outputScale;
       const scaleX = fullWidth / preview.width;
@@ -294,13 +294,8 @@ export class ImageToPdfComponent implements OnChanges, OnDestroy {
       );
       context.restore();
 
-      const jpeg = await new Promise<Blob>((resolve, reject) => {
-        cropped.toBlob(
-          (blob) => (blob ? resolve(blob) : reject(new Error('image-encoding-failed'))),
-          'image/jpeg',
-          0.94,
-        );
-      });
+      const maxJpegBytes = Math.min(4 * 1024 * 1024, Math.max(160 * 1024, this.file.size * 0.88));
+      const optimized = await optimizeJpeg(cropped, maxJpegBytes);
       const pdf = new jsPDF({
         orientation: cropWidth > cropHeight ? 'landscape' : 'portrait',
         unit: 'mm',
@@ -311,12 +306,12 @@ export class ImageToPdfComponent implements OnChanges, OnDestroy {
       const pageHeight = pdf.internal.pageSize.getHeight();
       const margin = 8;
       const fit = Math.min(
-        (pageWidth - margin * 2) / cropWidth,
-        (pageHeight - margin * 2) / cropHeight,
+        (pageWidth - margin * 2) / optimized.width,
+        (pageHeight - margin * 2) / optimized.height,
       );
-      const imageWidth = cropWidth * fit;
-      const imageHeight = cropHeight * fit;
-      const imageData = new Uint8Array(await jpeg.arrayBuffer());
+      const imageWidth = optimized.width * fit;
+      const imageHeight = optimized.height * fit;
+      const imageData = new Uint8Array(await optimized.blob.arrayBuffer());
       pdf.addImage(
         imageData,
         'JPEG',
@@ -425,4 +420,45 @@ export class ImageToPdfComponent implements OnChanges, OnDestroy {
     URL.revokeObjectURL(this.objectUrl);
     this.objectUrl = '';
   }
+}
+
+async function optimizeJpeg(
+  source: HTMLCanvasElement,
+  targetBytes: number,
+): Promise<{ blob: Blob; width: number; height: number }> {
+  let canvas = source;
+  let width = source.width;
+  let height = source.height;
+  let blob = await canvasToJpeg(canvas, 0.96);
+
+  for (const quality of [0.94, 0.92, 0.9, 0.88]) {
+    if (blob.size <= targetBytes) break;
+    blob = await canvasToJpeg(canvas, quality);
+  }
+
+  for (let attempt = 0; blob.size > targetBytes && attempt < 3 && Math.max(width, height) > 1200; attempt++) {
+    const scale = Math.max(0.72, Math.min(0.94, Math.sqrt(targetBytes / blob.size) * 0.96));
+    width = Math.max(1, Math.round(width * scale));
+    height = Math.max(1, Math.round(height * scale));
+    const resized = document.createElement('canvas');
+    resized.width = width;
+    resized.height = height;
+    const context = resized.getContext('2d');
+    if (!context) throw new Error('canvas-unavailable');
+    context.drawImage(source, 0, 0, width, height);
+    canvas = resized;
+    blob = await canvasToJpeg(canvas, 0.92);
+  }
+
+  return { blob, width, height };
+}
+
+function canvasToJpeg(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new Error('image-encoding-failed'))),
+      'image/jpeg',
+      quality,
+    );
+  });
 }

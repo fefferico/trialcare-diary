@@ -13,6 +13,7 @@ import { SupabaseClientService } from '../core/supabase-client.service';
 import { StorageService } from '../core/storage.service';
 import { PdfRedactionComponent } from '../documents/pdf-redaction.component';
 import { ImageToPdfComponent } from '../documents/image-to-pdf.component';
+import { DocumentScannerComponent } from '../documents/document-scanner.component';
 import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { AppDropdownComponent } from '../shared/app-dropdown.component';
 import { AppDatepickerComponent } from '../shared/app-datepicker.component';
@@ -276,6 +277,7 @@ function applyMedicationScheduleScope(
     TooltipDirective,
     PdfRedactionComponent,
     ImageToPdfComponent,
+    DocumentScannerComponent,
   ],
   template: `
     @if (section) {
@@ -1118,6 +1120,14 @@ function applyMedicationScheduleScope(
                           Il testo estratto o scritto a mano viene salvato con il documento per la
                           ricerca.</small
                         >
+                        @if (section.id === 'documents') {
+                          <button type="button" class="button-secondary mt-2" (click)="documentScannerOpen.set(!documentScannerOpen())">
+                            {{ documentScannerOpen() ? 'Chiudi scanner' : 'Scansiona con la fotocamera' }}
+                          </button>
+                          @if (documentScannerOpen()) {
+                            <tc-document-scanner class="mt-3 block" (completed)="setScannedDocument($event)" (dismiss)="documentScannerOpen.set(false)" />
+                          }
+                        }
                         @if (section.id === 'documents' && isImageAttachment()) {
                           <tc-image-to-pdf [file]="attachedFile!" (converted)="setImagePdfFile($event)" />
                         }
@@ -1720,6 +1730,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   private readonly storage = inject(StorageService);
   private readonly confirmation = inject(ConfirmationService);
   readonly isFormOpen = signal(false);
+  readonly documentScannerOpen = signal(false);
   readonly medicationScopePrompt = signal(false);
   readonly detailRow = signal<DiaryRow | null>(null);
   readonly contactAvatarUrls = signal<Record<string, string>>({});
@@ -2617,6 +2628,10 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.pdfTextForSaving = null;
     this.documentTextProcessing.set(true);
   }
+  setScannedDocument(file: File): void {
+    this.setImagePdfFile(file);
+    this.documentScannerOpen.set(false);
+  }
   setPdfTextForSaving(value: { file: File; text: string }): void {
     if (value.file === this.attachedFile) this.pdfTextForSaving = value;
   }
@@ -2692,6 +2707,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.pdfTextSeed = '';
     this.pdfTextForSaving = null;
     this.documentTextProcessing.set(false);
+    this.documentScannerOpen.set(false);
     this.clearVoice();
     this.releaseContactAvatarPreview();
     this.contactAvatarFile = null;
@@ -2918,6 +2934,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.documentSearchRequest++;
     this.documentSearchLoading.set(false);
     this.stopRecording();
+    this.documentScannerOpen.set(false);
     this.clearVoice();
     this.attachedFile = null;
     this.attachmentModified = false;
