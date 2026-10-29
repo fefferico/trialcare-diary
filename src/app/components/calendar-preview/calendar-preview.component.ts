@@ -84,6 +84,30 @@ export class CalendarPreviewComponent implements OnInit {
       .filter((item) => isBetween(item.date, this.today, this.windowEnd))
       .sort(byDateAndTime),
     ...this.entries()
+      .filter((item) => item.section === 'medication_doses' && item.row['is_spot'] === true)
+      .map((item): PreviewItem => {
+        const medication = this.entries().find((entry) =>
+          entry.section === 'medications' && entry.row.id === item.row['medication_id'],
+        );
+        const date = String(item.row['scheduled_date'] ?? '').slice(0, 10);
+        const time = String(item.row['scheduled_time'] ?? '').slice(0, 5);
+        const dosage = String(item.row['administered_dosage'] ?? '').trim();
+        return {
+          id: `spot-dose-${item.row.id}`,
+          highlightId: String(medication?.row.id ?? ''),
+          childId: item.row['child_id'] ? String(item.row['child_id']) : undefined,
+          title: `${String(medication?.row['name'] ?? 'Farmaco')} · Dose spot`,
+          date,
+          time,
+          status: 'Somministrata',
+          doseTaken: true,
+          kind: ['Somministrazione fuori programma', time, dosage].filter(Boolean).join(' · '),
+          path: '/calendar',
+        };
+      })
+      .filter((item) => isBetween(item.date, this.today, this.windowEnd))
+      .sort(byDateAndTime),
+    ...this.entries()
       .filter((item) => item.section === 'medications')
       .flatMap((item) => {
         const periods = medicationSchedulePeriods(item.row);
@@ -100,7 +124,7 @@ export class CalendarPreviewComponent implements OnInit {
             const date = dateKey(cursor);
             for (const slot of times) {
               const time = slot.start;
-              const dose = doses.find((candidate) => candidate.row['scheduled_date'] === date && String(candidate.row['scheduled_time'] ?? '').slice(0, 5) === time);
+              const dose = doses.find((candidate) => candidate.row['is_spot'] !== true && candidate.row['scheduled_date'] === date && String(candidate.row['scheduled_time'] ?? '').slice(0, 5) === time);
               const taken = !!dose;
               output.push({
                 id: `dose-${item.row.id}-${date}-${time}`,
@@ -153,6 +177,7 @@ export class CalendarPreviewComponent implements OnInit {
             })
             .flatMap((period) => parseScheduleTimes(period.schedule_times).map((slot) => {
             const dose = this.entries().find((entry) => entry.section === 'medication_doses' &&
+              entry.row['is_spot'] !== true &&
               entry.row['medication_id'] === item.row.id && entry.row['scheduled_date'] === this.today &&
               String(entry.row['scheduled_time'] ?? '').slice(0, 5) === slot.start);
             const takenAt = dose?.row['taken_at'] ? new Date(String(dose.row['taken_at'])) : null;

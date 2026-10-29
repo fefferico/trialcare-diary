@@ -46,6 +46,7 @@ interface CalendarEvent {
   status?: string;
   skippedReason?: string;
   medicationId?: string;
+  isSpotDose?: boolean;
   doseTaken?: boolean;
   takenAt?: string;
   doseSkipped?: boolean;
@@ -395,7 +396,7 @@ export class CalendarComponent implements OnInit, OnDestroy, CalendarEventFormCo
     return '';
   }
   doseWindowState(event: CalendarEvent): 'ok' | 'tolerance' | 'out' {
-    if (!event.medicationId || event.doseSkipped || this.isSkipped(event)) return 'ok';
+    if (!event.medicationId || event.isSpotDose || event.doseSkipped || this.isSkipped(event)) return 'ok';
     const scheduledDate = parseDate(event.date);
     if (!scheduledDate || !event.time) return 'ok';
     const [startHour, startMinute] = event.time.split(':').map(Number);
@@ -462,7 +463,7 @@ export class CalendarComponent implements OnInit, OnDestroy, CalendarEventFormCo
     return (event.status ?? '').trim().toLocaleLowerCase('it') === 'saltato';
   }
   isCompletedDose(event: CalendarEvent): boolean {
-    return !!event.medicationId && !!event.doseTaken;
+    return !!event.isSpotDose || (!!event.medicationId && !!event.doseTaken);
   }
   isCompleted(event: CalendarEvent): boolean {
     if (this.isSkipped(event) || this.isCanceled(event)) return false;
@@ -484,6 +485,7 @@ export class CalendarComponent implements OnInit, OnDestroy, CalendarEventFormCo
     return this.isSkipped(event) || this.isCanceled(event);
   }
   doseTakenLabel(event: CalendarEvent): string {
+    if (event.isSpotDose) return 'Somministrazione spot';
     if (!event.takenAt) return 'Fatto';
     const time = new Date(event.takenAt);
     if (Number.isNaN(time.getTime())) return 'Fatto';
@@ -1214,6 +1216,7 @@ function toEvents(entries: SearchableDiaryItem[], month: Date): CalendarEvent[] 
           for (const slot of times) {
             const time = slot.start;
             const dose = entries.find((item) => item.section === 'medication_doses' &&
+              item.row['is_spot'] !== true &&
               item.row['medication_id'] === row.id && item.row['scheduled_date'] === date &&
               String(item.row['scheduled_time'] ?? '').slice(0, 5) === time);
             output.push({
@@ -1232,6 +1235,26 @@ function toEvents(entries: SearchableDiaryItem[], month: Date): CalendarEvent[] 
             });
           }
         }
+      }
+      for (const { row: dose } of entries.filter((item) =>
+        item.section === 'medication_doses' && item.row['is_spot'] === true && item.row['medication_id'] === row.id,
+      )) {
+        const date = String(dose['scheduled_date'] ?? '').slice(0, 10);
+        if (!validDate(date) || date < monthStart || date > monthEnd) continue;
+        const time = String(dose['scheduled_time'] ?? '').slice(0, 5);
+        const dosage = String(dose['administered_dosage'] ?? '').trim();
+        output.push({
+          ...makeEvent(row, section, date),
+          id: `spot-dose-${dose.id}`,
+          title: `${String(row['name'] ?? 'Farmaco')} · Dose spot`,
+          time,
+          category: 'Somministrazione fuori programma',
+          detail: dosage ? `Dosaggio: ${dosage}` : '',
+          medicationId: row.id,
+          isSpotDose: true,
+          doseTaken: true,
+          takenAt: String(dose['taken_at'] ?? ''),
+        });
       }
       if (validDate(start) && start >= today) output.push(makeEvent(row, section, start));
       if (validDate(end))

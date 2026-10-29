@@ -289,7 +289,7 @@ export const SECTIONS: SectionDefinition[] = [
     shortLabel: 'Contatti',
     title: 'Contatti utili',
     description:
-      'Numeri e riferimenti del team clinico, dei servizi e delle persone da raggiungere al volo.',
+      'Foto, numeri e riferimenti del team clinico, dei servizi e delle persone da raggiungere al volo.',
     icon: 'contacts',
     fields: [
       { key: 'name', label: 'Nome e cognome', kind: 'text', required: true },

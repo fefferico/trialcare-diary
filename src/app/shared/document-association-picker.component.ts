@@ -13,7 +13,7 @@ import { DiaryRow } from '../models/diary.models';
         <p class="mt-1 text-xs text-slate-500">Cerca nell’archivio oppure aggiungi nuovi file.</p>
       </div>
       <input class="field-control mt-3" type="search" maxlength="120" autocomplete="off"
-        placeholder="Cerca per titolo (almeno 2 caratteri)" [value]="query"
+        placeholder="Cerca per titolo o testo OCR (almeno 2 caratteri)" [value]="query"
         (input)="search($any($event.target).value)" aria-label="Cerca documenti già caricati" />
       @if (selectedDocuments.length) {
         <div class="mt-3 space-y-1">
@@ -37,8 +37,13 @@ import { DiaryRow } from '../models/diary.models';
             <label class="flex cursor-pointer items-start gap-2 text-sm">
               <input type="checkbox" class="mt-1 accent-teal-700" [checked]="isSelected(doc.id)"
                 (change)="toggle(doc, $any($event.target).checked)" />
-              <span class="min-w-0"><span class="block truncate font-medium">{{ doc['title'] || 'Documento' }}</span>
+              <span class="min-w-0 flex-1"><span class="block truncate font-medium">{{ doc['title'] || 'Documento' }}</span>
                 <span class="text-xs text-slate-500">{{ doc['category'] || 'Documento' }}@if (doc['date']) { · {{ documentDate(doc) }} }</span>
+                @if (doc['ocr_snippet']) {
+                  <span class="mt-1 block line-clamp-2 whitespace-normal text-xs leading-4 text-slate-600 dark:text-slate-300">
+                    <span class="font-semibold">Contesto OCR:</span> {{ doc['ocr_snippet'] }}
+                  </span>
+                }
               </span>
             </label>
           }

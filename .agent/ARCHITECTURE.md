@@ -1,6 +1,6 @@
 # Architecture Map
 
-> Aggiornato automaticamente il 27/10/2026, 22:08:58.
+> Aggiornato automaticamente il 29/10/2026, 12:34:41.
 
 ## Struttura
 
@@ -51,3 +51,4 @@
 - [App Toast Container Component](../src/app/shared/app-toast-container.component.ts)
 - [Tooltip Directive](../src/app/shared/directives/tooltip.directive.ts)
 - [Document Association Picker Component](../src/app/shared/document-association-picker.component.ts)
+- [Highlight Pipe](../src/app/shared/highlight.pipe.ts)

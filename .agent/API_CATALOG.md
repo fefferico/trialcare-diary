@@ -1,6 +1,6 @@
 # API Catalog
 
-> Generato da `npm run update-context` il 27/10/2026, 22:08:57.
+> Generato da `npm run update-context` il 29/10/2026, 12:34:41.
 
 ## Servizi
 
@@ -46,6 +46,15 @@ File: [src/app/core/diary-data.service.ts](../src/app/core/diary-data.service.ts
 - `loadAllForExport()`: `Promise<DiaryExportData>`
 - `localMeasurements(childId?: string)`: `DiaryRow[]`
 - `saveMeasurement(childId: string, value: Record<string, unknown>)`: `Promise<boolean>`
+- `loadMedicationDoses(medicationId: string)`: `Promise<DiaryRow[]>`
+- `recordMedicationSpotDose(
+    medicationId: string,
+    childId: string,
+    scheduledDate: string,
+    scheduledTime: string,
+    takenAt: string,
+    administeredDosage: string,
+  )`: `Promise<DiaryRow | null>`
 - `markMedicationDoseTaken(
     medicationId: string,
     childId: string,
@@ -131,6 +140,9 @@ File: [src/app/core/storage.service.ts](../src/app/core/storage.service.ts)
 - `downloadDocument(path: string)`: `Promise<Blob | null>`
 - `removeDocument(path: string)`: `Promise<boolean>`
 - `uploadVoice(file: File, childId: string)`: `Promise<string | null>`
+- `saveContactAvatar(file: File, childId: string, contactId: string)`: `Promise<string | null>`
+- `loadContactAvatar(path: string)`: `Promise<string | null>`
+- `removeContactAvatar(path: string)`: `Promise<boolean>`
 - `saveAvatar(file: File)`: `Promise<string | null>`
 - `removeAvatar()`: `Promise<void>`
 - `loadAvatar()`: `Promise<string | null>`

@@ -1,10 +1,10 @@
 # Project Health
 
-> Generato il 27/10/2026, 22:08:58.
+> Generato il 29/10/2026, 12:34:41.
 
 - Servizi Angular: 11
 - Componenti standalone: 18
-- File applicativi: 38
+- File applicativi: 39
 
 ## TODO e FIXME
 
@@ -36,3 +36,7 @@ Nessun commento TODO/FIXME trovato.
 - [20261016100000_trialcare_calendar_event_contacts.sql](../supabase/migrations/20261016100000_trialcare_calendar_event_contacts.sql)
 - [20261016110000_trialcare_contact_website.sql](../supabase/migrations/20261016110000_trialcare_contact_website.sql)
 - [20261027100000_trialcare_medicine_cabinet_opened_expiry.sql](../supabase/migrations/20261027100000_trialcare_medicine_cabinet_opened_expiry.sql)
+- [20261029102553_trialcare_contact_avatars.sql](../supabase/migrations/20261029102553_trialcare_contact_avatars.sql)
+- [20261029120000_trialcare_medication_spot_doses.sql](../supabase/migrations/20261029120000_trialcare_medication_spot_doses.sql)
+- [20261029130000_trialcare_document_fuzzy_search.sql](../supabase/migrations/20261029130000_trialcare_document_fuzzy_search.sql)
+- [20261029140000_trialcare_document_search_snippets.sql](../supabase/migrations/20261029140000_trialcare_document_search_snippets.sql)

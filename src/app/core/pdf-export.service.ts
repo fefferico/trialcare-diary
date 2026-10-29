@@ -73,7 +73,7 @@ export class PdfExportService {
       health_events: ['category', 'time', 'severity', 'notes', 'location'],
       calendar_events: ['time', 'specialist', 'location', 'status', 'notes'],
       medications: ['dosage', 'formulation', 'schedule_times', 'start_date', 'end_date', 'notes'],
-      medication_doses: ['scheduled_time', 'status', 'taken_at', 'skipped_reason'],
+      medication_doses: ['scheduled_time', 'administered_dosage', 'status', 'taken_at', 'skipped_reason'],
       therapies: ['therapist', 'facility', 'frequency', 'notes'],
       orthoses: ['category', 'size', 'laterality', 'notes'],
       documents: ['category', 'title', 'date'],
@@ -83,7 +83,7 @@ export class PdfExportService {
     const fieldLabels: Record<string, string> = {
       category: 'Tipo', time: 'Ora', severity: 'Intensità', notes: 'Note', location: 'Luogo', specialist: 'Specialista',
       status: 'Stato', dosage: 'Dosaggio', formulation: 'Formulazione', schedule_times: 'Orari previsti',
-      start_date: 'Dal', end_date: 'Al', scheduled_time: 'Ora prevista', taken_at: 'Somministrata alle', skipped_reason: 'Motivo dose saltata',
+      start_date: 'Dal', end_date: 'Al', scheduled_time: 'Ora prevista', administered_dosage: 'Dosaggio somministrato', taken_at: 'Somministrata alle', skipped_reason: 'Motivo dose saltata',
       therapist: 'Terapista', facility: 'Struttura', frequency: 'Frequenza', size: 'Misura',
       laterality: 'Lato', weight_kg: 'Peso (kg)', height_cm: 'Altezza (cm)',
       head_circumference_cm: 'Circonferenza testa (cm)', amount: 'Importo (€)', distance_km: 'Distanza (km)',
@@ -119,15 +119,19 @@ export class PdfExportService {
           return true;
         })
         .map((field) => ({
-          label: fieldLabels[field] ?? field,
+          label: field === 'scheduled_time' && row['is_spot'] === true
+            ? 'Ora della somministrazione'
+            : fieldLabels[field] ?? field,
           value: this.formatVisitValue(field, row[field]),
         }));
+      if (key === 'medication_doses' && row['is_spot'] === true)
+        details.unshift({ label: 'Tipo', value: 'Somministrazione fuori programma' });
 
       const entry: VisitSummaryEntry = {
         id: row.id,
         date: String(row['date'] ?? row['scheduled_date'] ?? row['start_date'] ?? '').slice(0, 10),
         title: key === 'medication_doses'
-          ? 'Somministrazione'
+          ? row['is_spot'] === true ? 'Somministrazione spot' : 'Somministrazione'
           : String(row['title'] ?? row['name'] ?? labels[key]),
         schedulePeriods,
         details,

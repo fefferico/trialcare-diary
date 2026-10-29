@@ -19,6 +19,7 @@ import { AppDatepickerComponent } from '../shared/app-datepicker.component';
 import { AppTimepickerComponent } from '../shared/app-timepicker.component';
 import { AppAutocompleteComponent } from '../shared/app-autocomplete.component';
 import { DocumentAssociationPickerComponent } from '../shared/document-association-picker.component';
+import { HighlightPipe } from '../shared/highlight.pipe';
 import { TooltipDirective } from '../shared/directives/tooltip.directive';
 import {
   DiaryRow,
@@ -104,6 +105,7 @@ function normalizeMedicationTime(value: string): string | null {
     AppTimepickerComponent,
     AppAutocompleteComponent,
     DocumentAssociationPickerComponent,
+    HighlightPipe,
     TooltipDirective,
     PdfRedactionComponent,
     ImageToPdfComponent,
@@ -515,7 +517,17 @@ function normalizeMedicationTime(value: string): string | null {
                 [attr.tabindex]="highlightedId() === row['id'] ? -1 : null"
               >
                 <div class="flex items-start justify-between gap-4">
-                  <div class="min-w-0">
+                  <div class="flex min-w-0 items-start gap-3">
+                    @if (section.id === 'contacts') {
+                      <div class="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-teal-100 text-sm font-semibold text-teal-800 dark:bg-teal-900/50 dark:text-teal-200" aria-hidden="true">
+                        @if (contactAvatarUrls()[row.id]) {
+                          <img class="h-full w-full object-cover" [src]="contactAvatarUrls()[row.id]" alt="" />
+                        } @else {
+                          {{ contactAvatarInitials(value(row, 'name')) }}
+                        }
+                      </div>
+                    }
+                    <div class="min-w-0">
                     <p
                       class="text-xs font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-300"
                     >
@@ -535,12 +547,13 @@ function normalizeMedicationTime(value: string): string | null {
                           'Voce del diario'
                       }}
                     </h2>
-                        @if (section.id === 'contacts' && value(row, 'role')) {
+                    @if (section.id === 'contacts' && value(row, 'role')) {
                       <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
                         <span class="mr-1 text-xs font-medium text-slate-400">Professione o ruolo:</span>
                         {{ value(row, 'role') }}
                       </p>
                     }
+                    </div>
                   </div>
                   <div class="flex gap-3">
                     <button
@@ -598,6 +611,15 @@ function normalizeMedicationTime(value: string): string | null {
                     }
                   }
                 </div>
+                @if (section.id === 'documents' && searchQuery().trim()) {
+                  @let ocrPreview = documentOcrPreview(row);
+                  @if (ocrPreview) {
+                    <div class="mt-3 rounded-xl border border-teal-100 bg-teal-50/70 p-3 dark:border-teal-900/60 dark:bg-teal-950/20">
+                      <p class="text-xs font-semibold text-teal-800 dark:text-teal-200">Contesto OCR</p>
+                      <p class="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-sm text-slate-700 dark:text-slate-200" [innerHTML]="ocrPreview | highlight: searchQuery()"></p>
+                    </div>
+                  }
+                }
                 @if (section.id === 'medicine_cabinet') {
                   @let expiry = medicineCabinetExpiry(row);
                   <div class="mt-3 flex flex-wrap items-center gap-2 text-xs">
@@ -776,7 +798,7 @@ function normalizeMedicationTime(value: string): string | null {
                     section.id === 'children'
                       ? 'Profilo bambino'
                       : section.id === 'contacts'
-                        ? 'Nuovo contatto'
+                        ? (isEditing() ? 'Modifica contatto' : 'Nuovo contatto')
                         : 'Aggiungi una voce'
                   }}
                 </h2>
@@ -799,6 +821,28 @@ function normalizeMedicationTime(value: string): string | null {
                     <strong class="block text-teal-900 dark:text-teal-200">Ambito del contatto</strong>
                     In quale gruppo ritrovarla: team clinico, centro trial, emergenze o altri ambiti.
                   </p>
+                </div>
+                <div class="flex items-center gap-4 rounded-2xl border border-slate-200 p-3 dark:border-slate-700 sm:col-span-2">
+                  <div class="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-teal-100 text-lg font-semibold text-teal-800 dark:bg-teal-900/50 dark:text-teal-200" aria-hidden="true">
+                    @if (contactAvatarPreviewSource()) {
+                      <img class="h-full w-full object-cover" [src]="contactAvatarPreviewSource()!" alt="" />
+                    } @else {
+                      {{ contactAvatarInitials(form['name'] || '') }}
+                    }
+                  </div>
+                  <div class="min-w-0 flex-1 space-y-2" (paste)="onContactAvatarPaste($event)">
+                    <div class="flex flex-col gap-2 sm:flex-row sm:items-end">
+                      <label class="form-field min-w-0 flex-1">
+                        <span>Foto del dottore o del contatto</span>
+                        <input class="field-control file:mr-3 file:rounded-lg file:border-0 file:bg-teal-50 file:px-3 file:py-2 file:font-medium file:text-teal-800" type="file" accept="image/jpeg,image/png,image/webp" (change)="selectContactAvatar($event)" />
+                      </label>
+                      <button type="button" class="button-secondary shrink-0" (click)="pasteContactAvatar()">Incolla immagine</button>
+                    </div>
+                    @if (contactAvatarPreviewSource()) {
+                      <button class="text-xs font-semibold text-rose-700 underline dark:text-rose-300" type="button" (click)="clearContactAvatar()">Rimuovi foto</button>
+                    }
+                    <p class="text-xs text-slate-500 dark:text-slate-400">JPEG, PNG o WebP, massimo 2 MB. Puoi anche usare Ctrl+V o Cmd+V dopo aver copiato un’immagine. La foto resta privata e collegata al profilo del bambino.</p>
+                  </div>
                 </div>
               }
               @if (section.id === 'medications') {
@@ -1086,6 +1130,21 @@ function normalizeMedicationTime(value: string): string | null {
               <button type="button" class="icon-button" aria-label="Chiudi" (click)="closeDetails()">×</button>
             </header>
             <div class="space-y-4 overflow-y-auto px-5 py-5">
+              @if (section.id === 'contacts') {
+                <div class="flex justify-center py-2">
+                  <div
+                    class="flex h-44 w-44 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-teal-100 text-4xl font-semibold text-teal-800 shadow-lg ring-4 ring-teal-100 dark:border-slate-800 dark:bg-teal-900/50 dark:text-teal-100 dark:ring-teal-900/50"
+                    role="img"
+                    [attr.aria-label]="'Avatar di ' + value(row, 'name')"
+                  >
+                    @if (contactAvatarUrls()[row.id]) {
+                      <img class="h-full w-full object-cover" [src]="contactAvatarUrls()[row.id]" alt="" />
+                    } @else {
+                      {{ contactAvatarInitials(value(row, 'name')) }}
+                    }
+                  </div>
+                </div>
+              }
               <dl class="grid gap-4 sm:grid-cols-2">
                 @for (field of detailFields(row); track field.key) {
                   @if (value(row, field.key)) {
@@ -1231,6 +1290,47 @@ function normalizeMedicationTime(value: string): string | null {
                   </form>
                 </section>
               }
+              @if (section.id === 'medications') {
+                <section class="space-y-3 border-t border-slate-100 pt-4 dark:border-slate-800" aria-labelledby="spot-dose-title">
+                  <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 id="spot-dose-title" class="font-semibold">Somministrazioni fuori programma</h3>
+                      <p class="mt-1 text-sm text-slate-500">Registra una dose occasionale senza modificare gli orari del piano.</p>
+                    </div>
+                    @if (!spotDoseFormOpen()) {
+                      <button type="button" class="button-secondary" (click)="openSpotDoseForm(row)">Registra dose spot</button>
+                    }
+                  </div>
+                  @if (spotDoseError()) { <p class="notice-error" role="alert">{{ spotDoseError() }}</p> }
+                  @if (spotDoseSaved()) { <p class="text-sm font-medium text-emerald-700 dark:text-emerald-300" role="status">Somministrazione spot registrata.</p> }
+                  @if (spotDoseFormOpen()) {
+                    <form class="grid gap-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-800/60 sm:grid-cols-2" (ngSubmit)="saveSpotDose(row)">
+                      <label class="form-field"><span>Data</span><app-datepicker label="Data della somministrazione" [value]="spotDoseForm.date" (dateChange)="spotDoseForm.date = $event" /></label>
+                      <label class="form-field"><span>Ora</span><app-timepicker label="Ora della somministrazione" [value]="spotDoseForm.time" (timeChange)="spotDoseForm.time = $event" /></label>
+                      <label class="form-field sm:col-span-2"><span>Dosaggio somministrato</span><input class="field-control" type="text" [(ngModel)]="spotDoseForm.dosage" name="spot_dose_dosage" [placeholder]="spotDoseFormDefault || 'Inserisci il dosaggio, se utile'" /></label>
+                      <p class="text-xs text-slate-500 sm:col-span-2">Il dosaggio del regime alla data scelta viene proposto come punto di partenza: controllalo e modificalo se necessario.</p>
+                      <div class="flex justify-end gap-2 sm:col-span-2">
+                        <button type="button" class="button-secondary" (click)="closeSpotDoseForm()">Annulla</button>
+                        <button type="submit" class="button-primary" [disabled]="savingSpotDose()">{{ savingSpotDose() ? 'Salvataggio…' : 'Registra somministrazione' }}</button>
+                      </div>
+                    </form>
+                  }
+                  @if (medicationDoseLoading()) {
+                    <p class="text-sm text-slate-500">Caricamento dello storico…</p>
+                  } @else if (detailMedicationDoses().length) {
+                    <ol class="divide-y divide-slate-100 rounded-xl border border-slate-100 dark:divide-slate-800 dark:border-slate-800">
+                      @for (dose of detailMedicationDoses(); track dose.id) {
+                        <li class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-3 py-2 text-sm">
+                          <time class="font-medium">{{ dose['scheduled_date'] }} · {{ spotDoseTime(dose) }}</time>
+                          @if (dose['administered_dosage']) { <span class="text-slate-600 dark:text-slate-300">{{ dose['administered_dosage'] }}</span> }
+                        </li>
+                      }
+                    </ol>
+                  } @else if (!spotDoseError()) {
+                    <p class="rounded-xl bg-slate-50 p-3 text-sm text-slate-500 dark:bg-slate-800/60">Nessuna somministrazione spot registrata per questo farmaco.</p>
+                  }
+                </section>
+              }
               @if ((section.id === 'medications' || section.id === 'orthoses') && detailDocuments().length) {
                 <section class="space-y-2 border-t border-slate-100 pt-4 dark:border-slate-800">
                   <h3 class="font-semibold">Documenti collegati</h3>
@@ -1296,10 +1396,20 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   private readonly confirmation = inject(ConfirmationService);
   readonly isFormOpen = signal(false);
   readonly detailRow = signal<DiaryRow | null>(null);
+  readonly contactAvatarUrls = signal<Record<string, string>>({});
+  readonly selectedContactAvatarPreview = signal<string | null>(null);
   readonly documentSearchResults = signal<DiaryRow[]>([]);
   readonly selectedDocuments = signal<DiaryRow[]>([]);
   readonly documentSearchLoading = signal(false);
   readonly detailDocuments = signal<DiaryRow[]>([]);
+  readonly detailMedicationDoses = signal<DiaryRow[]>([]);
+  readonly medicationDoseLoading = signal(false);
+  readonly spotDoseFormOpen = signal(false);
+  readonly savingSpotDose = signal(false);
+  readonly spotDoseError = signal('');
+  readonly spotDoseSaved = signal(false);
+  spotDoseForm = { date: '', time: '', dosage: '' };
+  spotDoseFormDefault = '';
   readonly saving = signal(false);
   private pendingHistoricalDoseMedicationId = '';
   readonly extracting = signal(false);
@@ -1314,6 +1424,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   readonly selectedChildName = signal('');
   readonly highlightedId = signal('');
   readonly searchQuery = signal('');
+  private readonly documentSearchPreviewCache = new Map<string, { query: string; source: string; preview: string }>();
   get supportsFuzzySearch(): boolean {
     return ['medications', 'medicine_cabinet', 'orthoses', 'health_events', 'therapies', 'documents', 'expenses', 'contacts'].includes(this.sectionId);
   }
@@ -1380,6 +1491,10 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   private analyser?: AnalyserNode;
   private spectrumFrame = 0;
   private editingId = '';
+  private editingContactRow: DiaryRow | null = null;
+  private contactAvatarFile: File | null = null;
+  private contactAvatarCleared = false;
+  private contactAvatarLoadVersion = 0;
   private editingDocumentRow: DiaryRow | null = null;
   private requestedChildId = '';
   private loadedUserId: string | null = null;
@@ -1665,6 +1780,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     if (this.documentSearchTimer) clearTimeout(this.documentSearchTimer);
     if (this.isFormOpen()) this.closeForm();
     else this.ui.resetBodyScroll();
+    this.clearContactAvatarUrls();
   }
   async refresh(): Promise<void> {
     if (this.sectionId === 'reports') {
@@ -1691,15 +1807,18 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         if (!error) this.data.rows.set((data ?? []) as DiaryRow[]);
         else this.data.error.set(error.message);
         this.data.syncing.set(false);
+        await this.loadContactAvatars();
         return;
       }
       await this.data.load(this.sectionId);
       this.data.rows.set(
         this.data.rows().filter((row) => row['child_id'] === this.selectedChildId()),
       );
+      await this.loadContactAvatars();
       return;
     }
     await this.data.load(this.sectionId);
+    await this.loadContactAvatars();
   }
   searchDocuments(query: string): void {
     if (this.documentSearchTimer) clearTimeout(this.documentSearchTimer);
@@ -1727,6 +1846,34 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       if (match) return `${match[1]}:${match[2]}`;
     }
     return String(value);
+  }
+  documentOcrPreview(row: DiaryRow): string {
+    if (this.sectionId !== 'documents') return '';
+    const query = normalizeSearch(this.searchQuery().trim());
+    const source = String(row['extracted_text'] ?? '');
+    if (!query || !source) return '';
+    const cached = this.documentSearchPreviewCache.get(row.id);
+    if (cached?.query === query && cached.source === source) return cached.preview;
+
+    const terms = query.split(/\s+/).filter(Boolean);
+    let match: RegExpExecArray | null = null;
+    for (const word of source.matchAll(/[\p{L}\p{N}]+/gu)) {
+      const normalizedWord = normalizeSearch(word[0]);
+      if (terms.some((term) => fuzzyTermMatch(term, normalizedWord))) {
+        match = word;
+        break;
+      }
+    }
+    if (!match) {
+      this.documentSearchPreviewCache.set(row.id, { query, source, preview: '' });
+      return '';
+    }
+
+    const start = Math.max(0, (match.index ?? 0) - 70);
+    const end = Math.min(source.length, start + 160);
+    const preview = `${start > 0 ? '…' : ''}${source.slice(start, end).trim()}${end < source.length ? '…' : ''}`;
+    this.documentSearchPreviewCache.set(row.id, { query, source, preview });
+    return preview;
   }
   visibleFields(row: DiaryRow): FieldDefinition[] {
     if (this.sectionId === 'reports')
@@ -1836,6 +1983,103 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   }
   setField(field: FieldDefinition, value: string): void {
     this.form[field.key] = value;
+  }
+  contactAvatarInitials(name: string): string {
+    return name
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => Array.from(part)[0]?.toLocaleUpperCase('it') ?? '')
+      .join('') || '?';
+  }
+  contactAvatarPreviewSource(): string | null {
+    if (this.contactAvatarCleared) return null;
+    return this.selectedContactAvatarPreview() ??
+      (this.editingId ? this.contactAvatarUrls()[this.editingId] ?? null : null);
+  }
+  selectContactAvatar(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.setContactAvatarFile(input.files?.[0] ?? null);
+    if (this.data.error()) input.value = '';
+  }
+  async pasteContactAvatar(): Promise<void> {
+    this.data.error.set('');
+    if (!navigator.clipboard?.read) {
+      this.data.error.set('Il browser non consente l’accesso alla clipboard da questo pulsante. Puoi usare Ctrl+V o Cmd+V dopo aver copiato un’immagine.');
+      return;
+    }
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const type = item.types.find((candidate) => this.isSupportedContactAvatarType(candidate));
+        if (!type) continue;
+        const blob = await item.getType(type);
+        const extension = type === 'image/jpeg' ? 'jpg' : type.slice('image/'.length);
+        this.setContactAvatarFile(new File([blob], `avatar.${extension}`, { type }));
+        return;
+      }
+      this.data.error.set('La clipboard non contiene un’immagine JPEG, PNG o WebP.');
+    } catch {
+      this.data.error.set('Non è stato possibile leggere la clipboard. Verifica il permesso del browser o usa Ctrl+V/Cmd+V.');
+    }
+  }
+  onContactAvatarPaste(event: ClipboardEvent): void {
+    const items = Array.from(event.clipboardData?.items ?? []);
+    const image = items.find((item) => item.kind === 'file' && this.isSupportedContactAvatarType(item.type));
+    const file = image?.getAsFile();
+    if (!file) return;
+    event.preventDefault();
+    this.setContactAvatarFile(file);
+  }
+  private isSupportedContactAvatarType(type: string): boolean {
+    return ['image/jpeg', 'image/png', 'image/webp'].includes(type.toLocaleLowerCase());
+  }
+  private setContactAvatarFile(file: File | null): void {
+    this.releaseContactAvatarPreview();
+    this.contactAvatarFile = null;
+    this.data.error.set('');
+    if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 2 * 1024 * 1024) {
+      this.data.error.set('Scegli un’immagine JPEG, PNG o WebP fino a 2 MB.');
+      return;
+    }
+    this.contactAvatarFile = file;
+    this.contactAvatarCleared = false;
+    this.selectedContactAvatarPreview.set(URL.createObjectURL(file));
+  }
+  clearContactAvatar(): void {
+    this.releaseContactAvatarPreview();
+    this.contactAvatarFile = null;
+    this.contactAvatarCleared = true;
+  }
+  private releaseContactAvatarPreview(): void {
+    const preview = this.selectedContactAvatarPreview();
+    if (preview) URL.revokeObjectURL(preview);
+    this.selectedContactAvatarPreview.set(null);
+  }
+  private async loadContactAvatars(): Promise<void> {
+    if (this.sectionId !== 'contacts') return;
+    const version = ++this.contactAvatarLoadVersion;
+    const rows = this.data.rows();
+    const loaded = await Promise.all(rows.map(async (row) => {
+      const path = String(row['avatar_path'] ?? '');
+      return path ? [row.id, await this.storage.loadContactAvatar(path)] as const : [row.id, null] as const;
+    }));
+    const next: Record<string, string> = {};
+    for (const [id, url] of loaded) if (url) next[id] = url;
+    if (version !== this.contactAvatarLoadVersion) {
+      for (const url of Object.values(next)) URL.revokeObjectURL(url);
+      return;
+    }
+    const previous = this.contactAvatarUrls();
+    this.contactAvatarUrls.set(next);
+    for (const url of Object.values(previous)) URL.revokeObjectURL(url);
+  }
+  private clearContactAvatarUrls(): void {
+    this.contactAvatarLoadVersion++;
+    for (const url of Object.values(this.contactAvatarUrls())) URL.revokeObjectURL(url);
+    this.contactAvatarUrls.set({});
   }
   websiteHref(value: unknown): string {
     const raw = String(value ?? '').trim();
@@ -2007,7 +2251,11 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.pdfTextForSaving = null;
     this.documentTextProcessing.set(false);
     this.clearVoice();
+    this.releaseContactAvatarPreview();
+    this.contactAvatarFile = null;
+    this.contactAvatarCleared = false;
     this.editingId = '';
+    this.editingContactRow = null;
     this.editingDocumentRow = null;
     this.isFormOpen.set(true);
     this.ui.setModal(true);
@@ -2033,6 +2281,11 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   }
   private openDetails(row: DiaryRow): void {
     this.detailRow.set(row);
+    this.detailMedicationDoses.set([]);
+    this.medicationDoseLoading.set(false);
+    this.spotDoseFormOpen.set(false);
+    this.spotDoseError.set('');
+    this.spotDoseSaved.set(false);
     if (this.sectionId === 'children') {
       this.selectedChildId.set(row.id);
       this.selectedChildName.set(String(row['name'] ?? ''));
@@ -2044,11 +2297,91 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         .then((ids) => this.data.loadDocumentsByIds(String(row['child_id']), ids))
         .then((docs) => this.detailDocuments.set(docs));
     } else this.detailDocuments.set([]);
+    if (this.sectionId === 'medications') void this.loadDetailMedicationDoses(row);
   }
   closeDetails(): void {
     this.detailRow.set(null);
     this.detailDocuments.set([]);
+    this.detailMedicationDoses.set([]);
+    this.medicationDoseLoading.set(false);
+    this.spotDoseFormOpen.set(false);
     this.ui.setModal(false);
+  }
+  private async loadDetailMedicationDoses(row: DiaryRow): Promise<void> {
+    this.medicationDoseLoading.set(true);
+    const doses = await this.data.loadMedicationDoses(row.id);
+    if (this.detailRow()?.id === row.id) {
+      this.detailMedicationDoses.set(doses);
+      this.medicationDoseLoading.set(false);
+      if (this.data.error()) this.spotDoseError.set('Non è stato possibile caricare lo storico delle somministrazioni spot.');
+    }
+  }
+  openSpotDoseForm(row: DiaryRow): void {
+    const now = new Date();
+    const date = medicationDateKey(now);
+    const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    this.spotDoseFormDefault = this.medicationDosageForDate(row, date);
+    this.spotDoseForm = { date, time, dosage: this.spotDoseFormDefault };
+    this.spotDoseError.set('');
+    this.spotDoseSaved.set(false);
+    this.spotDoseFormOpen.set(true);
+  }
+  closeSpotDoseForm(): void {
+    this.spotDoseFormOpen.set(false);
+    this.spotDoseError.set('');
+  }
+  spotDoseTime(dose: DiaryRow): string {
+    return String(dose['scheduled_time'] ?? '').slice(0, 5);
+  }
+  async saveSpotDose(row: DiaryRow): Promise<void> {
+    if (this.savingSpotDose()) return;
+    const date = this.spotDoseForm.date.trim();
+    const time = normalizeMedicationTime(this.spotDoseForm.time.trim());
+    const dateMatch = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!dateMatch || !time) {
+      this.spotDoseError.set('Inserisci una data e un’ora valide.');
+      return;
+    }
+    const [year, month, day] = dateMatch.slice(1).map(Number);
+    const [hour, minute] = time.split(':').map(Number);
+    const takenDate = new Date(year, month - 1, day, hour, minute, 0, 0);
+    if (takenDate.getFullYear() !== year || takenDate.getMonth() !== month - 1 || takenDate.getDate() !== day) {
+      this.spotDoseError.set('Inserisci una data valida.');
+      return;
+    }
+    if (takenDate.getTime() > Date.now()) {
+      this.spotDoseError.set('La data e l’ora della somministrazione non possono essere future.');
+      return;
+    }
+    const childId = String(row['child_id'] ?? '');
+    if (!childId) {
+      this.spotDoseError.set('Il farmaco non è collegato a un profilo bambino.');
+      return;
+    }
+    this.savingSpotDose.set(true);
+    this.spotDoseError.set('');
+    const saved = await this.data.recordMedicationSpotDose(
+      row.id,
+      childId,
+      date,
+      time,
+      takenDate.toISOString(),
+      this.spotDoseForm.dosage,
+    );
+    this.savingSpotDose.set(false);
+    if (!saved) {
+      this.spotDoseError.set(this.data.error() || 'Non è stato possibile registrare la somministrazione spot.');
+      return;
+    }
+    this.detailMedicationDoses.update((doses) => [saved, ...doses]);
+    this.spotDoseFormOpen.set(false);
+    this.spotDoseSaved.set(true);
+  }
+  private medicationDosageForDate(row: DiaryRow, date: string): string {
+    const period = this.medicationSchedulePeriods(row).find((item) =>
+      (!item.start_date || item.start_date <= date) && (!item.end_date || item.end_date >= date),
+    );
+    return period?.dosage ?? '';
   }
   editFromDetails(row: DiaryRow): void {
     this.closeDetails();
@@ -2075,6 +2408,9 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.pdfTextSeed = '';
     this.pdfTextForSaving = null;
     this.documentTextProcessing.set(false);
+    this.releaseContactAvatarPreview();
+    this.contactAvatarFile = null;
+    this.contactAvatarCleared = false;
     this.editingDocumentRow = this.sectionId === 'documents' ? row : null;
     for (const field of this.section.fields) {
       const value = row[field.key];
@@ -2114,6 +2450,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       })));
     } else this.additionalMedicationSchedules.set([]);
     this.editingId = row.id;
+    this.editingContactRow = this.sectionId === 'contacts' ? row : null;
     if (['medications', 'orthoses'].includes(this.sectionId) && row['child_id']) {
       this.documentLinksLoading.set(true);
       void this.data
@@ -2140,6 +2477,10 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.documentTextProcessing.set(false);
     this.loadingExistingPdf.set(false);
     this.editingDocumentRow = null;
+    this.editingContactRow = null;
+    this.contactAvatarFile = null;
+    this.contactAvatarCleared = false;
+    this.releaseContactAvatarPreview();
     this.isFormOpen.set(false);
     this.ui.setModal(false);
   }
@@ -2501,6 +2842,30 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     if (this.sectionId === 'expenses' && value['receipt_path']) delete value['receipt'];
     const targetId = this.editingId || crypto.randomUUID();
     const targetChildId = this.selectedChildId();
+    let uploadedContactAvatarPath = '';
+    const previousContactAvatarPath = String(this.editingContactRow?.['avatar_path'] ?? '');
+    let nextContactAvatarPath = previousContactAvatarPath;
+    if (this.sectionId === 'contacts') {
+      if (!targetChildId) {
+        this.data.error.set('Seleziona il profilo del bambino a cui associare il contatto.');
+        this.saving.set(false);
+        return;
+      }
+      if (this.contactAvatarCleared) nextContactAvatarPath = '';
+      else if (this.contactAvatarFile) {
+        const path = await this.storage.saveContactAvatar(this.contactAvatarFile, targetChildId, targetId);
+        if (!path) {
+          this.data.error.set(this.supabase.configured && this.auth.user()
+            ? 'Non è stato possibile caricare la foto. Verifica le migrazioni Storage e riprova.'
+            : 'Il browser non ha potuto conservare localmente la foto. Riprova.');
+          this.saving.set(false);
+          return;
+        }
+        uploadedContactAvatarPath = path;
+        nextContactAvatarPath = path;
+      }
+      value['avatar_path'] = nextContactAvatarPath || null;
+    }
     const shouldBackfillMedicationDoses = this.sectionId === 'medications' &&
       (!this.editingId || this.pendingHistoricalDoseMedicationId === targetId);
     let ok = this.editingId
@@ -2528,6 +2893,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         // The failed update must not replace the existing attachment.
       }
     }
+    if (!ok && uploadedContactAvatarPath) await this.storage.removeContactAvatar(uploadedContactAvatarPath);
     if (ok && this.sectionId === 'documents' && this.editingDocumentRow && this.attachedFile && this.attachmentModified) {
       const oldStoragePath = this.editingDocumentRow['storage_path'];
       const oldLocalFileId = this.editingDocumentRow['local_file_id'];
@@ -2589,6 +2955,11 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       );
       await this.refresh();
     }
+    if (ok && this.sectionId === 'contacts') {
+      if (previousContactAvatarPath && previousContactAvatarPath !== nextContactAvatarPath)
+        await this.storage.removeContactAvatar(previousContactAvatarPath);
+      await this.refresh();
+    }
     this.saving.set(false);
     if (ok) this.closeForm();
   }
@@ -2639,6 +3010,12 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       await this.data.remove(this.sectionId, row);
       if (this.sectionId === 'documents' && row['local_file_id'] && !this.data.error())
         await this.storage.removeLocalFile(String(row['local_file_id']));
+      if (this.sectionId === 'contacts' && !this.data.error()) {
+        const avatarPath = String(row['avatar_path'] ?? '');
+        if (avatarPath && !(await this.storage.removeContactAvatar(avatarPath)))
+          this.data.error.set('Contatto eliminato, ma non è stato possibile rimuovere la foto dal deposito.');
+        await this.refresh();
+      }
     }
   }
   async shareContact(row: DiaryRow): Promise<void> {

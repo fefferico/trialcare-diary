@@ -33,6 +33,54 @@ export type DiaryExportData = Record<Exclude<SectionId, 'reports'>, DiaryRow[]> 
   document_links: DiaryRow[];
 };
 
+function normalizeDocumentSearch(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('it')
+    .trim();
+}
+
+function documentSearchEditDistance(left: string, right: string): number {
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= left.length; i++) {
+    const current = [i];
+    for (let j = 1; j <= right.length; j++) {
+      current[j] = Math.min(
+        current[j - 1] + 1,
+        previous[j] + 1,
+        previous[j - 1] + (left[i - 1] === right[j - 1] ? 0 : 1),
+      );
+    }
+    previous = current;
+  }
+  return previous[right.length];
+}
+
+function fuzzyDocumentTermMatch(term: string, value: string): boolean {
+  if (value.includes(term)) return true;
+  const words = value.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const maxDistance = term.length < 4 ? 0 : term.length < 7 ? 1 : 2;
+  return words.some((word) => {
+    if (word.startsWith(term)) return true;
+    if (!maxDistance || Math.abs(word.length - term.length) > maxDistance) return false;
+    return documentSearchEditDistance(term, word) <= maxDistance;
+  });
+}
+
+function documentOcrSnippet(text: string, terms: string[]): string {
+  const match = [...text.matchAll(/[\p{L}\p{N}]+/gu)].find((word) => {
+    const normalizedWord = normalizeDocumentSearch(word[0]);
+    return terms.some((term) => fuzzyDocumentTermMatch(term, normalizedWord));
+  });
+  if (!match) return '';
+
+  const matchIndex = match.index ?? 0;
+  const start = Math.max(0, matchIndex - 70);
+  const end = Math.min(text.length, start + 160);
+  return `${start > 0 ? '…' : ''}${text.slice(start, end).trim()}${end < text.length ? '…' : ''}`;
+}
+
 const DOCUMENT_DATE_FIELD: Partial<Record<SectionId, string>> = {
   medications: 'start_date',
   medication_doses: 'scheduled_date',
@@ -233,6 +281,66 @@ export class DiaryDataService {
     return true;
   }
 
+  async loadMedicationDoses(medicationId: string): Promise<DiaryRow[]> {
+    this.error.set('');
+    const client = this.supabase.client;
+    if (client && this.auth.user()) {
+      const { data, error } = await client
+        .from('medication_doses')
+        .select('*')
+        .eq('medication_id', medicationId)
+        .eq('is_spot', true)
+        .order('scheduled_date', { ascending: false })
+        .order('scheduled_time', { ascending: false });
+      if (error) {
+        this.error.set(error.message);
+        return [];
+      }
+      return (data ?? []) as DiaryRow[];
+    }
+    return (this.local.medication_doses ?? [])
+      .filter((row) => row['medication_id'] === medicationId && row['is_spot'] === true)
+      .sort((left, right) =>
+        `${String(right['scheduled_date'] ?? '')} ${String(right['scheduled_time'] ?? '')}`
+          .localeCompare(`${String(left['scheduled_date'] ?? '')} ${String(left['scheduled_time'] ?? '')}`),
+      );
+  }
+
+  async recordMedicationSpotDose(
+    medicationId: string,
+    childId: string,
+    scheduledDate: string,
+    scheduledTime: string,
+    takenAt: string,
+    administeredDosage: string,
+  ): Promise<DiaryRow | null> {
+    this.error.set('');
+    const payload = {
+      medication_id: medicationId,
+      child_id: childId,
+      scheduled_date: scheduledDate,
+      scheduled_time: scheduledTime,
+      taken_at: takenAt,
+      status: 'Somministrata',
+      skipped_reason: null,
+      is_spot: true,
+      administered_dosage: administeredDosage.trim() || null,
+    };
+    const client = this.supabase.client;
+    if (client && this.auth.user()) {
+      const { data, error } = await client.from('medication_doses').insert(payload).select('*').single();
+      if (error) {
+        this.error.set(error.message);
+        return null;
+      }
+      return data as DiaryRow;
+    }
+    const row = { id: crypto.randomUUID(), ...payload } as DiaryRow;
+    this.local.medication_doses = [row, ...(this.local.medication_doses ?? [])];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.local));
+    return row;
+  }
+
   async markMedicationDoseTaken(
     medicationId: string,
     childId: string,
@@ -253,8 +361,9 @@ export class DiaryDataService {
           taken_at: takenAt,
           status: 'Somministrata',
           skipped_reason: null,
+          is_spot: false,
         },
-        { onConflict: 'medication_id,scheduled_date,scheduled_time' },
+        { onConflict: 'medication_id,scheduled_date,scheduled_time,is_spot' },
       );
       if (error) {
         this.error.set(error.message);
@@ -264,7 +373,7 @@ export class DiaryDataService {
       const rows = this.local.medication_doses ?? [];
       const existingIndex = rows.findIndex((row) =>
         row['dose_key'] === key ||
-        (row['medication_id'] === medicationId &&
+        (row['is_spot'] !== true && row['medication_id'] === medicationId &&
           row['scheduled_date'] === scheduledDate &&
           String(row['scheduled_time'] ?? '').slice(0, 5) === scheduledTime),
       );
@@ -276,6 +385,7 @@ export class DiaryDataService {
         taken_at: takenAt,
         status: 'Somministrata',
         skipped_reason: null,
+        is_spot: false,
       };
       if (existingIndex >= 0) {
         rows[existingIndex] = { ...rows[existingIndex], ...updates } as DiaryRow;
@@ -310,9 +420,10 @@ export class DiaryDataService {
           taken_at: dose.takenAt,
           status: 'Somministrata',
           skipped_reason: null,
+          is_spot: false,
         }));
         const { error } = await client.from('medication_doses').upsert(payload, {
-          onConflict: 'medication_id,scheduled_date,scheduled_time',
+          onConflict: 'medication_id,scheduled_date,scheduled_time,is_spot',
           ignoreDuplicates: true,
         });
         if (error) {
@@ -336,6 +447,7 @@ export class DiaryDataService {
           taken_at: dose.takenAt,
           status: 'Somministrata',
           skipped_reason: null,
+          is_spot: false,
         } as DiaryRow);
         keys.add(key);
       }
@@ -366,8 +478,9 @@ export class DiaryDataService {
           taken_at: null,
           status: 'Saltata',
           skipped_reason: reason.trim(),
+          is_spot: false,
         },
-        { onConflict: 'medication_id,scheduled_date,scheduled_time' },
+        { onConflict: 'medication_id,scheduled_date,scheduled_time,is_spot' },
       );
       if (error) {
         this.error.set(error.message);
@@ -377,7 +490,7 @@ export class DiaryDataService {
       const rows = this.local.medication_doses ?? [];
       const existingIndex = rows.findIndex((row) =>
         row['dose_key'] === key ||
-        (row['medication_id'] === medicationId &&
+        (row['is_spot'] !== true && row['medication_id'] === medicationId &&
           row['scheduled_date'] === scheduledDate &&
           String(row['scheduled_time'] ?? '').slice(0, 5) === scheduledTime),
       );
@@ -386,6 +499,7 @@ export class DiaryDataService {
         taken_at: null,
         status: 'Saltata',
         skipped_reason: reason.trim(),
+        is_spot: false,
       };
       if (existingIndex >= 0) {
         rows[existingIndex] = { ...rows[existingIndex], ...updates } as DiaryRow;
@@ -523,15 +637,16 @@ export class DiaryDataService {
   async searchDocuments(childId: string, search: string, limit = 30): Promise<DiaryRow[]> {
     const query = search.trim();
     if (query.length < 2) return [];
+    const normalizedQuery = normalizeDocumentSearch(query);
+    const terms = normalizedQuery.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    if (!terms.length) return [];
     const client = this.supabase.client;
     if (client && this.auth.user()) {
-      const { data, error } = await client
-        .from('documents')
-        .select('id,child_id,title,category,date,storage_path')
-        .eq('child_id', childId)
-        .ilike('title', `%${query.replace(/[\\%_]/g, '\\$&')}%`)
-        .order('date', { ascending: false, nullsFirst: false })
-        .limit(limit);
+      const { data, error } = await client.rpc('search_clinical_documents', {
+        p_child_id: childId,
+        p_search: query,
+        p_limit: limit,
+      });
       if (error) {
         this.error.set(error.message);
         return [];
@@ -540,7 +655,15 @@ export class DiaryDataService {
     }
     return [...(this.local.documents ?? [])]
       .filter((row) => row['child_id'] === childId)
-      .filter((row) => String(row['title'] ?? '').toLocaleLowerCase('it').includes(query.toLocaleLowerCase('it')))
+      .filter((row) => {
+        const searchableValues = [row['title'], row['extracted_text']]
+          .map((value) => normalizeDocumentSearch(String(value ?? '')));
+        return terms.every((term) => searchableValues.some((value) => fuzzyDocumentTermMatch(term, value)));
+      })
+      .map((row) => ({
+        ...row,
+        ocr_snippet: documentOcrSnippet(String(row['extracted_text'] ?? ''), terms) || null,
+      }) as DiaryRow)
       .sort((a, b) => String(b['date'] ?? '').localeCompare(String(a['date'] ?? '')))
       .slice(0, limit);
   }

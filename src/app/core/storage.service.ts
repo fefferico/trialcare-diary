@@ -5,6 +5,8 @@ import { AuthService } from './auth.service';
 @Injectable({ providedIn: 'root' })
 export class StorageService {
   private readonly avatarBucket = 'profile-avatars';
+  private readonly contactAvatarBucket = 'contact-avatars';
+  private readonly localContactAvatarPrefix = 'local-file:';
   private readonly localFileDatabase = 'trialcare-local-files-v1';
   constructor(
     private readonly supabase: SupabaseClientService,
@@ -135,6 +137,53 @@ export class StorageService {
       .from('clinical-documents')
       .upload(path, file, { upsert: false, contentType: file.type || 'audio/webm' });
     return error ? null : path;
+  }
+
+  async saveContactAvatar(file: File, childId: string, contactId: string): Promise<string | null> {
+    const client = this.supabase.client;
+    const user = this.auth.user();
+    if (client && user) {
+      const extension = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
+      const path = `${user.id}/${childId}/contacts/${contactId}/${crypto.randomUUID()}.${extension}`;
+      const { error } = await client.storage.from(this.contactAvatarBucket).upload(path, file, {
+        upsert: false,
+        contentType: file.type,
+        cacheControl: '3600',
+      });
+      return error ? null : path;
+    }
+    try {
+      const id = await this.saveLocalFile(file);
+      return `${this.localContactAvatarPrefix}${id}`;
+    } catch {
+      return null;
+    }
+  }
+
+  async loadContactAvatar(path: string): Promise<string | null> {
+    if (path.startsWith(this.localContactAvatarPrefix)) {
+      const file = await this.getLocalFile(path.slice(this.localContactAvatarPrefix.length));
+      return file ? URL.createObjectURL(file) : null;
+    }
+    const client = this.supabase.client;
+    if (!client || !this.auth.user()) return null;
+    const { data, error } = await client.storage.from(this.contactAvatarBucket).download(path);
+    return error || !data ? null : URL.createObjectURL(data);
+  }
+
+  async removeContactAvatar(path: string): Promise<boolean> {
+    if (path.startsWith(this.localContactAvatarPrefix)) {
+      try {
+        await this.removeLocalFile(path.slice(this.localContactAvatarPrefix.length));
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    const client = this.supabase.client;
+    if (!client || !this.auth.user()) return false;
+    const { error } = await client.storage.from(this.contactAvatarBucket).remove([path]);
+    return !error;
   }
 
   async saveAvatar(file: File): Promise<string | null> {
