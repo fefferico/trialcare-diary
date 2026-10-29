@@ -240,7 +240,7 @@ export const SECTIONS: SectionDefinition[] = [
         label: 'Tipo documento',
         kind: 'select',
         options: [
-          'Prescrizione farmaceutica',
+          'Prescrizione farmaceutica / Ricetta',
           'Piano terapeutico',
           'Referto specialistico',
           'Esame di laboratorio',

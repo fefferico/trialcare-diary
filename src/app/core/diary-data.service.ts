@@ -5,9 +5,10 @@ import { DiaryRow, SectionId } from '../models/diary.models';
 
 const STORAGE_KEY = 'trialcare-diary-v1';
 type LocalStore = Partial<Record<SectionId, DiaryRow[]>>;
-export type DocumentLinkTarget = 'calendar_events' | 'medications' | 'orthoses';
+export type DocumentLinkTarget = 'calendar_events' | 'health_events' | 'medications' | 'orthoses';
 const DOCUMENT_LINK_TABLE: Record<DocumentLinkTarget, string> = {
   calendar_events: 'calendar_event_documents',
+  health_events: 'health_event_documents',
   medications: 'medication_documents',
   orthoses: 'orthosis_documents',
 };
@@ -825,7 +826,7 @@ export class DiaryDataService {
     } else {
       this.local[section] = (this.local[section] ?? []).filter((item) => item.id !== row.id);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.local));
-      const target = section === 'calendar_events' || section === 'medications' || section === 'orthoses'
+      const target = section === 'calendar_events' || section === 'health_events' || section === 'medications' || section === 'orthoses'
         ? section
         : null;
       if (target) {

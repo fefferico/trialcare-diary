@@ -48,6 +48,17 @@ interface HistoricalMedicationDose {
   takenAt: string;
 }
 
+type MedicationScheduleScope = 'single' | 'preceding' | 'following' | 'all';
+
+const MEDICATION_SCHEDULE_FIELDS = [
+  'dosage',
+  'formulation',
+  'spray_count',
+  'administration_duration_seconds',
+  'schedule_times',
+  'planned_pause',
+] as const;
+
 function normalizeSearch(value: string): string {
   return value
     .normalize('NFD')
@@ -91,6 +102,100 @@ function normalizeMedicationTime(value: string): string | null {
   const [hour, minute] = value.split(':').map(Number);
   if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function addMedicationDays(value: string, days: number): string {
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() + days);
+  return medicationDateKey(date);
+}
+
+function validMedicationDate(value: string | null): value is string {
+  return !!value && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function sameMedicationSchedule(
+  left: MedicationSchedulePeriod,
+  right: MedicationSchedulePeriod,
+): boolean {
+  return MEDICATION_SCHEDULE_FIELDS.every((key) => left[key] === right[key]);
+}
+
+function sameMedicationPeriods(
+  left: MedicationSchedulePeriod[],
+  right: MedicationSchedulePeriod[],
+): boolean {
+  return left.length === right.length && left.every((period, index) => {
+    const other = right[index];
+    return sameMedicationSchedule(period, other) &&
+      period.start_date?.slice(0, 10) === other.start_date?.slice(0, 10) &&
+      period.end_date?.slice(0, 10) === other.end_date?.slice(0, 10);
+  });
+}
+
+function applyMedicationScheduleScope(
+  existing: MedicationSchedulePeriod[],
+  proposed: MedicationSchedulePeriod[],
+  scope: MedicationScheduleScope,
+  anchorDate: string,
+): MedicationSchedulePeriod[] {
+  if (scope === 'all') return proposed;
+
+  const boundaries = new Set<string>([anchorDate, addMedicationDays(anchorDate, 1)]);
+  for (const period of [...existing, ...proposed]) {
+    const start = period.start_date?.slice(0, 10) ?? null;
+    const end = period.end_date?.slice(0, 10) ?? null;
+    if (validMedicationDate(start)) boundaries.add(start);
+    if (validMedicationDate(end)) boundaries.add(addMedicationDays(end, 1));
+  }
+  const sortedBoundaries = [...boundaries].sort();
+  const output: MedicationSchedulePeriod[] = [];
+
+  for (let index = 0; index <= sortedBoundaries.length; index++) {
+    const start = index === 0 ? null : sortedBoundaries[index - 1];
+    const endExclusive = index === sortedBoundaries.length ? null : sortedBoundaries[index];
+    const sampleDate = start ?? addMedicationDays(endExclusive!, -1);
+    const useProposed = scope === 'single'
+      ? sampleDate === anchorDate
+      : scope === 'preceding'
+        ? sampleDate <= anchorDate
+        : sampleDate >= anchorDate;
+    const source = useProposed ? proposed : existing;
+    const period = source.find((candidate) => {
+      const periodStart = candidate.start_date?.slice(0, 10) ?? null;
+      const periodEnd = candidate.end_date?.slice(0, 10) ?? null;
+      return (!validMedicationDate(periodStart) || periodStart <= sampleDate) &&
+        (!validMedicationDate(periodEnd) || periodEnd >= sampleDate);
+    });
+    if (!period) continue;
+
+    const periodStart = period.start_date?.slice(0, 10) ?? null;
+    const periodEnd = period.end_date?.slice(0, 10) ?? null;
+    const clippedStart = validMedicationDate(periodStart) && (!start || periodStart > start)
+      ? periodStart
+      : start;
+    const periodEndExclusive = validMedicationDate(periodEnd) ? addMedicationDays(periodEnd, 1) : null;
+    const clippedEndExclusive = endExclusive && periodEndExclusive
+      ? (endExclusive < periodEndExclusive ? endExclusive : periodEndExclusive)
+      : endExclusive ?? periodEndExclusive;
+    const clipped: MedicationSchedulePeriod = {
+      ...period,
+      start_date: clippedStart,
+      end_date: clippedEndExclusive ? addMedicationDays(clippedEndExclusive, -1) : null,
+    };
+    const previous = output.at(-1);
+    if (
+      previous &&
+      sameMedicationSchedule(previous, clipped) &&
+      previous.end_date && clipped.start_date &&
+      addMedicationDays(previous.end_date, 1) === clipped.start_date
+    ) {
+      previous.end_date = clipped.end_date;
+    } else output.push(clipped);
+  }
+
+  return output;
 }
 
 @Component({
@@ -996,7 +1101,7 @@ function normalizeMedicationTime(value: string): string | null {
                   ></textarea>
                 </label>
               }
-              @if (section.id === 'medications' || section.id === 'orthoses') {
+              @if (section.id === 'medications' || section.id === 'orthoses' || section.id === 'health_events') {
                 <tc-document-association-picker
                   [documents]="documentSearchResults()"
                   [selectedDocuments]="selectedDocuments()"
@@ -1111,6 +1216,43 @@ function normalizeMedicationTime(value: string): string | null {
           </section>
         </div>
       }
+      @if (medicationScopePrompt()) {
+        <div class="modal-backdrop z-50" (click)="medicationScopePrompt.set(false)">
+          <section class="modal-panel max-w-lg" role="dialog" aria-modal="true" aria-labelledby="medication-scope-title"
+            (click)="$event.stopPropagation()">
+            <div class="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+              <p class="eyebrow">TERAPIA FARMACOLOGICA</p>
+              <h2 id="medication-scope-title" class="text-xl font-semibold">A quali episodi applicare le modifiche?</h2>
+              <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                Il piano di somministrazione verrà aggiornato da oggi in base alla scelta. Nome del farmaco e note si
+                applicano all’intera scheda; le somministrazioni già registrate restano invariate.
+              </p>
+            </div>
+            <div class="grid gap-2 p-5">
+              <button type="button" class="button-secondary justify-start" [disabled]="saving()"
+                (click)="save('single')">
+                Solo questo episodio
+              </button>
+              <button type="button" class="button-secondary justify-start" [disabled]="saving()"
+                (click)="save('preceding')">
+                Questo e tutti quelli passati
+              </button>
+              <button type="button" class="button-secondary justify-start" [disabled]="saving()"
+                (click)="save('following')">
+                Questo e tutti quelli futuri
+              </button>
+              <button type="button" class="button-primary justify-start" [disabled]="saving()"
+                (click)="save('all')">
+                Tutti gli episodi, passati e futuri
+              </button>
+              <button type="button" class="mt-1 text-sm text-slate-500 hover:underline"
+                (click)="medicationScopePrompt.set(false)">
+                Torna alla modifica
+              </button>
+            </div>
+          </section>
+        </div>
+      }
       @if (detailRow(); as row) {
         <div class="modal-backdrop" (click)="closeDetails()">
           <section
@@ -1145,10 +1287,10 @@ function normalizeMedicationTime(value: string): string | null {
                   </div>
                 </div>
               }
-              <dl class="grid gap-4 sm:grid-cols-2">
+              <dl class="grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-2">
                 @for (field of detailFields(row); track field.key) {
                   @if (value(row, field.key)) {
-                    <div class="min-w-0">
+                    <div class="min-w-0" [class.col-span-2]="field.kind === 'textarea' || field.key === 'notes'">
                       <dt class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ field.label }}</dt>
                       <dd class="mt-1 whitespace-pre-wrap break-words text-sm">
                         @if (section.id === 'contacts' && field.key === 'website' && websiteHref(value(row, field.key))) {
@@ -1331,7 +1473,7 @@ function normalizeMedicationTime(value: string): string | null {
                   }
                 </section>
               }
-              @if ((section.id === 'medications' || section.id === 'orthoses') && detailDocuments().length) {
+              @if ((section.id === 'medications' || section.id === 'orthoses' || section.id === 'health_events') && detailDocuments().length) {
                 <section class="space-y-2 border-t border-slate-100 pt-4 dark:border-slate-800">
                   <h3 class="font-semibold">Documenti collegati</h3>
                   @for (doc of detailDocuments(); track doc.id) {
@@ -1395,6 +1537,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   private readonly storage = inject(StorageService);
   private readonly confirmation = inject(ConfirmationService);
   readonly isFormOpen = signal(false);
+  readonly medicationScopePrompt = signal(false);
   readonly detailRow = signal<DiaryRow | null>(null);
   readonly contactAvatarUrls = signal<Record<string, string>>({});
   readonly selectedContactAvatarPreview = signal<string | null>(null);
@@ -2257,6 +2400,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.editingId = '';
     this.editingContactRow = null;
     this.editingDocumentRow = null;
+    this.medicationScopePrompt.set(false);
     this.isFormOpen.set(true);
     this.ui.setModal(true);
   }
@@ -2292,8 +2436,8 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       void this.loadMeasurements();
     }
     this.ui.setModal(true);
-    if (['medications', 'orthoses'].includes(this.sectionId) && row['child_id']) {
-      void this.data.loadDocumentLinks(this.sectionId as 'medications' | 'orthoses', row.id, String(row['child_id']))
+    if (['medications', 'orthoses', 'health_events'].includes(this.sectionId) && row['child_id']) {
+      void this.data.loadDocumentLinks(this.sectionId as 'medications' | 'orthoses' | 'health_events', row.id, String(row['child_id']))
         .then((ids) => this.data.loadDocumentsByIds(String(row['child_id']), ids))
         .then((docs) => this.detailDocuments.set(docs));
     } else this.detailDocuments.set([]);
@@ -2400,6 +2544,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   edit(row: DiaryRow): void {
     this.form = {};
     this.documentSearchResults.set([]);
+    this.medicationScopePrompt.set(false);
     this.selectedDocuments.set([]);
     this.documentLinksLoading.set(false);
     this.associatedFiles = [];
@@ -2451,10 +2596,10 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     } else this.additionalMedicationSchedules.set([]);
     this.editingId = row.id;
     this.editingContactRow = this.sectionId === 'contacts' ? row : null;
-    if (['medications', 'orthoses'].includes(this.sectionId) && row['child_id']) {
+    if (['medications', 'orthoses', 'health_events'].includes(this.sectionId) && row['child_id']) {
       this.documentLinksLoading.set(true);
       void this.data
-        .loadDocumentLinks(this.sectionId as 'medications' | 'orthoses', row.id, String(row['child_id']))
+        .loadDocumentLinks(this.sectionId as 'medications' | 'orthoses' | 'health_events', row.id, String(row['child_id']))
         .then((ids) => this.data.loadDocumentsByIds(String(row['child_id']), ids))
         .then((docs) => this.selectedDocuments.set(docs))
         .finally(() => this.documentLinksLoading.set(false));
@@ -2481,6 +2626,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.contactAvatarFile = null;
     this.contactAvatarCleared = false;
     this.releaseContactAvatarPreview();
+    this.medicationScopePrompt.set(false);
     this.isFormOpen.set(false);
     this.ui.setModal(false);
   }
@@ -2669,7 +2815,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     }
     return doses;
   }
-  async save(): Promise<void> {
+  async save(medicationScope?: MedicationScheduleScope): Promise<void> {
     if (this.documentLinksLoading()) return;
     if (this.sectionId === 'contacts') {
       const requiredContactFields = this.section.fields.filter((field) => field.required);
@@ -2719,8 +2865,40 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         this.saving.set(false);
         return;
       }
-      value['schedule_periods'] = schedules;
-      value['end_date'] = value['end_date'] || null;
+      const editingRow = this.editingId
+        ? this.data.rows().find((row) => row.id === this.editingId)
+        : undefined;
+      if (editingRow) {
+        const existingSchedules = this.medicationSchedulePeriods(editingRow);
+        if (!sameMedicationPeriods(existingSchedules, schedules) && !medicationScope) {
+          this.medicationScopePrompt.set(true);
+          this.saving.set(false);
+          return;
+        }
+        if (medicationScope) {
+          const today = medicationDateKey(new Date());
+          const scopedSchedules = applyMedicationScheduleScope(
+            existingSchedules,
+            schedules,
+            medicationScope,
+            today,
+          );
+          value['schedule_periods'] = scopedSchedules;
+          const firstSchedule = scopedSchedules[0];
+          if (firstSchedule) {
+            value['start_date'] = firstSchedule.start_date;
+            value['end_date'] = firstSchedule.end_date;
+            value['dosage'] = firstSchedule.dosage;
+            value['formulation'] = firstSchedule.formulation;
+            value['spray_count'] = firstSchedule.spray_count;
+            value['administration_duration_seconds'] = firstSchedule.administration_duration_seconds;
+            value['schedule_times'] = firstSchedule.schedule_times;
+            value['planned_pause'] = firstSchedule.planned_pause;
+          }
+        } else value['schedule_periods'] = schedules;
+      } else value['schedule_periods'] = schedules;
+      if (!medicationScope || medicationScope === 'all') value['end_date'] = value['end_date'] || null;
+      this.medicationScopePrompt.set(false);
     }
     if (this.recording()) {
       const recorder = this.recorder;
@@ -2875,7 +3053,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         { ...value, id: targetId },
         this.sectionId === 'children' ? undefined : targetChildId || undefined,
       ));
-    if (ok && !this.editingId && ['medications', 'orthoses'].includes(this.sectionId))
+    if (ok && !this.editingId && ['medications', 'orthoses', 'health_events'].includes(this.sectionId))
       this.editingId = targetId;
     if (ok && shouldBackfillMedicationDoses && targetChildId) {
       this.pendingHistoricalDoseMedicationId = targetId;
@@ -2909,7 +3087,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         }
       }
     }
-    if (ok && ['medications', 'orthoses'].includes(this.sectionId) && targetChildId) {
+    if (ok && ['medications', 'orthoses', 'health_events'].includes(this.sectionId) && targetChildId) {
       const documentIds = this.selectedDocuments().map((doc) => doc.id);
       for (const file of this.associatedFiles) {
         const documentId = crypto.randomUUID();
@@ -2951,7 +3129,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         this.associatedFiles = this.associatedFiles.filter((pending) => pending !== file);
       }
       if (ok) ok = await this.data.setDocumentLinks(
-        this.sectionId as 'medications' | 'orthoses', targetId, targetChildId, documentIds,
+        this.sectionId as 'medications' | 'orthoses' | 'health_events', targetId, targetChildId, documentIds,
       );
       await this.refresh();
     }
