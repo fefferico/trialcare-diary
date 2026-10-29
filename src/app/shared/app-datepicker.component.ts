@@ -50,22 +50,34 @@ import { Component, input, output, signal } from '@angular/core';
             }
           </div>
         } @else {
-          <div class="grid grid-cols-7 gap-1 text-center text-xs text-slate-400">
+          <div class="grid grid-cols-7 gap-y-1 text-center text-xs text-slate-400">
             @for (day of weekdays; track $index) { <span class="py-1">{{ day }}</span> }
           </div>
-          <div class="grid grid-cols-7 gap-1">
+          <div class="grid grid-cols-7 gap-y-1">
             @for (day of days(); track $index) {
               <button
                 type="button"
-                class="h-8 rounded-lg border border-transparent text-sm hover:bg-teal-50 dark:hover:bg-slate-800"
-                [class.border-teal-700]="isToday(day)"
-                [class.bg-teal-100]="isToday(day)"
-                [class.font-bold]="isToday(day)"
-                [class.text-teal-950]="isToday(day)"
-                [class.dark:border-teal-300]="isToday(day)"
-                [class.dark:bg-teal-900/60]="isToday(day)"
-                [class.dark:text-teal-100]="isToday(day)"
+                class="relative h-8 border border-transparent text-sm hover:bg-teal-50 dark:hover:bg-slate-800"
+                [class.rounded-lg]="!isInRange(day) && !isRangeEndpoint(day)"
+                [class.rounded-l-full]="hasCompleteDateRange() && isRangeStart(day) && !isRangeEnd(day)"
+                [class.rounded-r-full]="hasCompleteDateRange() && isRangeEnd(day) && !isRangeStart(day)"
+                [class.rounded-full]="isRangeEndpoint(day) && (!hasCompleteDateRange() || (isRangeStart(day) && isRangeEnd(day)))"
+                [class.border-teal-700]="isRangeEndpoint(day)"
+                [class.bg-teal-600]="isRangeEndpoint(day)"
+                [class.font-bold]="isToday(day) || isRangeEndpoint(day)"
+                [class.text-white]="isRangeEndpoint(day)"
+                [class.dark:border-teal-300]="isRangeEndpoint(day)"
+                [class.dark:bg-teal-300]="isRangeEndpoint(day)"
+                [class.dark:text-slate-950]="isRangeEndpoint(day)"
+                [class.bg-teal-50]="isInRange(day) && !isRangeEndpoint(day)"
+                [class.text-teal-900]="isInRange(day) && !isRangeEndpoint(day)"
+                [class.dark:bg-teal-950/60]="isInRange(day) && !isRangeEndpoint(day)"
+                [class.dark:text-teal-100]="isInRange(day) && !isRangeEndpoint(day)"
+                [class.ring-2]="isToday(day)"
+                [class.ring-teal-500]="isToday(day)"
+                [class.dark:ring-teal-300]="isToday(day)"
                 [attr.aria-current]="isToday(day) ? 'date' : null"
+                [attr.aria-pressed]="isInRange(day) || isRangeEndpoint(day) ? 'true' : null"
                 [disabled]="!day"
                 (click)="choose(day)"
               >{{ day || '' }}</button>
@@ -81,6 +93,8 @@ export class AppDatepickerComponent {
   readonly value = input('');
   readonly monthOnly = input(false);
   readonly lenient = input(false);
+  readonly rangeStart = input('');
+  readonly rangeEnd = input('');
   readonly dateChange = output<string>();
   readonly monthOnlyDetected = output<void>();
   readonly calendarOpen = signal(false);
@@ -169,6 +183,32 @@ export class AppDatepickerComponent {
     const now = new Date();
     return this.cursor.getFullYear() === now.getFullYear() &&
       this.cursor.getMonth() === now.getMonth() && day === now.getDate();
+  }
+  isRangeStart(day: number | null): boolean {
+    return this.isValidDateKey(this.rangeStart()) && this.dayKey(day) === this.rangeStart();
+  }
+  isRangeEnd(day: number | null): boolean {
+    return this.isValidDateKey(this.rangeEnd()) && this.dayKey(day) === this.rangeEnd();
+  }
+  isRangeEndpoint(day: number | null): boolean {
+    return this.isRangeStart(day) || this.isRangeEnd(day);
+  }
+  hasCompleteDateRange(): boolean {
+    return this.isValidDateKey(this.rangeStart()) && this.isValidDateKey(this.rangeEnd()) && this.rangeStart() <= this.rangeEnd();
+  }
+  isInRange(day: number | null): boolean {
+    if (!this.hasCompleteDateRange()) return false;
+    const key = this.dayKey(day);
+    return !!key && key >= this.rangeStart() && key <= this.rangeEnd();
+  }
+  private dayKey(day: number | null): string {
+    if (!day) return '';
+    return `${this.cursor.getFullYear()}-${String(this.cursor.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+  private isValidDateKey(value: string): boolean {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const date = new Date(`${value}T00:00:00Z`);
+    return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
   }
   private refresh(): void {
     this.monthLabel.set(this.monthOnly() ? String(this.cursor.getFullYear()) :

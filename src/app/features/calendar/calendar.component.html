@@ -7,13 +7,16 @@
         Appuntamenti, ricorrenze, terapie e scadenze del diario.
       </p>
     </div>
-    <button type="button" class="button-primary" [disabled]="!children().length" (click)="openForm()">
-      ＋ Aggiungi evento
+    <button type="button" class="button-primary w-full sm:w-auto" [disabled]="!children().length"
+      (click)="openForm()">
+      <svg lucidePlus aria-hidden="true" class="h-4 w-4 shrink-0"></svg>
+      Aggiungi evento
     </button>
   </header>
   <button type="button" class="button-secondary flex w-full items-center justify-center gap-2 sm:hidden"
     (click)="scrollToEventHistory()">
-    <span aria-hidden="true">⌕</span> Cerca negli eventi
+    <svg lucideSearch aria-hidden="true" class="h-4 w-4 shrink-0"></svg>
+    Cerca negli eventi
   </button>
   @if (data.error()) {
   <p role="alert" class="notice-error">

@@ -20,7 +20,7 @@ import { AppDatepickerComponent } from '../../shared/app-datepicker.component';
 import { AppDropdownComponent } from '../../shared/app-dropdown.component';
 import { AppTimepickerComponent } from '../../shared/app-timepicker.component';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
-import { LucideMapPin, LucideUsersRound } from '@lucide/angular';
+import { LucideMapPin, LucidePlus, LucideSearch, LucideUsersRound } from '@lucide/angular';
 import {
   CalendarEventFormDialogComponent,
   CalendarEventFormController,
@@ -55,7 +55,18 @@ interface CalendarEvent {
 @Component({
   selector: 'tc-calendar',
   standalone: true,
-  imports: [CommonModule, RouterLink, AppDatepickerComponent, AppDropdownComponent, AppTimepickerComponent, TooltipDirective, LucideMapPin, LucideUsersRound],
+  imports: [
+    CommonModule,
+    RouterLink,
+    AppDatepickerComponent,
+    AppDropdownComponent,
+    AppTimepickerComponent,
+    TooltipDirective,
+    LucideMapPin,
+    LucidePlus,
+    LucideSearch,
+    LucideUsersRound,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './calendar.component.html',
 })

@@ -112,7 +112,10 @@ function addMedicationDays(value: string, days: number): string {
 }
 
 function validMedicationDate(value: string | null): value is string {
-  return !!value && /^\d{4}-\d{2}-\d{2}$/.test(value);
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 
 function sameMedicationSchedule(
@@ -1019,6 +1022,8 @@ function applyMedicationScheduleScope(
                         <app-datepicker
                           [label]="field.label"
                           [value]="form[field.key]"
+                          [rangeStart]="section.id === 'medications' ? form['start_date'] : ''"
+                          [rangeEnd]="section.id === 'medications' ? form['end_date'] : ''"
                           [lenient]="section.id === 'medicine_cabinet' && field.key === 'expiry_date'"
                           [monthOnly]="section.id === 'medicine_cabinet' && field.key === 'expiry_date' && form['expiry_precision'] === 'Mese e anno'"
                           (monthOnlyDetected)="form['expiry_precision'] = 'Mese e anno'"
@@ -1116,11 +1121,30 @@ function applyMedicationScheduleScope(
                 <section class="space-y-4 rounded-2xl border border-slate-200 p-4 dark:border-slate-700" aria-labelledby="medication-schedule-title">
                   <div class="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <h3 id="medication-schedule-title" class="font-semibold">Variazioni della terapia</h3>
-                      <p class="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">Aggiungi un nuovo periodo quando cambiano dosaggio, date o orari. Ogni periodo parte dopo la fine del precedente.</p>
+                      <h3 id="medication-schedule-title" class="font-semibold">Periodi della terapia</h3>
+                      <p class="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">Aggiungi un periodo quando cambiano dosaggio, date o orari. Ogni periodo successivo deve iniziare dopo la fine del precedente; puoi lasciare senza fine solo l’ultimo, se è ancora in corso.</p>
                     </div>
                     <button type="button" class="button-secondary shrink-0 !px-3 !py-2 text-xs" (click)="addMedicationSchedule()">＋ Aggiungi periodo</button>
                   </div>
+                  <article class="space-y-2 rounded-xl border border-teal-200 bg-gradient-to-r from-teal-50 to-white p-3 dark:border-teal-900/70 dark:from-teal-950/40 dark:to-slate-900">
+                    <div class="flex items-center justify-between gap-2">
+                      <h4 class="text-sm font-semibold">Periodo 1 <span class="font-normal text-slate-500 dark:text-slate-400">· Regime iniziale</span></h4>
+                    </div>
+                    <div class="grid grid-cols-[minmax(0,1fr)_3rem_minmax(0,1fr)] items-center gap-2 rounded-xl border border-white/80 bg-white/80 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900/60">
+                      <div class="min-w-0">
+                        <span class="block text-[10px] font-bold uppercase tracking-wider text-teal-700 dark:text-teal-300">Dal</span>
+                        <strong class="block truncate text-sm text-slate-800 dark:text-slate-100">{{ form['start_date'] ? (form['start_date'] | date: 'd MMM y') : 'Data da definire' }}</strong>
+                      </div>
+                      <div class="flex items-center" aria-hidden="true"><span class="h-2 w-2 shrink-0 rounded-full bg-teal-600 dark:bg-teal-400"></span><span class="h-0.5 flex-1 bg-gradient-to-r from-teal-500 to-slate-300 dark:to-slate-600"></span><span class="h-2 w-2 shrink-0 rounded-full bg-slate-300 dark:bg-slate-600"></span></div>
+                      <div class="min-w-0 text-right">
+                        <span class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Al</span>
+                        <strong class="block truncate text-sm text-slate-700 dark:text-slate-200">{{ form['end_date'] ? (form['end_date'] | date: 'd MMM y') : (form['start_date'] ? 'In corso' : 'Data da definire') }}</strong>
+                      </div>
+                    </div>
+                    @if (medicationScheduleRangeMessage(0); as rangeMessage) {
+                      <p class="text-xs font-medium text-rose-700 dark:text-rose-300" role="alert">{{ rangeMessage }}</p>
+                    }
+                  </article>
                   @for (period of additionalMedicationSchedules(); track $index; let index = $index) {
                     <article class="space-y-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-800/60" [attr.data-medication-schedule-index]="index">
                       <div class="flex items-center justify-between gap-2">
@@ -1128,8 +1152,22 @@ function applyMedicationScheduleScope(
                         <button type="button" class="text-xs font-semibold text-rose-700 hover:underline dark:text-rose-300" (click)="removeMedicationSchedule(index)">Rimuovi</button>
                       </div>
                       <div class="grid gap-3 sm:grid-cols-2">
-                        <label class="form-field"><span>Dal <i class="text-rose-500">*</i></span><app-datepicker [label]="'Inizio periodo ' + (index + 2)" [value]="period.start_date" (dateChange)="updateMedicationSchedule(index, 'start_date', $event)" /></label>
-                        <label class="form-field"><span>Al</span><app-datepicker [label]="'Fine periodo ' + (index + 2)" [value]="period.end_date" (dateChange)="updateMedicationSchedule(index, 'end_date', $event)" /></label>
+                        <label class="form-field"><span>Dal <i class="text-rose-500">*</i></span><app-datepicker [label]="'Inizio periodo ' + (index + 2)" [value]="period.start_date" [rangeStart]="period.start_date" [rangeEnd]="period.end_date" (dateChange)="updateMedicationSchedule(index, 'start_date', $event)" /></label>
+                        <label class="form-field"><span>Al</span><app-datepicker [label]="'Fine periodo ' + (index + 2)" [value]="period.end_date" [rangeStart]="period.start_date" [rangeEnd]="period.end_date" (dateChange)="updateMedicationSchedule(index, 'end_date', $event)" /></label>
+                        <!-- <div class="grid grid-cols-[minmax(0,1fr)_3rem_minmax(0,1fr)] items-center gap-2 rounded-xl border border-white/80 bg-white/80 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900/60 sm:col-span-2">
+                          <div class="min-w-0">
+                            <span class="block text-[10px] font-bold uppercase tracking-wider text-teal-700 dark:text-teal-300">Dal</span>
+                            <strong class="block truncate text-sm text-slate-800 dark:text-slate-100">{{ period.start_date ? (period.start_date | date: 'd MMM y') : 'Data da definire' }}</strong>
+                          </div>
+                          <div class="flex items-center" aria-hidden="true"><span class="h-2 w-2 shrink-0 rounded-full bg-teal-600 dark:bg-teal-400"></span><span class="h-0.5 flex-1 bg-gradient-to-r from-teal-500 to-slate-300 dark:to-slate-600"></span><span class="h-2 w-2 shrink-0 rounded-full bg-slate-300 dark:bg-slate-600"></span></div>
+                          <div class="min-w-0 text-right">
+                            <span class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Al</span>
+                            <strong class="block truncate text-sm text-slate-700 dark:text-slate-200">{{ period.end_date ? (period.end_date | date: 'd MMM y') : (period.start_date ? 'In corso' : 'Data da definire') }}</strong>
+                          </div>
+                        </div> -->
+                        @if (medicationScheduleRangeMessage(index + 1); as rangeMessage) {
+                          <p class="text-xs font-medium text-rose-700 dark:text-rose-300 sm:col-span-2" role="alert">{{ rangeMessage }}</p>
+                        }
                         <label class="form-field"><span>Dosaggio <i class="text-rose-500">*</i></span><input class="field-control" type="text" [ngModel]="period.dosage" [ngModelOptions]="{ standalone: true }" (ngModelChange)="updateMedicationSchedule(index, 'dosage', $event)" placeholder="Es. 2 puff" /></label>
                         <label class="form-field"><span>Formulazione</span><app-dropdown [options]="medicationFormulations" [value]="period.formulation" placeholder="Seleziona" (selection)="updateMedicationSchedule(index, 'formulation', $event)" /></label>
                         <label class="form-field sm:col-span-2"><span>Orari o fasce orarie</span><input class="field-control" type="text" [ngModel]="period.schedule_times" [ngModelOptions]="{ standalone: true }" (ngModelChange)="updateMedicationSchedule(index, 'schedule_times', $event)" placeholder="Es. 08:00-10:00, 14:00-16:00" /></label>
@@ -1705,6 +1743,52 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         : period),
     );
   }
+  private medicationScheduleDrafts(initial: Record<string, unknown> = this.form): MedicationScheduleDraft[] {
+    return [
+      {
+        start_date: String(initial['start_date'] ?? ''),
+        end_date: String(initial['end_date'] ?? ''),
+        dosage: String(initial['dosage'] ?? ''),
+        formulation: String(initial['formulation'] ?? ''),
+        spray_count: String(initial['spray_count'] ?? ''),
+        administration_duration_seconds: String(initial['administration_duration_seconds'] ?? ''),
+        schedule_times: String(initial['schedule_times'] ?? ''),
+        planned_pause: String(initial['planned_pause'] ?? ''),
+      },
+      ...this.additionalMedicationSchedules(),
+    ];
+  }
+  medicationScheduleRangeMessage(index: number, periods = this.medicationScheduleDrafts()): string {
+    const period = periods[index];
+    if (!period) return '';
+
+    const start = period.start_date.trim();
+    const end = period.end_date.trim();
+    if (start && !validMedicationDate(start)) return 'Inserisci una data di inizio valida.';
+    if (end && !validMedicationDate(end)) return 'Inserisci una data di fine valida.';
+    if (end && !start) return 'Indica la data di inizio prima della data di fine.';
+    if (start && end && end < start) return 'La data di fine deve essere uguale o successiva alla data di inizio.';
+    if (periods.length > 1 && !start) return 'Indica la data di inizio di questo periodo.';
+
+    if (index > 0) {
+      const previous = periods[index - 1];
+      if (!previous.end_date || !validMedicationDate(previous.end_date)) {
+        return `Indica la data di fine del periodo ${index} prima di iniziare questo.`;
+      }
+      if (start && previous.end_date >= start) {
+        return `Questo periodo deve iniziare dopo la fine del periodo ${index}.`;
+      }
+    }
+
+    if (index < periods.length - 1) {
+      const next = periods[index + 1];
+      if (!end) return `Indica la data di fine prima del periodo ${index + 2}.`;
+      if (next.start_date && validMedicationDate(next.start_date) && end >= next.start_date) {
+        return `La fine deve precedere l’inizio del periodo ${index + 2}.`;
+      }
+    }
+    return '';
+  }
   removeMedicationSchedule(index: number): void {
     this.additionalMedicationSchedules.update((periods) => periods.filter((_, i) => i !== index));
   }
@@ -1803,14 +1887,14 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     const terms = query.split(/\s+/).filter(Boolean);
     const filteredRows = query
       ? rows.filter((row) => {
-          const values = Object.entries(row)
-            .filter(([key, value]) =>
-              !['id', 'user_id', 'child_id', 'created_at', 'updated_at', 'storage_path', 'receipt_path'].includes(key) &&
-              (typeof value === 'string' || typeof value === 'number'),
-            )
-            .map(([, value]) => normalizeSearch(String(value)));
-          return terms.every((term) => values.some((value) => fuzzyTermMatch(term, value)));
-        })
+        const values = Object.entries(row)
+          .filter(([key, value]) =>
+            !['id', 'user_id', 'child_id', 'created_at', 'updated_at', 'storage_path', 'receipt_path'].includes(key) &&
+            (typeof value === 'string' || typeof value === 'number'),
+          )
+          .map(([, value]) => normalizeSearch(String(value)));
+        return terms.every((term) => values.some((value) => fuzzyTermMatch(term, value)));
+      })
       : rows;
     return this.sectionId === 'medications' ? this.sortMedicationRows(filteredRows) : filteredRows;
   }
@@ -2702,43 +2786,17 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   private buildMedicationSchedules(
     initial: Record<string, unknown>,
   ): MedicationSchedulePeriod[] | null {
-    const drafts: MedicationScheduleDraft[] = [
-      {
-        start_date: String(initial['start_date'] ?? ''),
-        end_date: String(initial['end_date'] ?? ''),
-        dosage: String(initial['dosage'] ?? ''),
-        formulation: String(initial['formulation'] ?? ''),
-        spray_count: String(initial['spray_count'] ?? ''),
-        administration_duration_seconds: String(initial['administration_duration_seconds'] ?? ''),
-        schedule_times: String(initial['schedule_times'] ?? ''),
-        planned_pause: String(initial['planned_pause'] ?? ''),
-      },
-      ...this.additionalMedicationSchedules(),
-    ];
+    const drafts = this.medicationScheduleDrafts(initial);
     const hasChanges = drafts.length > 1;
-    if (hasChanges) {
-      for (const [index, period] of drafts.entries()) {
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(period.start_date)) {
-          this.data.error.set(`Inserisci la data di inizio del periodo ${index + 1}.`);
-          return null;
-        }
-        if (!period.dosage.trim()) {
-          this.data.error.set(`Inserisci il dosaggio del periodo ${index + 1}.`);
-          return null;
-        }
-        if (period.end_date && period.end_date < period.start_date) {
-          this.data.error.set(`La fine del periodo ${index + 1} precede il suo inizio.`);
-          return null;
-        }
-        if (index > 0) {
-          const previous = drafts[index - 1];
-          if (!previous.end_date || previous.end_date >= period.start_date) {
-            this.data.error.set(
-              `Imposta la fine del periodo ${index} prima dell’inizio del periodo ${index + 1}.`,
-            );
-            return null;
-          }
-        }
+    for (const [index, period] of drafts.entries()) {
+      const rangeMessage = this.medicationScheduleRangeMessage(index, drafts);
+      if (rangeMessage) {
+        this.data.error.set(`Periodo ${index + 1}: ${rangeMessage}`);
+        return null;
+      }
+      if (hasChanges && !period.dosage.trim()) {
+        this.data.error.set(`Inserisci il dosaggio del periodo ${index + 1}.`);
+        return null;
       }
     }
     const output: MedicationSchedulePeriod[] = [];
