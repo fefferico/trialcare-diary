@@ -1,6 +1,6 @@
 # Architecture Map
 
-> Aggiornato automaticamente il 30/10/2026, 09:49:48.
+> Aggiornato automaticamente il 30/10/2026, 10:41:29.
 
 ## Struttura
 
@@ -53,3 +53,5 @@
 - [Tooltip Directive](../src/app/shared/directives/tooltip.directive.ts)
 - [Document Association Picker Component](../src/app/shared/document-association-picker.component.ts)
 - [Highlight Pipe](../src/app/shared/highlight.pipe.ts)
+- [Medicine Image Editor Component](../src/app/shared/medicine-image-editor.component.ts)
+- [Medicine Image Picker Component](../src/app/shared/medicine-image-picker.component.ts)

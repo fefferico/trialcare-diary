@@ -1,6 +1,6 @@
 # API Catalog
 
-> Generato da `npm run update-context` il 30/10/2026, 09:49:48.
+> Generato da `npm run update-context` il 30/10/2026, 10:41:29.
 
 ## Servizi
 
@@ -198,3 +198,5 @@ File: [src/app/core/ui-state.service.ts](../src/app/core/ui-state.service.ts)
 - [AppTimepickerComponent](../src/app/shared/app-timepicker.component.ts)
 - [AppToastContainerComponent](../src/app/shared/app-toast-container.component.ts)
 - [DocumentAssociationPickerComponent](../src/app/shared/document-association-picker.component.ts)
+- [MedicineImageEditorComponent](../src/app/shared/medicine-image-editor.component.ts)
+- [MedicineImagePickerComponent](../src/app/shared/medicine-image-picker.component.ts)

@@ -534,7 +534,10 @@ export class PdfRedactionComponent implements OnChanges {
     this.busy.set(true);
     this.processingChange.emit({ file, processing: true });
     try {
-      this.pdf = await getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+      this.pdf = await getDocument({
+        data: new Uint8Array(await file.arrayBuffer()),
+        wasmUrl: new URL('assets/pdfjs/wasm/', document.baseURI).toString(),
+      }).promise;
       this.pageCount.set(this.pdf.numPages);
       this.pages = [];
       this.boxes = Array.from({ length: this.pdf.numPages }, () => []);
@@ -576,7 +579,10 @@ export class PdfRedactionComponent implements OnChanges {
         'assets/pdfjs/pdf.worker.min.mjs',
         document.baseURI,
       ).toString();
-      this.pdf = await getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+      this.pdf = await getDocument({
+        data: new Uint8Array(await file.arrayBuffer()),
+        wasmUrl: new URL('assets/pdfjs/wasm/', document.baseURI).toString(),
+      }).promise;
       this.pageCount.set(this.pdf.numPages);
       this.pages = [];
       this.boxes = Array.from({ length: this.pdf.numPages }, () => []);

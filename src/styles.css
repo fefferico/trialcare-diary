@@ -534,6 +534,25 @@ textarea:focus-visible {
   stroke-linejoin: round;
 }
 
+.record-action.record-icon-action {
+  width: 36px;
+  min-width: 36px;
+  padding: 0;
+}
+
+.record-action.record-icon-action .action-icon {
+  display: block;
+}
+
+.record-action.record-icon-action .action-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
 .record-action:focus-visible {
   outline: 3px solid rgb(22 126 114 / 25%);
   outline-offset: 2px;
@@ -1067,6 +1086,12 @@ textarea:focus-visible {
     border: 1px solid #e2eae5;
     background: #f8faf9;
     padding: 0;
+  }
+
+  .record-action.record-icon-action {
+    width: 42px;
+    min-width: 42px;
+    min-height: 42px;
   }
 
   .record-action .action-label {

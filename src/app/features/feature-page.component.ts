@@ -21,6 +21,7 @@ import { AppDatepickerComponent } from '../shared/app-datepicker.component';
 import { AppTimepickerComponent } from '../shared/app-timepicker.component';
 import { AppAutocompleteComponent } from '../shared/app-autocomplete.component';
 import { DocumentAssociationPickerComponent } from '../shared/document-association-picker.component';
+import { MedicineImagePickerComponent } from '../shared/medicine-image-picker.component';
 import { HighlightPipe } from '../shared/highlight.pipe';
 import { TooltipDirective } from '../shared/directives/tooltip.directive';
 import {
@@ -275,6 +276,7 @@ function applyMedicationScheduleScope(
     AppTimepickerComponent,
     AppAutocompleteComponent,
     DocumentAssociationPickerComponent,
+    MedicineImagePickerComponent,
     HighlightPipe,
     TooltipDirective,
     PdfRedactionComponent,
@@ -432,6 +434,59 @@ function applyMedicationScheduleScope(
         @if (data.error()) {
           <div class="notice-error" role="alert">{{ data.error() }}</div>
         }
+        @if (section.id === 'documents' && data.rows().length) {
+          <section class="panel space-y-3" aria-labelledby="document-filters-title">
+            <div class="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 id="document-filters-title" class="text-sm font-semibold">Filtra documenti</h2>
+              <p class="text-xs text-slate-500 dark:text-slate-400" aria-live="polite">
+                {{ filteredRows.length }} di {{ data.rows().length }} documenti
+              </p>
+            </div>
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <label class="form-field">
+                <span>Tipo documento</span>
+                <app-dropdown
+                  [options]="documentCategoryOptions"
+                  [value]="documentCategoryFilter()"
+                  placeholder="Tutti i tipi"
+                  (selection)="documentCategoryFilter.set($event)"
+                />
+              </label>
+              <label class="form-field">
+                <span>Data da</span>
+                <app-datepicker
+                  label="Data documento da"
+                  [value]="documentDateFrom()"
+                  [rangeStart]="documentDateFrom()"
+                  [rangeEnd]="documentDateTo()"
+                  (dateChange)="documentDateFrom.set($event)"
+                />
+              </label>
+              <label class="form-field">
+                <span>Data a</span>
+                <app-datepicker
+                  label="Data documento a"
+                  [value]="documentDateTo()"
+                  [rangeStart]="documentDateFrom()"
+                  [rangeEnd]="documentDateTo()"
+                  (dateChange)="documentDateTo.set($event)"
+                />
+              </label>
+            </div>
+            @if (documentDateRangeInvalid) {
+              <p class="text-sm text-amber-700 dark:text-amber-300" role="status">
+                La data iniziale deve precedere o coincidere con quella finale.
+              </p>
+            }
+            @if (hasActiveDocumentFilters) {
+              <div class="flex justify-end">
+                <button type="button" class="text-sm font-semibold text-teal-700 underline dark:text-teal-300" (click)="clearDocumentFilters()">
+                  Azzera filtri
+                </button>
+              </div>
+            }
+          </section>
+        }
         @if (supportsFuzzySearch && data.rows().length) {
           <label class="form-field max-w-xl">
             <span>Cerca in {{ section.label.toLocaleLowerCase('it') }}</span>
@@ -463,11 +518,19 @@ function applyMedicationScheduleScope(
               </div>
             }
           </div>
-        } @else if (!filteredRows.length && section.id !== 'reports' && searchQuery().trim()) {
+        } @else if (!filteredRows.length && section.id !== 'reports' && (searchQuery().trim() || (section.id === 'documents' && hasActiveDocumentFilters))) {
           <div class="panel flex flex-col items-center px-6 py-10 text-center">
             <h2 class="text-lg font-semibold">Nessun risultato</h2>
-            <p class="mt-2 text-sm text-slate-500">Prova un altro termine o correggi la ricerca.</p>
-            <button type="button" class="button-secondary mt-4" (click)="searchQuery.set('')">Cancella ricerca</button>
+            <p class="mt-2 text-sm text-slate-500">
+              @if (section.id === 'documents') {
+                Modifica la ricerca o i filtri per vedere altri documenti.
+              } @else {
+                Prova un altro termine o correggi la ricerca.
+              }
+            </p>
+            <button type="button" class="button-secondary mt-4" (click)="clearDocumentSearchAndFilters()">
+              {{ section.id === 'documents' ? 'Azzera ricerca e filtri' : 'Cancella ricerca' }}
+            </button>
           </div>
         } @else if (!filteredRows.length && section.id !== 'reports') {
           <div class="panel flex flex-col items-center px-6 py-14 text-center">
@@ -718,7 +781,7 @@ function applyMedicationScheduleScope(
                         {{ value(row, 'date') || value(row, 'start_date') | date: 'd MMM y' }}
                       }
                     </p>
-                    <h2 class="mt-1 truncate text-base font-semibold">
+                    <h2 class="mt-1 text-base font-semibold">
                       {{
                         value(row, 'title') ||
                           value(row, 'name') ||
@@ -735,9 +798,24 @@ function applyMedicationScheduleScope(
                     </div>
                   </div>
                   <div class="flex gap-3">
+                    @if (section.id === 'documents') {
+                      <button
+                        type="button"
+                        class="record-action record-icon-action text-teal-700 dark:text-teal-300"
+                        [attr.aria-label]="'Duplica documento ' + (value(row, 'title') || '')"
+                        appTooltip="Duplica documento"
+                        (click)="$event.stopPropagation(); duplicateDocument(row)"
+                      >
+                        <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <rect x="8" y="8" width="12" height="12" rx="2" />
+                          <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
+                        </svg>
+                        <span class="action-label">Duplica</span>
+                      </button>
+                    }
                     <button
                       type="button"
-                      class="record-action text-teal-700 dark:text-teal-300"
+                      class="record-action record-icon-action text-teal-700 dark:text-teal-300"
                       [attr.aria-label]="
                         'Modifica ' + (value(row, 'title') || value(row, 'name') || 'voce')
                       "
@@ -750,7 +828,7 @@ function applyMedicationScheduleScope(
                       ><span class="action-label">Modifica</span></button
                     ><button
                       type="button"
-                      class="record-action text-slate-500 hover:text-rose-600 dark:text-slate-300"
+                      class="record-action record-icon-action text-slate-500 hover:text-rose-600 dark:text-slate-300"
                       [attr.aria-label]="
                         'Elimina ' + (value(row, 'title') || value(row, 'name') || 'voce')
                       "
@@ -974,7 +1052,7 @@ function applyMedicationScheduleScope(
               class="flex items-start justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800"
             >
               <div>
-                <p class="eyebrow">{{ section.id === 'documents' && documentScannerOpen() ? 'SCANSIONE DOCUMENTI' : 'NUOVA REGISTRAZIONE' }}</p>
+                <p class="eyebrow">{{ section.id === 'documents' && documentScannerOpen() ? 'SCANSIONE DOCUMENTI' : section.id === 'documents' && isDocumentDuplicate() ? 'COPIA DI DOCUMENTO' : 'NUOVA REGISTRAZIONE' }}</p>
                 <h2 id="dialog-title" class="text-xl font-semibold">
                   {{
                     section.id === 'children'
@@ -983,7 +1061,9 @@ function applyMedicationScheduleScope(
                         ? (isEditing() ? 'Modifica contatto' : 'Nuovo contatto')
                         : section.id === 'documents' && documentScannerOpen()
                           ? 'Scansiona documento'
-                        : 'Aggiungi una voce'
+                          : section.id === 'documents' && isDocumentDuplicate()
+                            ? 'Duplica documento'
+                            : 'Aggiungi una voce'
                   }}
                 </h2>
               </div>
@@ -994,6 +1074,11 @@ function applyMedicationScheduleScope(
             <form class="space-y-4 overflow-y-auto px-5 py-5" (ngSubmit)="save()">
               @if (data.error()) {
                 <p class="notice-error" role="alert">{{ data.error() }}</p>
+              }
+              @if (section.id === 'documents' && isDocumentDuplicate()) {
+                <p class="rounded-xl border border-teal-200 bg-teal-50/70 p-3 text-sm text-teal-900 dark:border-teal-900 dark:bg-teal-950/30 dark:text-teal-100">
+                  I metadati sono stati copiati; testo OCR, allegato originale e nota vocale non sono inclusi. Puoi aggiungere un nuovo file oppure salvare senza allegato.
+                </p>
               }
               @if (section.id === 'documents' && documentScannerOpen()) {
                 <div class="scanner-modal-body">
@@ -1051,28 +1136,16 @@ function applyMedicationScheduleScope(
                 </div>
               }
               @if (section.id === 'medications' || section.id === 'medicine_cabinet') {
-                <div class="flex flex-col gap-4 rounded-2xl border border-slate-200 p-3 dark:border-slate-700 sm:flex-row sm:items-center sm:p-4">
-                  <div class="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-200" aria-hidden="true">
-                    @if (medicineImagePreviewSource(); as imageSource) {
-                      <img class="h-full w-full object-contain" [src]="imageSource" alt="" />
-                    } @else {
-                      <svg class="h-9 w-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m10.5 3.5 10 10a4.24 4.24 0 0 1-6 6l-10-10a4.24 4.24 0 0 1 6-6Z"/><path d="m8 14 6-6"/></svg>
-                    }
-                  </div>
-                  <div class="min-w-0 flex-1 space-y-2" (paste)="onMedicineImagePaste($event)">
-                    <div class="flex flex-col gap-2 sm:flex-row sm:items-end">
-                      <label class="form-field min-w-0 flex-1">
-                        <span>Immagine del farmaco</span>
-                        <input class="field-control file:mr-3 file:rounded-lg file:border-0 file:bg-teal-50 file:px-3 file:py-2 file:font-medium file:text-teal-800" type="file" accept="image/jpeg,image/png,image/webp" (change)="selectMedicineImage($event)" />
-                      </label>
-                      <button type="button" class="button-secondary shrink-0" (click)="pasteMedicineImage()">Incolla immagine</button>
-                    </div>
-                    @if (medicineImagePreviewSource()) {
-                      <button class="text-xs font-semibold text-rose-700 underline dark:text-rose-300" type="button" (click)="clearMedicineImage()">Rimuovi immagine</button>
-                    }
-                    <p class="text-xs text-slate-500 dark:text-slate-400">JPEG, PNG o WebP, massimo 3 MB. Puoi usare Ctrl+V o Cmd+V nel riquadro dopo aver copiato un’immagine. La foto resta privata e associata al profilo del bambino.</p>
-                  </div>
-                </div>
+                @defer {
+                  <tc-medicine-image-picker
+                    [imageUrl]="medicineImagePreviewSource()"
+                    [compressedFile]="medicineImageFile"
+                    (imageSelected)="acceptMedicineImage($event)"
+                    (imageRemoved)="clearMedicineImage()"
+                  />
+                } @placeholder {
+                  <p class="rounded-xl bg-slate-50 p-3 text-xs text-slate-500 dark:bg-slate-800 dark:text-slate-400" role="status">Preparazione degli strumenti per la foto…</p>
+                }
               }
               <div class="grid gap-4 sm:grid-cols-2">
                 @for (field of formFields; track field.key) {
@@ -1086,7 +1159,7 @@ function applyMedicationScheduleScope(
                     [class.full-span]="field.kind === 'textarea' || field.kind === 'file'"
                     ><span
                       >{{ field.label }}
-                      @if (field.required && !(field.kind === 'file' && isEditing())) {
+                      @if (field.required && !(field.kind === 'file' && (isEditing() || isDocumentDuplicate()))) {
                         <i class="text-rose-500"> *</i>
                       }
                     </span>
@@ -1159,7 +1232,7 @@ function applyMedicationScheduleScope(
                         <input
                           class="field-control file:mr-3 file:rounded-lg file:border-0 file:bg-teal-50 file:px-3 file:py-2 file:font-medium file:text-teal-800"
                           type="file"
-                          [required]="(field.required ?? false) && !isEditing()"
+                          [required]="(field.required ?? false) && !isEditing() && !isDocumentDuplicate()"
                           accept=".pdf,image/jpeg,image/png,image/webp,image/heic"
                           (change)="setFile(field, $event)"
                         /><small class="text-xs text-slate-400"
@@ -1833,9 +1906,22 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   readonly selectedChildName = signal('');
   readonly highlightedId = signal('');
   readonly searchQuery = signal('');
+  readonly documentCategoryFilter = signal('');
+  readonly documentDateFrom = signal('');
+  readonly documentDateTo = signal('');
+  readonly isDocumentDuplicate = signal(false);
   private readonly documentSearchPreviewCache = new Map<string, { query: string; source: string; preview: string }>();
   get supportsFuzzySearch(): boolean {
     return ['medications', 'medicine_cabinet', 'orthoses', 'health_events', 'therapies', 'documents', 'expenses', 'contacts'].includes(this.sectionId);
+  }
+  get documentCategoryOptions(): string[] {
+    return sectionById('documents')?.fields.find((field) => field.key === 'category')?.options ?? [];
+  }
+  get hasActiveDocumentFilters(): boolean {
+    return !!(this.documentCategoryFilter() || this.documentDateFrom() || this.documentDateTo());
+  }
+  get documentDateRangeInvalid(): boolean {
+    return !!this.documentDateFrom() && !!this.documentDateTo() && this.documentDateFrom() > this.documentDateTo();
   }
   readonly shareNoticeId = signal('');
   readonly shareNotice = signal('');
@@ -1908,7 +1994,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   private contactAvatarFile: File | null = null;
   private contactAvatarCleared = false;
   private contactAvatarLoadVersion = 0;
-  private medicineImageFile: File | null = null;
+  medicineImageFile: File | null = null;
   private medicineImageCleared = false;
   private medicineImageLoadVersion = 0;
   private editingMedicineRow: DiaryRow | null = null;
@@ -2219,6 +2305,16 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
           !!row['recurrence_group_id'])
       )
         return false;
+      if (this.sectionId === 'documents') {
+        const documentDate = String(row['date'] ?? '').slice(0, 10);
+        if (this.documentCategoryFilter() && String(row['category'] ?? '') !== this.documentCategoryFilter()) return false;
+        if (
+          (this.documentDateFrom() || this.documentDateTo()) &&
+          (!documentDate ||
+            (!!this.documentDateFrom() && documentDate < this.documentDateFrom()) ||
+            (!!this.documentDateTo() && documentDate > this.documentDateTo()))
+        ) return false;
+      }
       const categoryLabel =
         (
           {
@@ -2425,6 +2521,15 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         this.documentSearchLoading.set(false);
       });
     }, 250);
+  }
+  clearDocumentFilters(): void {
+    this.documentCategoryFilter.set('');
+    this.documentDateFrom.set('');
+    this.documentDateTo.set('');
+  }
+  clearDocumentSearchAndFilters(): void {
+    this.searchQuery.set('');
+    this.clearDocumentFilters();
   }
   value(row: DiaryRow, key: string): string {
     const value = row[key];
@@ -2651,52 +2756,8 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     return this.selectedMedicineImagePreview() ??
       (this.editingId ? this.medicineImageUrls()[this.editingId] ?? null : null);
   }
-  selectMedicineImage(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    this.setMedicineImageFile(input.files?.[0] ?? null);
-    if (this.data.error()) input.value = '';
-  }
-  async pasteMedicineImage(): Promise<void> {
-    this.data.error.set('');
-    if (!navigator.clipboard?.read) {
-      this.data.error.set('Il browser non consente l’accesso alla clipboard da questo pulsante. Puoi usare Ctrl+V o Cmd+V nel riquadro dopo aver copiato un’immagine.');
-      return;
-    }
-    try {
-      const items = await navigator.clipboard.read();
-      for (const item of items) {
-        const type = item.types.find((candidate) => this.isSupportedMedicineImageType(candidate));
-        if (!type) continue;
-        const blob = await item.getType(type);
-        const extension = type === 'image/jpeg' ? 'jpg' : type.slice('image/'.length);
-        this.setMedicineImageFile(new File([blob], `farmaco.${extension}`, { type }));
-        return;
-      }
-      this.data.error.set('La clipboard non contiene un’immagine JPEG, PNG o WebP.');
-    } catch {
-      this.data.error.set('Non è stato possibile leggere la clipboard. Verifica il permesso del browser o usa Ctrl+V/Cmd+V nel riquadro immagine.');
-    }
-  }
-  onMedicineImagePaste(event: ClipboardEvent): void {
-    const items = Array.from(event.clipboardData?.items ?? []);
-    const image = items.find((item) => item.kind === 'file' && this.isSupportedMedicineImageType(item.type));
-    const file = image?.getAsFile();
-    if (!file) return;
-    event.preventDefault();
-    this.setMedicineImageFile(file);
-  }
-  private isSupportedMedicineImageType(type: string): boolean {
-    return ['image/jpeg', 'image/png', 'image/webp'].includes(type.toLocaleLowerCase());
-  }
-  private setMedicineImageFile(file: File | null): void {
+  acceptMedicineImage(file: File): void {
     this.releaseMedicineImagePreview();
-    this.medicineImageFile = null;
-    this.data.error.set('');
-    if (!file) return;
-    if (!this.isSupportedMedicineImageType(file.type) || file.size > 3 * 1024 * 1024) {
-      this.data.error.set('Scegli un’immagine JPEG, PNG o WebP fino a 3 MB.');
-      return;
-    }
     this.medicineImageFile = file;
     this.medicineImageCleared = false;
     this.selectedMedicineImagePreview.set(URL.createObjectURL(file));
@@ -2923,6 +2984,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.documentSearchRequest++;
     this.documentSearchLoading.set(false);
     this.form = this.sectionId === 'medicine_cabinet' ? { expiry_precision: 'Data completa' } : {};
+    this.isDocumentDuplicate.set(false);
     this.documentSearchResults.set([]);
     this.selectedDocuments.set([]);
     this.associatedFiles = [];
@@ -3088,6 +3150,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     if (row) this.openDetails(row);
   }
   edit(row: DiaryRow): void {
+    this.isDocumentDuplicate.set(false);
     this.form = {};
     this.documentSearchResults.set([]);
     this.medicationScopePrompt.set(null);
@@ -3165,6 +3228,21 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.ui.setModal(true);
     if (this.sectionId === 'documents' && this.hasExistingPdf()) void this.loadExistingPdf();
   }
+  duplicateDocument(row: DiaryRow): void {
+    if (this.sectionId !== 'documents') return;
+    this.openForm();
+    for (const field of this.section.fields) {
+      if (field.key === 'file') continue;
+      const value = row[field.key];
+      if (value != null && ['string', 'number', 'boolean'].includes(typeof value)) {
+        this.form[field.key] = String(value);
+      }
+    }
+    this.form['extracted_text'] = '';
+    this.pdfTextSeed = '';
+    this.isDocumentDuplicate.set(true);
+    this.data.error.set('');
+  }
   closeForm(): void {
     if (this.documentSearchTimer) clearTimeout(this.documentSearchTimer);
     this.documentSearchRequest++;
@@ -3180,6 +3258,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.documentTextProcessing.set(false);
     this.loadingExistingPdf.set(false);
     this.editingDocumentRow = null;
+    this.isDocumentDuplicate.set(false);
     this.editingContactRow = null;
     this.contactAvatarFile = null;
     this.contactAvatarCleared = false;
@@ -3752,7 +3831,15 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       await this.refresh();
     }
     this.saving.set(false);
-    if (ok) this.closeForm();
+    if (ok) {
+      if (this.sectionId === 'documents') {
+        this.toast.showSuccess(
+          isEditing ? 'Documento aggiornato' : 'Documento salvato',
+          'La registrazione è stata salvata nel diario.',
+        );
+      }
+      this.closeForm();
+    }
   }
   private blobDataUrl(blob: Blob): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -3767,7 +3854,10 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       'assets/pdfjs/pdf.worker.min.mjs',
       document.baseURI,
     ).toString();
-    const pdf = await getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+    const pdf = await getDocument({
+      data: new Uint8Array(await file.arrayBuffer()),
+      wasmUrl: new URL('assets/pdfjs/wasm/', document.baseURI).toString(),
+    }).promise;
     const pages: string[] = [];
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
       const page = await pdf.getPage(pageNumber);
