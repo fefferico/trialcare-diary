@@ -4,7 +4,7 @@ import { SupabaseClientService } from './supabase-client.service';
 import { DiaryRow, SectionId } from '../models/diary.models';
 
 const STORAGE_KEY = 'trialcare-diary-v1';
-type LocalStore = Partial<Record<SectionId, DiaryRow[]>>;
+type LocalStore = Partial<Record<SectionId, DiaryRow[]>> & { document_folders?: DiaryRow[] };
 export type DocumentLinkTarget = 'calendar_events' | 'health_events' | 'medications' | 'orthoses';
 const DOCUMENT_LINK_TABLE: Record<DocumentLinkTarget, string> = {
   calendar_events: 'calendar_event_documents',
@@ -32,6 +32,7 @@ const SEARCHABLE_SECTIONS: Exclude<SectionId, 'reports'>[] = [
 export type DiaryExportData = Record<Exclude<SectionId, 'reports'>, DiaryRow[]> & {
   child_measurements: DiaryRow[];
   document_links: DiaryRow[];
+  document_folders: DiaryRow[];
 };
 
 function normalizeDocumentSearch(value: string): string {
@@ -101,6 +102,9 @@ function newestFirst(rows: DiaryRow[], section: SectionId): DiaryRow[] {
 }
 
 function databaseErrorMessage(message: string): string {
+  if (/document_folders_(root|child)_name_uidx/i.test(message)) {
+    return 'Esiste già una cartella con questo nome a questo livello.';
+  }
   const requiredContactField = message.match(
     /null value in column "(name|role|category)" of relation "contacts" violates not-null constraint/i,
   )?.[1]?.toLocaleLowerCase();
@@ -125,6 +129,51 @@ export class DiaryDataService {
       this.local = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as LocalStore;
     } catch {
       this.local = {};
+    }
+    this.migrateLocalDocumentFolders();
+  }
+
+  private migrateLocalDocumentFolders(): void {
+    const documents = this.local.documents ?? [];
+    const folders = [...(this.local.document_folders ?? [])];
+    const byChildAndName = new Map<string, DiaryRow>();
+    for (const folder of folders) {
+      if (folder['parent_folder_id']) continue;
+      const key = `${String(folder['child_id'] ?? '')}:${String(folder['name'] ?? '').trim().toLocaleLowerCase('it')}`;
+      byChildAndName.set(key, folder);
+    }
+
+    let changed = false;
+    for (const row of documents) {
+      const name = String(row['folder_name'] ?? '').trim();
+      if (!row['folder_id'] && name && row['child_id']) {
+        const childId = String(row['child_id']);
+        const key = `${childId}:${name.toLocaleLowerCase('it')}`;
+        let folder = byChildAndName.get(key);
+        if (!folder) {
+          folder = {
+            id: crypto.randomUUID(),
+            child_id: childId,
+            parent_folder_id: null,
+            name,
+            created_at: String(row['created_at'] ?? new Date().toISOString()),
+          };
+          folders.push(folder);
+          byChildAndName.set(key, folder);
+        }
+        row['folder_id'] = folder.id;
+        changed = true;
+      }
+      if ('folder_name' in row) {
+        delete row['folder_name'];
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      this.local.documents = documents;
+      this.local.document_folders = folders;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.local));
     }
   }
 
@@ -219,6 +268,7 @@ export class DiaryDataService {
     ) as unknown as DiaryExportData;
     output.child_measurements = [];
     output.document_links = [];
+    output.document_folders = [];
     if (!client || !this.auth.user()) {
       for (const section of SEARCHABLE_SECTIONS) output[section] = [...(this.local[section] ?? [])];
       output.documents = output.documents.map(({ ...row }) => {
@@ -227,6 +277,7 @@ export class DiaryDataService {
       });
       output.child_measurements = this.localMeasurements();
       output.document_links = this.localDocumentLinks();
+      output.document_folders = [...(this.local.document_folders ?? [])];
       return output;
     }
     // Supabase caps each response page; walk every page so backups do not silently omit older rows.
@@ -249,6 +300,19 @@ export class DiaryDataService {
     const { data: measurements, error: measurementError } = await client.from('child_measurements').select('*').order('date', { ascending: true });
     if (measurementError) throw new Error(`Esportazione misurazioni: ${measurementError.message}`);
     output.child_measurements = (measurements ?? []) as DiaryRow[];
+    let folderOffset = 0;
+    while (true) {
+      const { data, error } = await client
+        .from('document_folders')
+        .select('*')
+        .order('created_at', { ascending: true })
+        .range(folderOffset, folderOffset + pageSize - 1);
+      if (error) throw new Error(`Esportazione cartelle documenti: ${error.message}`);
+      const page = (data ?? []) as DiaryRow[];
+      output.document_folders.push(...page);
+      if (page.length < pageSize) break;
+      folderOffset += pageSize;
+    }
     output.documents = output.documents.map(({ ...row }) => {
       delete row['file_data'];
       return row;
@@ -706,7 +770,7 @@ export class DiaryDataService {
     if (client && this.auth.user()) {
       const { data, error } = await client
         .from('documents')
-        .select('id,child_id,title,category,date,storage_path')
+        .select('id,child_id,title,category,date,folder_id,storage_path')
         .eq('child_id', childId)
         .in('id', ids);
       if (error) {
@@ -888,6 +952,76 @@ export class DiaryDataService {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.local));
     }
     await this.load(section);
+    return true;
+  }
+
+  async loadDocumentFolders(childId: string): Promise<DiaryRow[]> {
+    this.error.set('');
+    const client = this.supabase.client;
+    if (client && this.auth.user()) {
+      const { data, error } = await client
+        .from('document_folders')
+        .select('*')
+        .eq('child_id', childId)
+        .order('name', { ascending: true });
+      if (error) {
+        this.error.set(error.message);
+        return [];
+      }
+      return (data ?? []) as DiaryRow[];
+    }
+    return (this.local.document_folders ?? [])
+      .filter((folder) => folder['child_id'] === childId)
+      .sort((left, right) => String(left['name'] ?? '').localeCompare(String(right['name'] ?? ''), 'it'));
+  }
+
+  async createDocumentFolder(
+    childId: string,
+    name: string,
+    parentFolderId: string | null,
+  ): Promise<DiaryRow | null> {
+    const folder = {
+      id: crypto.randomUUID(),
+      child_id: childId,
+      parent_folder_id: parentFolderId,
+      name: name.trim(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    } as DiaryRow;
+    const client = this.supabase.client;
+    if (client && this.auth.user()) {
+      const { data, error } = await client.from('document_folders').insert(folder).select('*').single();
+      if (error) {
+        this.error.set(databaseErrorMessage(error.message));
+        return null;
+      }
+      return data as DiaryRow;
+    }
+    this.local.document_folders = [...(this.local.document_folders ?? []), folder];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.local));
+    return folder;
+  }
+
+  async renameDocumentFolder(childId: string, folderId: string, name: string): Promise<boolean> {
+    const client = this.supabase.client;
+    if (client && this.auth.user()) {
+      const { error } = await client
+        .from('document_folders')
+        .update({ name: name.trim() })
+        .eq('id', folderId)
+        .eq('child_id', childId);
+      if (error) {
+        this.error.set(databaseErrorMessage(error.message));
+        return false;
+      }
+    } else {
+      this.local.document_folders = (this.local.document_folders ?? []).map((folder) =>
+        folder.id === folderId && folder['child_id'] === childId
+          ? { ...folder, name: name.trim(), updated_at: new Date().toISOString() }
+          : folder,
+      );
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.local));
+    }
     return true;
   }
 

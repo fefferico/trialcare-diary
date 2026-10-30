@@ -1,6 +1,6 @@
 # API Catalog
 
-> Generato da `npm run update-context` il 30/10/2026, 10:41:29.
+> Generato da `npm run update-context` il 30/10/2026, 21:45:00.
 
 ## Servizi
 
@@ -110,6 +110,13 @@ File: [src/app/core/diary-data.service.ts](../src/app/core/diary-data.service.ts
   )`: `Promise<boolean>`
 - `remove(section: SectionId, row: DiaryRow)`: `Promise<void>`
 - `update(section: SectionId, id: string, value: Record<string, unknown>)`: `Promise<boolean>`
+- `loadDocumentFolders(childId: string)`: `Promise<DiaryRow[]>`
+- `createDocumentFolder(
+    childId: string,
+    name: string,
+    parentFolderId: string | null,
+  )`: `Promise<DiaryRow | null>`
+- `renameDocumentFolder(childId: string, folderId: string, name: string)`: `Promise<boolean>`
 - `updateCalendarEventSeries(
     recurrenceGroupId: string,
     childId: string,

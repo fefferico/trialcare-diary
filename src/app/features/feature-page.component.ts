@@ -438,9 +438,15 @@ function applyMedicationScheduleScope(
           <section class="panel space-y-3" aria-labelledby="document-filters-title">
             <div class="flex flex-wrap items-baseline justify-between gap-2">
               <h2 id="document-filters-title" class="text-sm font-semibold">Filtra documenti</h2>
-              <p class="text-xs text-slate-500 dark:text-slate-400" aria-live="polite">
-                {{ filteredRows.length }} di {{ data.rows().length }} documenti
-              </p>
+              <div class="flex flex-wrap items-center gap-3">
+                <p class="text-xs text-slate-500 dark:text-slate-400" aria-live="polite">
+                  {{ filteredRows.length }} di {{ data.rows().length }} documenti
+                </p>
+                <div class="inline-flex rounded-xl border border-slate-200 p-1 dark:border-slate-700" role="group" aria-label="Visualizzazione documenti">
+                  <button type="button" class="rounded-lg px-3 py-1.5 text-xs font-semibold transition" [class.bg-teal-700]="documentViewMode() === 'folders'" [class.text-white]="documentViewMode() === 'folders'" [class.text-slate-600]="documentViewMode() !== 'folders'" [class.dark:text-slate-300]="documentViewMode() !== 'folders'" (click)="setDocumentViewMode('folders')">Cartelle</button>
+                  <button type="button" class="rounded-lg px-3 py-1.5 text-xs font-semibold transition" [class.bg-teal-700]="documentViewMode() === 'list'" [class.text-white]="documentViewMode() === 'list'" [class.text-slate-600]="documentViewMode() !== 'list'" [class.dark:text-slate-300]="documentViewMode() !== 'list'" (click)="setDocumentViewMode('list')">Elenco</button>
+                </div>
+              </div>
             </div>
             <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <label class="form-field">
@@ -502,6 +508,80 @@ function applyMedicationScheduleScope(
             />
           </label>
         }
+        @if (section.id === 'documents' && documentViewMode() === 'folders') {
+          <section class="panel space-y-4" aria-label="Navigazione cartelle documenti">
+            @if (viewingUnassignedDocuments()) {
+              <nav class="flex flex-wrap items-center gap-2 text-sm" aria-label="Percorso cartelle">
+                <button type="button" class="font-semibold text-teal-700 hover:underline dark:text-teal-300" (click)="navigateDocumentFolder(null)">Cartelle</button>
+                <span aria-hidden="true" class="text-slate-400">/</span>
+                <span class="font-semibold">Senza cartella</span>
+              </nav>
+            } @else {
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <nav class="flex min-w-0 flex-wrap items-center gap-2 text-sm" aria-label="Percorso cartelle">
+                  <button type="button" class="font-semibold text-teal-700 hover:underline dark:text-teal-300" (click)="navigateDocumentFolder(null)">Cartelle</button>
+                  @for (folder of documentFolderTrail; track folder.id) {
+                    <span aria-hidden="true" class="text-slate-400">/</span>
+                    <button type="button" class="max-w-48 truncate font-semibold text-teal-700 hover:underline dark:text-teal-300" [attr.aria-current]="$last ? 'page' : null" (click)="navigateDocumentFolder(folder.id)">{{ folder['name'] }}</button>
+                  }
+                </nav>
+                <button type="button" class="button-secondary shrink-0" [disabled]="!selectedChildId()" (click)="beginCreateDocumentFolder()">Nuova cartella</button>
+              </div>
+              @if (creatingDocumentFolder()) {
+                <div class="flex flex-col gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700 sm:flex-row sm:items-end">
+                  <label class="form-field min-w-0 flex-1">
+                    <span>Nome della nuova cartella</span>
+                    <input class="field-control" type="text" maxlength="80" [ngModel]="documentFolderNameValue()" (ngModelChange)="documentFolderNameValue.set($event)" placeholder="Es. Referti e controlli" />
+                  </label>
+                  <div class="flex justify-end gap-2">
+                    <button type="button" class="button-secondary" (click)="cancelCreateDocumentFolder()">Annulla</button>
+                    <button type="button" class="button-primary" [disabled]="!documentFolderNameValue().trim() || savingDocumentFolder()" (click)="createDocumentFolder()">{{ savingDocumentFolder() ? 'Creazione…' : 'Crea cartella' }}</button>
+                  </div>
+                </div>
+              }
+              @if (visibleDocumentFolders.length) {
+                <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-label="Sottocartelle">
+                  @for (folder of visibleDocumentFolders; track folder.id) {
+                    <article class="panel space-y-3">
+                      <button type="button" class="flex w-full items-center gap-3 text-left" [attr.aria-label]="'Apri cartella ' + folder['name']" (click)="openDocumentFolder(folder.id)">
+                        <span class="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-200" aria-hidden="true">
+                          <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 9h18"/></svg>
+                        </span>
+                        <span class="min-w-0 flex-1">
+                          <span class="block truncate font-semibold">{{ folder['name'] }}</span>
+                          <span class="mt-1 block text-sm text-slate-500 dark:text-slate-400">{{ documentFolderCount(folder.id) }} {{ documentFolderCount(folder.id) === 1 ? 'documento' : 'documenti' }}@if (documentFolderChildCount(folder.id)) { · {{ documentFolderChildCount(folder.id) }} sottocartelle }</span>
+                        </span>
+                        <svg class="h-4 w-4 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+                      </button>
+                      @if (renamingDocumentFolderId() === folder.id) {
+                        <div class="space-y-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+                          <label class="form-field">
+                            <span>Nuovo nome cartella</span>
+                            <input class="field-control" type="text" maxlength="80" [ngModel]="documentFolderRenameValue()" (ngModelChange)="documentFolderRenameValue.set($event)" />
+                          </label>
+                          <div class="flex justify-end gap-2">
+                            <button type="button" class="button-secondary !px-3 !py-2 text-xs" (click)="cancelRenameDocumentFolder()">Annulla</button>
+                            <button type="button" class="button-primary !px-3 !py-2 text-xs" [disabled]="!documentFolderRenameValue().trim() || savingDocumentFolder()" (click)="renameDocumentFolder(folder.id)">{{ savingDocumentFolder() ? 'Salvataggio…' : 'Salva nome' }}</button>
+                          </div>
+                        </div>
+                      } @else {
+                        <div class="flex justify-end border-t border-slate-100 pt-2 dark:border-slate-800">
+                          <button type="button" class="text-xs font-semibold text-teal-700 hover:underline dark:text-teal-300" [attr.aria-label]="'Rinomina cartella ' + folder['name']" (click)="beginRenameDocumentFolder(folder)">Rinomina</button>
+                        </div>
+                      }
+                    </article>
+                  }
+                </div>
+              }
+              @if (!activeDocumentFolderId() && unassignedDocumentRows.length) {
+                <button type="button" class="flex w-full items-center gap-3 rounded-xl border border-dashed border-slate-300 p-4 text-left transition hover:border-teal-500 dark:border-slate-700 dark:hover:border-teal-500" (click)="openUnassignedDocuments()">
+                  <span class="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300" aria-hidden="true"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/></svg></span>
+                  <span class="min-w-0 flex-1"><span class="block font-semibold">Senza cartella</span><span class="mt-1 block text-sm text-slate-500 dark:text-slate-400">{{ unassignedDocumentRows.length }} {{ unassignedDocumentRows.length === 1 ? 'documento' : 'documenti' }}</span></span>
+                </button>
+              }
+            }
+          </section>
+        }
         @if (data.syncing()) {
           <div class="grid gap-3 md:grid-cols-2" aria-label="Caricamento voci" aria-busy="true">
             @for (placeholder of [1, 2, 3, 4]; track placeholder) {
@@ -518,7 +598,7 @@ function applyMedicationScheduleScope(
               </div>
             }
           </div>
-        } @else if (!filteredRows.length && section.id !== 'reports' && (searchQuery().trim() || (section.id === 'documents' && hasActiveDocumentFilters))) {
+        } @else if (noSearchResults && section.id !== 'reports') {
           <div class="panel flex flex-col items-center px-6 py-10 text-center">
             <h2 class="text-lg font-semibold">Nessun risultato</h2>
             <p class="mt-2 text-sm text-slate-500">
@@ -532,24 +612,31 @@ function applyMedicationScheduleScope(
               {{ section.id === 'documents' ? 'Azzera ricerca e filtri' : 'Cancella ricerca' }}
             </button>
           </div>
-        } @else if (!filteredRows.length && section.id !== 'reports') {
+        } @else if (!hasDocumentFolderContents && section.id !== 'reports') {
           <div class="panel flex flex-col items-center px-6 py-14 text-center">
             <div
               class="mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-teal-50 text-2xl text-teal-700 dark:bg-teal-900/30 dark:text-teal-200"
             >
               {{ section.id === 'children' ? '♡' : '＋' }}
             </div>
-            <h2 class="text-lg font-semibold">Ancora nessuna voce</h2>
+            <h2 class="text-lg font-semibold">{{ section.id === 'documents' && (activeDocumentFolderId() !== null || viewingUnassignedDocuments()) ? 'Cartella vuota' : 'Ancora nessuna voce' }}</h2>
             <p class="mt-2 max-w-sm text-sm text-slate-500">
               {{
-                section.id === 'children'
-                  ? 'Crea un profilo per iniziare a organizzare il diario.'
-                  : 'Aggiungi la prima voce: potrai aggiornarla e condividerla durante la visita.'
+                section.id === 'documents' && (activeDocumentFolderId() !== null || viewingUnassignedDocuments())
+                  ? 'Non ci sono documenti in questa cartella. Puoi aggiungerne uno o tornare alle cartelle.'
+                  : section.id === 'children'
+                    ? 'Crea un profilo per iniziare a organizzare il diario.'
+                    : 'Aggiungi la prima voce: potrai aggiornarla e condividerla durante la visita.'
               }}
             </p>
-            <button class="button-primary mt-5" (click)="openForm()">
-              {{ section.id === 'children' ? 'Aggiungi un bambino' : 'Aggiungi una voce' }}
-            </button>
+            <div class="mt-5 flex flex-wrap justify-center gap-2">
+              @if (section.id === 'documents' && (activeDocumentFolderId() !== null || viewingUnassignedDocuments())) {
+                <button type="button" class="button-secondary" (click)="navigateDocumentFolder(null)">Tutte le cartelle</button>
+              }
+              <button type="button" class="button-primary" (click)="openForm()">
+                {{ section.id === 'children' ? 'Aggiungi un bambino' : section.id === 'documents' ? 'Aggiungi documento' : 'Aggiungi una voce' }}
+              </button>
+            </div>
           </div>
         } @else if (section.id === 'reports' && reportPreviewOpen()) {
           <article id="visit-report-preview" class="panel mx-auto max-w-4xl space-y-6" aria-labelledby="visit-report-preview-title">
@@ -736,9 +823,11 @@ function applyMedicationScheduleScope(
               </div>
             </section>
           </article>
+        } @else if (section.id === 'documents' && documentViewMode() === 'folders' && !activeDocumentFolderId() && !viewingUnassignedDocuments()) {
+          <ng-container></ng-container>
         } @else {
-          <div class="grid gap-3 md:grid-cols-2">
-            @for (row of filteredRows; track row['id']) {
+          <div class="grid gap-3" [class.md:grid-cols-2]="section.id !== 'documents'">
+            @for (row of displayedDocumentRows; track row['id']) {
               <article
                 class="panel group cursor-pointer transition hover:border-teal-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-teal-600"
                 role="button"
@@ -868,6 +957,9 @@ function applyMedicationScheduleScope(
                     }
                   }
                 </div>
+                @if (section.id === 'documents' && documentViewMode() === 'list') {
+                  <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Cartella: {{ row['folder_id'] ? documentFolderPathForId(value(row, 'folder_id')) : 'Senza cartella' }}</p>
+                }
                 @if (section.id === 'documents' && searchQuery().trim()) {
                   @let ocrPreview = documentOcrPreview(row);
                   @if (ocrPreview) {
@@ -1355,6 +1447,18 @@ function applyMedicationScheduleScope(
                   }
                 }
               </div>
+              @if (section.id === 'documents') {
+                <label class="form-field">
+                  <span>Cartella</span>
+                  <app-dropdown
+                    [options]="documentFolderPathOptions"
+                    [value]="documentFolderPathForId(form['folder_id'] || '')"
+                    placeholder="Seleziona cartella"
+                    (selection)="setDocumentFolderPath($event)"
+                  />
+                  <small class="text-xs text-slate-500 dark:text-slate-400">Puoi assegnare il documento a una sottocartella scegliendo il percorso completo.</small>
+                </label>
+              }
               @if (section.id === 'documents' && !isPdfAttachment()) {
                 <label class="form-field">
                   <span>Testo del documento per la ricerca</span>
@@ -1909,6 +2013,15 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   readonly documentCategoryFilter = signal('');
   readonly documentDateFrom = signal('');
   readonly documentDateTo = signal('');
+  readonly documentViewMode = signal<'folders' | 'list'>('folders');
+  readonly documentFolders = signal<DiaryRow[]>([]);
+  readonly activeDocumentFolderId = signal<string | null>(null);
+  readonly viewingUnassignedDocuments = signal(false);
+  readonly savingDocumentFolder = signal(false);
+  readonly creatingDocumentFolder = signal(false);
+  readonly documentFolderNameValue = signal('');
+  readonly renamingDocumentFolderId = signal('');
+  readonly documentFolderRenameValue = signal('');
   readonly isDocumentDuplicate = signal(false);
   private readonly documentSearchPreviewCache = new Map<string, { query: string; source: string; preview: string }>();
   get supportsFuzzySearch(): boolean {
@@ -1916,6 +2029,110 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   }
   get documentCategoryOptions(): string[] {
     return sectionById('documents')?.fields.find((field) => field.key === 'category')?.options ?? [];
+  }
+  get visibleDocumentFolders(): DiaryRow[] {
+    const parentId = this.activeDocumentFolderId();
+    const folders = this.documentFolders()
+      .filter((folder) => String(folder['parent_folder_id'] ?? '') === String(parentId ?? ''))
+      .sort((left, right) => String(left['name'] ?? '').localeCompare(String(right['name'] ?? ''), 'it', { sensitivity: 'base' }));
+    return this.hasDocumentSearchOrFilters
+      ? folders.filter((folder) => this.documentFolderCount(folder.id) > 0)
+      : folders;
+  }
+  get documentFolderTrail(): DiaryRow[] {
+    const byId = new Map(this.documentFolders().map((folder) => [folder.id, folder]));
+    const trail: DiaryRow[] = [];
+    const seen = new Set<string>();
+    let folder = this.activeDocumentFolderId() ? byId.get(this.activeDocumentFolderId()!) : undefined;
+    while (folder && !seen.has(folder.id)) {
+      trail.unshift(folder);
+      seen.add(folder.id);
+      const parentId = String(folder['parent_folder_id'] ?? '');
+      folder = parentId ? byId.get(parentId) : undefined;
+    }
+    return trail;
+  }
+  get documentFolderPathOptions(): string[] {
+    return [
+      'Nessuna cartella',
+      ...this.documentFolders()
+        .map((folder) => this.documentFolderPathForId(folder.id))
+        .sort((left, right) => left.localeCompare(right, 'it', { sensitivity: 'base' })),
+    ];
+  }
+  get unassignedDocumentRows(): DiaryRow[] {
+    return this.filteredRows.filter((row) => !row['folder_id']);
+  }
+  get displayedDocumentRows(): DiaryRow[] {
+    if (this.sectionId !== 'documents' || this.documentViewMode() !== 'folders') {
+      return this.filteredRows;
+    }
+    if (this.viewingUnassignedDocuments()) return this.unassignedDocumentRows;
+    const folderId = this.activeDocumentFolderId();
+    return folderId ? this.filteredRows.filter((row) => row['folder_id'] === folderId) : [];
+  }
+  get hasDocumentSearchOrFilters(): boolean {
+    return !!this.searchQuery().trim() || this.hasActiveDocumentFilters;
+  }
+  get hasDocumentFolderContents(): boolean {
+    if (this.sectionId !== 'documents' || this.documentViewMode() !== 'folders') {
+      return this.displayedDocumentRows.length > 0;
+    }
+    if (this.viewingUnassignedDocuments()) return this.displayedDocumentRows.length > 0;
+    if (!this.activeDocumentFolderId()) {
+      return this.visibleDocumentFolders.length > 0 || this.unassignedDocumentRows.length > 0;
+    }
+    return this.visibleDocumentFolders.length > 0 || this.displayedDocumentRows.length > 0;
+  }
+  get noFilteredDocumentResults(): boolean {
+    if (this.sectionId !== 'documents' || !this.hasDocumentSearchOrFilters) return false;
+    if (this.documentViewMode() !== 'folders') return this.filteredRows.length === 0;
+    const hasUnassignedAtRoot = !this.activeDocumentFolderId() &&
+      !this.viewingUnassignedDocuments() && this.unassignedDocumentRows.length > 0;
+    return !this.displayedDocumentRows.length && !this.visibleDocumentFolders.length && !hasUnassignedAtRoot;
+  }
+  get noSearchResults(): boolean {
+    if (this.sectionId === 'documents') return this.noFilteredDocumentResults;
+    return !!this.searchQuery().trim() && this.filteredRows.length === 0;
+  }
+  documentFolderCount(folderId: string): number {
+    return this.filteredRows.filter((row) => this.isFolderInSubtree(String(row['folder_id'] ?? ''), folderId)).length;
+  }
+  documentFolderChildCount(folderId: string): number {
+    return this.documentFolders().filter((folder) => folder['parent_folder_id'] === folderId).length;
+  }
+  documentFolderPathForId(folderId: string): string {
+    const byId = new Map(this.documentFolders().map((folder) => [folder.id, folder]));
+    const names: string[] = [];
+    const seen = new Set<string>();
+    let folder = byId.get(folderId);
+    while (folder && !seen.has(folder.id)) {
+      names.unshift(String(folder['name'] ?? ''));
+      seen.add(folder.id);
+      const parentId = String(folder['parent_folder_id'] ?? '');
+      folder = parentId ? byId.get(parentId) : undefined;
+    }
+    return names.length ? names.join(' / ') : 'Nessuna cartella';
+  }
+  private isFolderInSubtree(folderId: string, ancestorId: string): boolean {
+    if (!folderId) return false;
+    const byId = new Map(this.documentFolders().map((folder) => [folder.id, folder]));
+    const seen = new Set<string>();
+    let currentId = folderId;
+    while (currentId && !seen.has(currentId)) {
+      if (currentId === ancestorId) return true;
+      seen.add(currentId);
+      currentId = String(byId.get(currentId)?.['parent_folder_id'] ?? '');
+    }
+    return false;
+  }
+  setDocumentFolderPath(path: string): void {
+    if (path === 'Nessuna cartella') {
+      this.form['folder_id'] = '';
+      return;
+    }
+    const folder = this.documentFolders().find((item) => this.documentFolderPathForId(item.id) === path);
+    this.form['folder_id'] = folder?.id ?? '';
   }
   get hasActiveDocumentFilters(): boolean {
     return !!(this.documentCategoryFilter() || this.documentDateFrom() || this.documentDateTo());
@@ -2345,6 +2562,11 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
             (typeof value === 'string' || typeof value === 'number'),
           )
           .map(([, value]) => normalizeSearch(String(value)));
+        if (this.sectionId === 'documents') {
+          values.push(normalizeSearch(row['folder_id']
+            ? this.documentFolderPathForId(String(row['folder_id']))
+            : 'Senza cartella'));
+        }
         return terms.every((term) => values.some((value) => fuzzyTermMatch(term, value)));
       })
       : rows;
@@ -2468,6 +2690,10 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       await this.data.loadReport(this.selectedChildId() || undefined);
       return;
     }
+    if (this.sectionId === 'documents') {
+      const childId = this.selectedChildId();
+      this.documentFolders.set(childId ? await this.data.loadDocumentFolders(childId) : []);
+    }
     if (this.sectionId !== 'children' && this.selectedChildId()) {
       const client = this.supabase.client;
       if (client && this.auth.user()) {
@@ -2530,6 +2756,73 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   clearDocumentSearchAndFilters(): void {
     this.searchQuery.set('');
     this.clearDocumentFilters();
+  }
+  setDocumentViewMode(mode: 'folders' | 'list'): void {
+    this.documentViewMode.set(mode);
+    this.activeDocumentFolderId.set(null);
+    this.viewingUnassignedDocuments.set(false);
+    this.cancelRenameDocumentFolder();
+    this.cancelCreateDocumentFolder();
+  }
+  openDocumentFolder(folderId: string): void {
+    this.activeDocumentFolderId.set(folderId);
+    this.viewingUnassignedDocuments.set(false);
+    this.cancelRenameDocumentFolder();
+    this.cancelCreateDocumentFolder();
+  }
+  openUnassignedDocuments(): void {
+    this.activeDocumentFolderId.set(null);
+    this.viewingUnassignedDocuments.set(true);
+    this.cancelRenameDocumentFolder();
+    this.cancelCreateDocumentFolder();
+  }
+  navigateDocumentFolder(folderId: string | null): void {
+    this.activeDocumentFolderId.set(folderId);
+    this.viewingUnassignedDocuments.set(false);
+    this.cancelRenameDocumentFolder();
+    this.cancelCreateDocumentFolder();
+  }
+  beginCreateDocumentFolder(): void {
+    this.creatingDocumentFolder.set(true);
+    this.documentFolderNameValue.set('');
+  }
+  cancelCreateDocumentFolder(): void {
+    this.creatingDocumentFolder.set(false);
+    this.documentFolderNameValue.set('');
+  }
+  async createDocumentFolder(): Promise<void> {
+    const childId = this.selectedChildId();
+    const name = this.documentFolderNameValue().trim();
+    if (!childId || !name || this.savingDocumentFolder()) return;
+    this.savingDocumentFolder.set(true);
+    const folder = await this.data.createDocumentFolder(
+      childId,
+      name,
+      this.activeDocumentFolderId(),
+    );
+    this.savingDocumentFolder.set(false);
+    if (!folder) return;
+    this.cancelCreateDocumentFolder();
+    await this.refresh();
+  }
+  beginRenameDocumentFolder(folder: DiaryRow): void {
+    this.renamingDocumentFolderId.set(folder.id);
+    this.documentFolderRenameValue.set(String(folder['name'] ?? ''));
+  }
+  cancelRenameDocumentFolder(): void {
+    this.renamingDocumentFolderId.set('');
+    this.documentFolderRenameValue.set('');
+  }
+  async renameDocumentFolder(folderId: string): Promise<void> {
+    const childId = this.selectedChildId();
+    const name = this.documentFolderRenameValue().trim();
+    if (!childId || !folderId || !name || this.savingDocumentFolder()) return;
+    this.savingDocumentFolder.set(true);
+    const renamed = await this.data.renameDocumentFolder(childId, folderId, name);
+    this.savingDocumentFolder.set(false);
+    if (!renamed) return;
+    this.cancelRenameDocumentFolder();
+    await this.refresh();
   }
   value(row: DiaryRow, key: string): string {
     const value = row[key];
@@ -2933,6 +3226,9 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     const child = this.children.find((item) => item['name'] === name);
     this.selectedChildName.set(name);
     this.selectedChildId.set(child?.id ?? '');
+    this.activeDocumentFolderId.set(null);
+    this.viewingUnassignedDocuments.set(false);
+    this.cancelRenameDocumentFolder();
     this.documentSearchResults.set([]);
     this.selectedDocuments.set([]);
     void this.refresh();
@@ -2984,6 +3280,9 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.documentSearchRequest++;
     this.documentSearchLoading.set(false);
     this.form = this.sectionId === 'medicine_cabinet' ? { expiry_precision: 'Data completa' } : {};
+    if (this.sectionId === 'documents' && this.documentViewMode() === 'folders' && !this.viewingUnassignedDocuments()) {
+      this.form['folder_id'] = this.activeDocumentFolderId() ?? '';
+    }
     this.isDocumentDuplicate.set(false);
     this.documentSearchResults.set([]);
     this.selectedDocuments.set([]);
@@ -3179,6 +3478,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       } else if (value != null && typeof value !== 'object') this.form[field.key] = String(value);
     }
     if (this.sectionId === 'documents') {
+      this.form['folder_id'] = String(row['folder_id'] ?? '');
       this.form['extracted_text'] = String(row['extracted_text'] ?? '');
       this.pdfTextSeed = String(row['extracted_text'] ?? '');
     }
@@ -3239,6 +3539,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       }
     }
     this.form['extracted_text'] = '';
+    this.form['folder_id'] = String(row['folder_id'] ?? '');
     this.pdfTextSeed = '';
     this.isDocumentDuplicate.set(true);
     this.data.error.set('');
@@ -3481,6 +3782,12 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       for (const key of ['name', 'role', 'category']) {
         value[key] = String(value[key] ?? '').trim();
       }
+    }
+    if (this.sectionId === 'documents') {
+      const requestedFolderId = String(value['folder_id'] ?? '');
+      value['folder_id'] = this.documentFolders().some((folder) => folder.id === requestedFolderId)
+        ? requestedFolderId
+        : null;
     }
     if (this.sectionId === 'medicine_cabinet') {
       const monthOnly = value['expiry_precision'] === 'Mese e anno';
