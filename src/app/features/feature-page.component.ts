@@ -44,6 +44,7 @@ interface MedicationScheduleDraft {
   administration_duration_seconds: string;
   schedule_times: string;
   planned_pause: string;
+  persistedPeriodIndex?: number | null;
 }
 
 interface HistoricalMedicationDose {
@@ -1196,6 +1197,9 @@ function applyMedicationScheduleScope(
                       @if (medicationScheduleRangeMessage(0); as rangeMessage) {
                         <p class="text-xs font-medium text-rose-700 dark:text-rose-300 sm:col-span-2" role="alert">{{ rangeMessage }}</p>
                       }
+                      @if (medicationScheduleOverlapMessage(0); as overlapMessage) {
+                        <p class="rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900 dark:bg-amber-950/40 dark:text-amber-200 sm:col-span-2" role="status" aria-live="polite">{{ overlapMessage }}</p>
+                      }
                     </div>
                   }
                   @if (section.id === 'medications' && field.key === 'schedule_times') {
@@ -1298,7 +1302,14 @@ function applyMedicationScheduleScope(
                     <article class="space-y-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-800/60" [attr.data-medication-schedule-index]="index">
                       <div class="flex items-center justify-between gap-2">
                         <h4 class="text-sm font-semibold">Periodo {{ index + 2 }}</h4>
-                        <button type="button" class="text-xs font-semibold text-rose-700 hover:underline dark:text-rose-300" (click)="removeMedicationSchedule(index)">Rimuovi</button>
+                        <button
+                          type="button"
+                          class="text-xs font-semibold text-rose-700 hover:underline disabled:cursor-wait disabled:opacity-60 dark:text-rose-300"
+                          [disabled]="removingMedicationScheduleIndex() !== null"
+                          (click)="removeMedicationSchedule(index)"
+                        >
+                          {{ removingMedicationScheduleIndex() === index ? 'Verifica…' : 'Rimuovi' }}
+                        </button>
                       </div>
                       <div class="grid gap-3 sm:grid-cols-2">
                         <label class="form-field"><span>Dal <i class="text-rose-500">*</i></span><app-datepicker [label]="'Inizio periodo ' + (index + 2)" [value]="period.start_date" [rangeStart]="period.start_date" [rangeEnd]="period.end_date" (dateChange)="updateMedicationSchedule(index, 'start_date', $event)" /></label>
@@ -1330,6 +1341,9 @@ function applyMedicationScheduleScope(
                         @if (medicationScheduleRangeMessage(index + 1); as rangeMessage) {
                           <p class="text-xs font-medium text-rose-700 dark:text-rose-300 sm:col-span-2" role="alert">{{ rangeMessage }}</p>
                         }
+                        @if (medicationScheduleOverlapMessage(index + 1); as overlapMessage) {
+                          <p class="rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900 dark:bg-amber-950/40 dark:text-amber-200 sm:col-span-2" role="status" aria-live="polite">{{ overlapMessage }}</p>
+                        }
                         <label class="form-field"><span>Dosaggio <i class="text-rose-500">*</i></span><input class="field-control" type="text" [ngModel]="period.dosage" [ngModelOptions]="{ standalone: true }" (ngModelChange)="updateMedicationSchedule(index, 'dosage', $event)" placeholder="Es. 2 puff" /></label>
                         <label class="form-field"><span>Formulazione</span><app-dropdown [options]="medicationFormulations" [value]="period.formulation" placeholder="Seleziona" (selection)="updateMedicationSchedule(index, 'formulation', $event)" /></label>
                         <label class="form-field sm:col-span-2"><span>Orari o fasce orarie</span><input class="field-control" type="text" [ngModel]="period.schedule_times" [ngModelOptions]="{ standalone: true }" (ngModelChange)="updateMedicationSchedule(index, 'schedule_times', $event)" placeholder="Es. 08:00-10:00, 14:00-16:00" /></label>
@@ -1341,6 +1355,9 @@ function applyMedicationScheduleScope(
                       </div>
                     </article>
                   }
+                  <div class="flex justify-end">
+                    <button type="button" class="button-secondary shrink-0 !px-3 !py-2 text-xs" (click)="addMedicationSchedule()">＋ Aggiungi periodo</button>
+                  </div>
                 </section>
               }
               <div class="form-field full-span">
@@ -1832,6 +1849,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   private documentSearchTimer?: ReturnType<typeof setTimeout>;
   private documentSearchRequest = 0;
   readonly additionalMedicationSchedules = signal<MedicationScheduleDraft[]>([]);
+  readonly removingMedicationScheduleIndex = signal<number | null>(null);
   readonly medicationDurationUnits = ['Giorni', 'Somministrazioni'];
   readonly medicationDurationValue = signal<number | null>(null);
   readonly medicationDurationUnit = signal('Giorni');
@@ -1906,6 +1924,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         administration_duration_seconds: String(source['administration_duration_seconds'] ?? ''),
         schedule_times: String(source['schedule_times'] ?? ''),
         planned_pause: String(source['planned_pause'] ?? ''),
+        persistedPeriodIndex: null,
       },
     ]);
     requestAnimationFrame(() => {
@@ -2007,26 +2026,80 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     if (periods.length > 1 && !start) return 'Indica la data di inizio di questo periodo.';
 
     if (index > 0) {
-      const previous = periods[index - 1];
-      if (!previous.end_date || !validMedicationDate(previous.end_date)) {
-        return `Indica la data di fine del periodo ${index} prima di iniziare questo.`;
-      }
-      if (start && previous.end_date >= start) {
-        return `Questo periodo deve iniziare dopo la fine del periodo ${index}.`;
+      const previousStart = periods[index - 1].start_date.trim();
+      if (start && previousStart && validMedicationDate(previousStart) && start < previousStart &&
+        end && end < previousStart) {
+        return `Il periodo ${index + 1} deve restare in ordine cronologico rispetto al periodo ${index}.`;
       }
     }
 
-    if (index < periods.length - 1) {
-      const next = periods[index + 1];
-      if (!end) return `Indica la data di fine prima del periodo ${index + 2}.`;
-      if (next.start_date && validMedicationDate(next.start_date) && end >= next.start_date) {
-        return `La fine deve precedere l’inizio del periodo ${index + 2}.`;
-      }
-    }
     return '';
   }
-  removeMedicationSchedule(index: number): void {
-    this.additionalMedicationSchedules.update((periods) => periods.filter((_, i) => i !== index));
+  medicationScheduleOverlapMessage(index: number, periods = this.medicationScheduleDrafts()): string {
+    const period = periods[index];
+    if (!period) return '';
+
+    const start = period.start_date.trim();
+    const end = period.end_date.trim();
+    if ((start && !validMedicationDate(start)) || (end && !validMedicationDate(end)) ||
+      (start && end && end < start) || (!start && periods.length > 1)) return '';
+
+    const overlappingPeriods = periods.flatMap((previous, previousIndex) => {
+      if (previousIndex >= index) return [];
+      const previousStart = previous.start_date.trim();
+      const previousEnd = previous.end_date.trim();
+      if ((previousStart && !validMedicationDate(previousStart)) ||
+        (previousEnd && !validMedicationDate(previousEnd))) return [];
+
+      const startsBeforePreviousEnds = !previousEnd || !start || start <= previousEnd;
+      const previousStartsBeforeEnds = !end || !previousStart || previousStart <= end;
+      return startsBeforePreviousEnds && previousStartsBeforeEnds ? [previousIndex + 1] : [];
+    });
+
+    if (!overlappingPeriods.length) return '';
+    const labels = overlappingPeriods.map((periodNumber) => `Periodo ${periodNumber}`).join(', ');
+    return `Le date si sovrappongono a ${labels}: il piano potrebbe risultare ambiguo. Puoi comunque salvare il periodo.`;
+  }
+  async removeMedicationSchedule(index: number): Promise<void> {
+    const draft = this.additionalMedicationSchedules()[index];
+    if (!draft || this.removingMedicationScheduleIndex() !== null) return;
+
+    this.removingMedicationScheduleIndex.set(index);
+    try {
+      const persistedIndex = draft.persistedPeriodIndex;
+      const medication = this.editingId
+        ? this.data.rows().find((row) => row.id === this.editingId)
+        : undefined;
+      const persistedPeriod = medication && persistedIndex != null
+        ? this.medicationSchedulePeriods(medication)[persistedIndex]
+        : undefined;
+
+      if (medication && persistedPeriod) {
+        const count = await this.data.countMedicationDoseEvents(
+          medication.id,
+          persistedPeriod.start_date ?? undefined,
+          persistedPeriod.end_date ?? undefined,
+        );
+        if (count === null) {
+          this.data.error.set(this.data.error() || 'Non è stato possibile verificare le somministrazioni registrate. Il periodo non è stato rimosso.');
+          return;
+        }
+        if (count > 0) {
+          const confirmed = await this.confirmation.confirm(
+            `Nel periodo ${index + 2} risultano ${count} eventi registrati. Se rimuovi e salvi il periodo, questi eventi resteranno nello storico ma non saranno più associati a un periodo del piano. Vuoi rimuovere il periodo?`,
+            {
+              title: 'Eventi già registrati',
+              confirmLabel: 'Rimuovi periodo',
+            },
+          );
+          if (!confirmed) return;
+        }
+      }
+
+      this.additionalMedicationSchedules.update((periods) => periods.filter((_, current) => current !== index));
+    } finally {
+      this.removingMedicationScheduleIndex.set(null);
+    }
   }
   medicationSchedulePeriods(row: DiaryRow): MedicationSchedulePeriod[] {
     const schedules = row['schedule_periods'];
@@ -2918,7 +2991,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         const value = first[key];
         this.form[key] = value == null ? '' : String(value);
       }
-      this.additionalMedicationSchedules.set(savedSchedules.slice(1).map((period) => ({
+      this.additionalMedicationSchedules.set(savedSchedules.slice(1).map((period, index) => ({
         start_date: period.start_date ?? '',
         end_date: period.end_date ?? '',
         start_time: period.start_time ?? '',
@@ -2929,6 +3002,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         administration_duration_seconds: period.administration_duration_seconds == null ? '' : String(period.administration_duration_seconds),
         schedule_times: period.schedule_times ?? '',
         planned_pause: period.planned_pause ?? '',
+        persistedPeriodIndex: index + 1,
       })));
     } else this.additionalMedicationSchedules.set([]);
     this.editingId = row.id;

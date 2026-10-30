@@ -307,6 +307,37 @@ export class DiaryDataService {
       );
   }
 
+  async countMedicationDoseEvents(
+    medicationId: string,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<number | null> {
+    this.error.set('');
+    const validDate = (value?: string) => !!value && /^\d{4}-\d{2}-\d{2}$/.test(value);
+    const client = this.supabase.client;
+    if (client && this.auth.user()) {
+      let query = client
+        .from('medication_doses')
+        .select('id', { count: 'exact', head: true })
+        .eq('medication_id', medicationId);
+      if (validDate(startDate)) query = query.gte('scheduled_date', startDate);
+      if (validDate(endDate)) query = query.lte('scheduled_date', endDate);
+      const { count, error } = await query;
+      if (error) {
+        this.error.set(error.message);
+        return null;
+      }
+      return count ?? 0;
+    }
+
+    return (this.local.medication_doses ?? []).filter((row) => {
+      if (String(row['medication_id'] ?? '') !== medicationId) return false;
+      const date = String(row['scheduled_date'] ?? '').slice(0, 10);
+      return (!validDate(startDate) || date >= startDate!) &&
+        (!validDate(endDate) || date <= endDate!);
+    }).length;
+  }
+
   async recordMedicationSpotDose(
     medicationId: string,
     childId: string,

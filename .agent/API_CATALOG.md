@@ -1,6 +1,6 @@
 # API Catalog
 
-> Generato da `npm run update-context` il 30/10/2026, 08:21:46.
+> Generato da `npm run update-context` il 30/10/2026, 08:37:36.
 
 ## Servizi
 
@@ -47,6 +47,11 @@ File: [src/app/core/diary-data.service.ts](../src/app/core/diary-data.service.ts
 - `localMeasurements(childId?: string)`: `DiaryRow[]`
 - `saveMeasurement(childId: string, value: Record<string, unknown>)`: `Promise<boolean>`
 - `loadMedicationDoses(medicationId: string)`: `Promise<DiaryRow[]>`
+- `countMedicationDoseEvents(
+    medicationId: string,
+    startDate?: string,
+    endDate?: string,
+  )`: `Promise<number | null>`
 - `recordMedicationSpotDose(
     medicationId: string,
     childId: string,
