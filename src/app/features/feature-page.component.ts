@@ -5,6 +5,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { DiaryDataService } from '../core/diary-data.service';
 import { ConfirmationService } from '../core/confirmation.service';
+import { ToastService } from '../core/toast.service';
 import { UiStateService } from '../core/ui-state.service';
 import { AuthService } from '../core/auth.service';
 import { PdfExportService } from '../core/pdf-export.service';
@@ -1416,37 +1417,36 @@ function applyMedicationScheduleScope(
           </section>
         </div>
       }
-      @if (medicationScopePrompt()) {
-        <div class="modal-backdrop z-50" (click)="medicationScopePrompt.set(false)">
+      @if (medicationScopePrompt(); as scopeMedication) {
+        <div class="modal-backdrop z-50" (click)="medicationScopePrompt.set(null)">
           <section class="modal-panel max-w-lg" role="dialog" aria-modal="true" aria-labelledby="medication-scope-title"
             (click)="$event.stopPropagation()">
             <div class="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
               <p class="eyebrow">TERAPIA FARMACOLOGICA</p>
-              <h2 id="medication-scope-title" class="text-xl font-semibold">A quali episodi applicare le modifiche?</h2>
+              <h2 id="medication-scope-title" class="text-xl font-semibold">A quali date del piano applicare le modifiche?</h2>
               <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                Il piano di somministrazione verrà aggiornato da oggi in base alla scelta. Nome del farmaco e note si
-                applicano all’intera scheda; le somministrazioni già registrate restano invariate.
+                Le opzioni si riferiscono alle date rispetto a oggi, non al numero del periodo (per esempio “Periodo 6”). Si applicano solo a questa scheda di <strong>{{ scopeMedication.name }}</strong>. Le scelte parziali mantengono il piano precedente nelle date fuori dall’intervallo scelto. Se vuoi salvare la fine di un periodo già passato e il piano completo così come appare nel modulo, scegli “Tutte le date”. I farmaci con lo stesso nome ma ID diverso e le dosi già registrate restano invariati.
               </p>
             </div>
             <div class="grid gap-2 p-5">
               <button type="button" class="button-secondary justify-start" [disabled]="saving()"
-                (click)="save('single')">
-                Solo questo episodio
+                (click)="saveMedicationScope('single', scopeMedication.id)">
+                Solo oggi
               </button>
               <button type="button" class="button-secondary justify-start" [disabled]="saving()"
-                (click)="save('preceding')">
-                Questo e tutti quelli passati
+                (click)="saveMedicationScope('preceding', scopeMedication.id)">
+                Tutte le date fino a oggi
               </button>
               <button type="button" class="button-secondary justify-start" [disabled]="saving()"
-                (click)="save('following')">
-                Questo e tutti quelli futuri
+                (click)="saveMedicationScope('following', scopeMedication.id)">
+                Tutte le date da oggi in poi
               </button>
               <button type="button" class="button-primary justify-start" [disabled]="saving()"
-                (click)="save('all')">
-                Tutti gli episodi, passati e futuri
+                (click)="saveMedicationScope('all', scopeMedication.id)">
+                Tutte le date, passate e future
               </button>
               <button type="button" class="mt-1 text-sm text-slate-500 hover:underline"
-                (click)="medicationScopePrompt.set(false)">
+                (click)="medicationScopePrompt.set(null)">
                 Torna alla modifica
               </button>
             </div>
@@ -1744,9 +1744,10 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   private readonly supabase = inject(SupabaseClientService);
   private readonly storage = inject(StorageService);
   private readonly confirmation = inject(ConfirmationService);
+  private readonly toast = inject(ToastService);
   readonly isFormOpen = signal(false);
   readonly documentScannerOpen = signal(false);
-  readonly medicationScopePrompt = signal(false);
+  readonly medicationScopePrompt = signal<{ id: string; name: string } | null>(null);
   readonly detailRow = signal<DiaryRow | null>(null);
   readonly contactAvatarUrls = signal<Record<string, string>>({});
   readonly selectedContactAvatarPreview = signal<string | null>(null);
@@ -2730,7 +2731,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.editingId = '';
     this.editingContactRow = null;
     this.editingDocumentRow = null;
-    this.medicationScopePrompt.set(false);
+    this.medicationScopePrompt.set(null);
     this.isFormOpen.set(true);
     this.ui.setModal(true);
   }
@@ -2874,7 +2875,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   edit(row: DiaryRow): void {
     this.form = {};
     this.documentSearchResults.set([]);
-    this.medicationScopePrompt.set(false);
+    this.medicationScopePrompt.set(null);
     this.medicationDurationValue.set(null);
     this.medicationDurationUnit.set('Giorni');
     this.selectedDocuments.set([]);
@@ -2963,7 +2964,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.contactAvatarFile = null;
     this.contactAvatarCleared = false;
     this.releaseContactAvatarPreview();
-    this.medicationScopePrompt.set(false);
+    this.medicationScopePrompt.set(null);
     this.isFormOpen.set(false);
     this.ui.setModal(false);
   }
@@ -3132,8 +3133,28 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     }
     return doses;
   }
-  async save(medicationScope?: MedicationScheduleScope): Promise<void> {
+  async saveMedicationScope(scope: MedicationScheduleScope, medicationId: string): Promise<void> {
+    if (!medicationId || this.editingId !== medicationId) {
+      this.medicationScopePrompt.set(null);
+      this.data.error.set('La scheda del farmaco è cambiata. Riapri la modifica e riprova.');
+      return;
+    }
+    await this.save(scope, medicationId);
+  }
+  async save(
+    medicationScope?: MedicationScheduleScope,
+    medicationScopeTargetId?: string,
+  ): Promise<void> {
     if (this.documentLinksLoading()) return;
+    if (medicationScope && (
+      this.sectionId !== 'medications' ||
+      !medicationScopeTargetId ||
+      medicationScopeTargetId !== this.editingId
+    )) {
+      this.medicationScopePrompt.set(null);
+      this.data.error.set('La scheda del farmaco è cambiata. Riapri la modifica e riprova.');
+      return;
+    }
     if (this.sectionId === 'contacts') {
       const requiredContactFields = this.section.fields.filter((field) => field.required);
       for (const field of requiredContactFields) {
@@ -3184,13 +3205,17 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       }
       delete value['start_time'];
       delete value['end_time'];
-      const editingRow = this.editingId
-        ? this.data.rows().find((row) => row.id === this.editingId)
+      const editingMedicationId = medicationScopeTargetId ?? this.editingId;
+      const editingRow = editingMedicationId
+        ? this.data.rows().find((row) => row.id === editingMedicationId)
         : undefined;
       if (editingRow) {
         const existingSchedules = this.medicationSchedulePeriods(editingRow);
         if (!sameMedicationPeriods(existingSchedules, schedules) && !medicationScope) {
-          this.medicationScopePrompt.set(true);
+          this.medicationScopePrompt.set({
+            id: editingRow.id,
+            name: String(editingRow['name'] ?? 'Farmaco'),
+          });
           this.saving.set(false);
           return;
         }
@@ -3217,7 +3242,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         } else value['schedule_periods'] = schedules;
       } else value['schedule_periods'] = schedules;
       if (!medicationScope || medicationScope === 'all') value['end_date'] = value['end_date'] || null;
-      this.medicationScopePrompt.set(false);
+      this.medicationScopePrompt.set(null);
     }
     if (this.recording()) {
       const recorder = this.recorder;
@@ -3337,7 +3362,8 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       (value['storage_path'] || value['local_file_id'] || this.editingDocumentRow?.['storage_path'] || this.editingDocumentRow?.['local_file_id'])
     ) delete value['file'];
     if (this.sectionId === 'expenses' && value['receipt_path']) delete value['receipt'];
-    const targetId = this.editingId || crypto.randomUUID();
+    const isEditing = !!this.editingId;
+    const targetId = medicationScopeTargetId ?? (this.editingId || crypto.randomUUID());
     const targetChildId = this.selectedChildId();
     let uploadedContactAvatarPath = '';
     const previousContactAvatarPath = String(this.editingContactRow?.['avatar_path'] ?? '');
@@ -3365,14 +3391,14 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     }
     const shouldBackfillMedicationDoses = this.sectionId === 'medications' &&
       (!this.editingId || this.pendingHistoricalDoseMedicationId === targetId);
-    let ok = this.editingId
-      ? await this.data.update(this.sectionId, this.editingId, value)
+    let ok = isEditing
+      ? await this.data.update(this.sectionId, targetId, value)
       : !!(await this.data.saveWithId(
         this.sectionId,
         { ...value, id: targetId },
         this.sectionId === 'children' ? undefined : targetChildId || undefined,
       ));
-    if (ok && !this.editingId && ['medications', 'orthoses', 'health_events'].includes(this.sectionId))
+    if (ok && !isEditing && ['medications', 'orthoses', 'health_events'].includes(this.sectionId))
       this.editingId = targetId;
     if (ok && shouldBackfillMedicationDoses && targetChildId) {
       this.pendingHistoricalDoseMedicationId = targetId;
@@ -3492,10 +3518,11 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
       .trim();
   }
   async remove(row: DiaryRow): Promise<void> {
-    if (await this.confirmation.confirm('Vuoi eliminare questa voce dal diario?', {
+    if (await this.confirmation.confirm('Vuoi eliminare questa voce dal diario? L\'operazione non è reversibile', {
       title: 'Elimina voce',
       confirmLabel: 'Elimina',
     })) {
+      const toastInfo = this.deletedRowToast(row);
       this.data.error.set('');
       if (this.sectionId === 'documents' && typeof row['storage_path'] === 'string') {
         const removed = await this.storage.removeDocument(String(row['storage_path']));
@@ -3505,15 +3532,78 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         }
       }
       await this.data.remove(this.sectionId, row);
-      if (this.sectionId === 'documents' && row['local_file_id'] && !this.data.error())
+      if (this.data.error()) return;
+      if (this.sectionId === 'documents' && row['local_file_id'])
         await this.storage.removeLocalFile(String(row['local_file_id']));
-      if (this.sectionId === 'contacts' && !this.data.error()) {
+      if (this.sectionId === 'contacts') {
         const avatarPath = String(row['avatar_path'] ?? '');
         if (avatarPath && !(await this.storage.removeContactAvatar(avatarPath)))
           this.data.error.set('Contatto eliminato, ma non è stato possibile rimuovere la foto dal deposito.');
         await this.refresh();
       }
+      this.toast.showSuccess(toastInfo.title, toastInfo.message);
     }
+  }
+  private deletedRowToast(row: DiaryRow): { title: string; message: string } {
+    const titles: Partial<Record<SectionId, string>> = {
+      children: 'Profilo eliminato',
+      medications: 'Terapia farmacologica eliminata',
+      medicine_cabinet: 'Farmaco eliminato dall’inventario',
+      orthoses: 'Ortesi o ausilio eliminato',
+      health_events: 'Evento di salute eliminato',
+      therapies: 'Percorso terapeutico eliminato',
+      documents: 'Documento eliminato',
+      expenses: 'Spesa eliminata',
+      contacts: 'Contatto eliminato',
+    };
+    const formatDate = (raw: string): string => {
+      const iso = raw.trim().slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return '';
+      const parsed = new Date(`${iso}T12:00:00`);
+      return Number.isNaN(parsed.getTime())
+        ? ''
+        : parsed.toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' });
+    };
+    const label =
+      this.value(row, 'title').trim() ||
+      this.value(row, 'name').trim() ||
+      this.value(row, 'category').trim() ||
+      this.section?.label ||
+      'Voce del diario';
+    const detailsBySection: Partial<Record<SectionId, string[]>> = {
+      children: [formatDate(this.value(row, 'birth_date'))],
+      medications: [
+        this.value(row, 'dosage').trim() || this.medicationSchedulePeriods(row)[0]?.dosage?.trim() || '',
+        formatDate(this.value(row, 'start_date')),
+      ],
+      medicine_cabinet: [
+        this.value(row, 'quantity').trim(),
+        row['expiry_precision'] === 'month' && /^\d{4}-\d{2}/.test(this.value(row, 'expiry_date'))
+          ? `${this.value(row, 'expiry_date').slice(5, 7)}/${this.value(row, 'expiry_date').slice(0, 4)}`
+          : formatDate(this.value(row, 'expiry_date')),
+      ],
+      orthoses: [this.value(row, 'category').trim(), this.value(row, 'size').trim()],
+      health_events: [this.value(row, 'category').trim(), formatDate(this.value(row, 'date'))],
+      therapies: [
+        this.value(row, 'therapist').trim() || this.value(row, 'facility').trim(),
+        formatDate(this.value(row, 'start_date')),
+      ],
+      documents: [this.value(row, 'category').trim(), formatDate(this.value(row, 'date'))],
+      expenses: [
+        this.value(row, 'category').trim(),
+        row['amount'] != null && this.value(row, 'amount') !== '' && Number.isFinite(Number(row['amount']))
+          ? Number(row['amount']).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })
+          : '',
+        formatDate(this.value(row, 'date')),
+      ],
+      contacts: [this.value(row, 'role').trim(), this.value(row, 'category').trim()],
+    };
+    const parts = [label, ...(detailsBySection[this.sectionId] ?? [])].filter(Boolean);
+    const uniqueParts = parts.filter((part, index) => index === 0 || part !== parts[0]);
+    return {
+      title: titles[this.sectionId] ?? 'Voce eliminata',
+      message: uniqueParts.join(' · '),
+    };
   }
   async shareContact(row: DiaryRow): Promise<void> {
     const lines = [

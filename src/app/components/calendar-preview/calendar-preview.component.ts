@@ -38,6 +38,15 @@ interface MedicationSchedulePeriod {
   dosage: string;
   schedule_times: string;
 }
+interface DoseConfirmation {
+  medicationId: string;
+  childId: string;
+  title: string;
+  scheduledTime: string;
+  label: string;
+  plannedTime: string;
+  plannedTimeDescription: string;
+}
 @Component({
   selector: 'tc-calendar-preview',
   standalone: true,
@@ -55,6 +64,7 @@ export class CalendarPreviewComponent implements OnInit {
   readonly loading = signal(true);
   readonly savingDose = signal(false);
   readonly doseError = signal('');
+  readonly doseConfirmation = signal<DoseConfirmation | null>(null);
   readonly skipReason = signal('');
   readonly skipDose = signal<{ medicationId: string; childId: string; time: string; label: string } | null>(null);
   readonly selectedView = signal<'today' | 'upcoming'>('today');
@@ -308,40 +318,43 @@ export class CalendarPreviewComponent implements OnInit {
   completedDoseTimes(doses: Array<{ actualTime: string; label: string }>): string {
     return doses.map((dose) => dose.actualTime || dose.label).join(' · ');
   }
-  async markDoseTaken(
+  openDoseConfirmation(
     item: { id: string; childId?: string; title: string },
     dose: { id: string; taken: boolean; label: string },
-  ): Promise<void> {
+  ): void {
     if (!item.childId || dose.taken || !this.canMarkDose(dose.id) || this.savingDose()) return;
-    const now = new Date();
-    const actualDate = parseDate(this.today);
-    if (!actualDate) return;
     const slot = this.scheduledDoseSlot(item.id, dose.id);
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
-    const startMinutes = slot ? timeToMinutes(slot.start) : null;
-    const endMinutes = slot?.end ? timeToMinutes(slot.end) : null;
-    if (
-      startMinutes !== null &&
-      endMinutes !== null &&
-      (currentMinutes < startMinutes || currentMinutes > endMinutes)
-    ) {
-      const midpointSeconds = Math.floor((startMinutes + endMinutes) * 30);
-      actualDate.setHours(
-        Math.floor(midpointSeconds / 3600),
-        Math.floor((midpointSeconds % 3600) / 60),
-        midpointSeconds % 60,
-        0,
-      );
-    } else {
-      actualDate.setHours(now.getHours(), now.getMinutes(), 0, 0);
-    }
+    const plannedDate = this.scheduledDoseDate(item.id, dose.id);
+    if (!plannedDate) return;
+    this.doseError.set('');
+    this.doseConfirmation.set({
+      medicationId: item.id,
+      childId: item.childId,
+      title: item.title,
+      scheduledTime: dose.id,
+      label: dose.label,
+      plannedTime: this.formatDoseTime(plannedDate),
+      plannedTimeDescription: slot?.end ? 'Orario mediano della fascia' : 'Orario preciso previsto',
+    });
+  }
+  closeDoseConfirmation(): void {
+    this.doseConfirmation.set(null);
+    this.doseError.set('');
+  }
+  async confirmDoseTaken(timeChoice: 'current' | 'planned'): Promise<void> {
+    const confirmation = this.doseConfirmation();
+    if (!confirmation || this.savingDose()) return;
+    const actualDate = timeChoice === 'current'
+      ? this.currentDoseDate()
+      : this.scheduledDoseDate(confirmation.medicationId, confirmation.scheduledTime);
+    if (!actualDate) return;
     this.savingDose.set(true);
     this.doseError.set('');
     const saved = await this.data.markMedicationDoseTaken(
-      item.id,
-      item.childId,
+      confirmation.medicationId,
+      confirmation.childId,
       this.today,
-      dose.id,
+      confirmation.scheduledTime,
       actualDate.toISOString(),
     );
     this.savingDose.set(false);
@@ -349,15 +362,47 @@ export class CalendarPreviewComponent implements OnInit {
       this.doseError.set(this.data.error() || 'Non è stato possibile registrare la somministrazione.');
       return;
     }
-    const recordedTime = actualDate.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-    const scheduledLabel = dose.label.startsWith('Fascia ')
-      ? dose.label
-      : `Orario previsto ${dose.label}`;
+    const recordedTime = this.formatDoseTime(actualDate);
+    const scheduledLabel = confirmation.label.startsWith('Fascia ')
+      ? confirmation.label
+      : `Orario previsto ${confirmation.label}`;
     this.toast.showSuccess(
       'Somministrazione registrata',
-      `${item.title} · ${scheduledLabel} · registrata alle ${recordedTime}`,
+      `${confirmation.title} · ${scheduledLabel} · registrata alle ${recordedTime}`,
     );
+    this.doseConfirmation.set(null);
     this.entries.set(await this.data.loadAllForSearch());
+  }
+  private currentDoseDate(): Date | null {
+    const date = parseDate(this.today);
+    if (!date) return null;
+    const now = new Date();
+    date.setHours(now.getHours(), now.getMinutes(), 0, 0);
+    return date;
+  }
+  private formatDoseTime(date: Date): string {
+    return date.toLocaleTimeString('it-IT', {
+      hour: '2-digit',
+      minute: '2-digit',
+      ...(date.getSeconds() ? { second: '2-digit' as const } : {}),
+    });
+  }
+  private scheduledDoseDate(medicationId: string, scheduledTime: string): Date | null {
+    const date = parseDate(this.today);
+    if (!date) return null;
+    const slot = this.scheduledDoseSlot(medicationId, scheduledTime);
+    const start = slot?.start ?? normalizeTime(scheduledTime);
+    if (!start) return null;
+    const seconds = slot?.end
+      ? Math.floor((timeToMinutes(slot.start) + timeToMinutes(slot.end)) * 30)
+      : timeToMinutes(start) * 60;
+    date.setHours(
+      Math.floor(seconds / 3600),
+      Math.floor((seconds % 3600) / 60),
+      seconds % 60,
+      0,
+    );
+    return date;
   }
   private scheduledDoseSlot(
     medicationId: string,

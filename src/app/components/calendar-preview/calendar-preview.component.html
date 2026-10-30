@@ -167,7 +167,7 @@
                   <div class="grid grid-cols-2 gap-2">
                   @if (!dose.taken) {
                   <button type="button" class="button-primary w-full !px-2 !py-2 text-[11px] font-bold"
-                    [disabled]="savingDose() || !item.childId" (click)="markDoseTaken(item, dose)">
+                    [disabled]="savingDose() || !item.childId" (click)="openDoseConfirmation(item, dose)">
                     {{ savingDose() ? '...' : 'FATTO' }}
                   </button>
                   }
@@ -244,6 +244,37 @@
   </div>
   }
 </section>
+@if (doseConfirmation(); as dose) {
+<div class="modal-backdrop" (click)="closeDoseConfirmation()">
+  <section class="modal-panel max-w-lg" role="dialog" aria-modal="true" aria-labelledby="dose-confirmation-title"
+    (click)="$event.stopPropagation()">
+    <div class="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+      <p class="eyebrow">SOMMINISTRAZIONE</p>
+      <h2 id="dose-confirmation-title" class="text-xl font-semibold">Conferma l’orario della dose</h2>
+      <p class="mt-1 text-sm text-slate-500">{{ dose.title }} · {{ dose.label }}</p>
+    </div>
+    <div class="space-y-3 p-5">
+      <p class="text-sm text-slate-600 dark:text-slate-300">A quale orario vuoi registrare la somministrazione?</p>
+      @if (doseError()) {
+      <p role="alert" class="notice-error">{{ doseError() }}</p>
+      }
+      <button type="button" class="button-primary w-full" [disabled]="savingDose()"
+        (click)="confirmDoseTaken('current')">
+        {{ savingDose() ? 'Salvataggio…' : 'Orario corrente' }}
+      </button>
+      <button type="button" class="button-secondary w-full" [disabled]="savingDose()"
+        (click)="confirmDoseTaken('planned')">
+        <span class="block">Orario previsto · {{ dose.plannedTime }}</span>
+        <span class="block text-xs font-normal">{{ dose.plannedTimeDescription }}</span>
+      </button>
+      <div class="flex justify-end pt-1">
+        <button type="button" class="button-secondary" [disabled]="savingDose()"
+          (click)="closeDoseConfirmation()">Annulla</button>
+      </div>
+    </div>
+  </section>
+</div>
+}
 @if (skipDose(); as dose) {
 <div class="modal-backdrop" (click)="closeSkipDose()">
   <section class="modal-panel max-w-lg" role="dialog" aria-modal="true" aria-labelledby="skip-dose-title"
