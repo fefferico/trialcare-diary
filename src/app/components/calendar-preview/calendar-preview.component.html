@@ -76,7 +76,7 @@
     </ul>
   </section>
   }
-  <div class="grid gap-4 md:grid-cols-3">
+  <div class="grid gap-4 md:min-h-72 md:grid-cols-3">
     <section>
       <h3 class="flex items-center gap-2 text-sm font-semibold">
         <svg class="h-4 w-4 shrink-0 text-teal-700 dark:text-teal-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></svg>
@@ -84,7 +84,7 @@
           (selectedView() === 'today' ? todayCalendarEvents() : futureCalendarEvents()).length }}</span>
       </h3>
       @if ((selectedView() === 'today' ? todayCalendarEvents() : futureCalendarEvents()).length) {
-      <ul class="preview-scroll-list mt-2 max-h-64 space-y-2 overflow-y-auto overscroll-contain pr-1">
+      <ul class="preview-scroll-list mt-2 max-h-64 space-y-2 overflow-y-auto overscroll-contain pr-1 md:max-h-96 lg:max-h-[28rem]">
         @for (item of (selectedView() === 'today' ? todayCalendarEvents() : futureCalendarEvents()); track item.id) {
         <li>
           <a [attr.data-event-id]="item.id" [routerLink]="item.path"
@@ -126,7 +126,7 @@
           futureMedicationDoses().length }}</span>
       </h3>
       @if (selectedView() === 'today' && activeTherapies().length) {
-      <ul class="preview-scroll-list mt-2 max-h-64 space-y-2 overflow-y-auto overscroll-contain pr-1">
+      <ul class="preview-scroll-list mt-2 max-h-64 space-y-2 overflow-y-auto overscroll-contain pr-1 md:max-h-96 lg:max-h-[28rem]">
         @for (item of activeTherapies(); track item.id) {
         <li>
           @if (item.allDosesTaken) {
@@ -195,7 +195,7 @@
       }
       @if (selectedView() === 'upcoming') {
       @if (futureMedicationDoses().length) {
-      <ul class="preview-scroll-list mt-2 max-h-64 space-y-2 overflow-y-auto overscroll-contain pr-1">
+      <ul class="preview-scroll-list mt-2 max-h-64 space-y-2 overflow-y-auto overscroll-contain pr-1 md:max-h-96 lg:max-h-[28rem]">
         @for (item of futureMedicationDoses(); track item.id) {
         <li>
           <a [attr.data-event-id]="item.id" routerLink="/calendar" [queryParams]="{ date: item.date }"
@@ -224,7 +224,7 @@
           (selectedView() === 'today' ? todayDeadlines() : futureDeadlines()).length }}</span>
       </h3>
       @if ((selectedView() === 'today' ? todayDeadlines() : futureDeadlines()).length) {
-      <ul class="preview-scroll-list mt-2 max-h-64 space-y-2 overflow-y-auto overscroll-contain pr-1">
+      <ul class="preview-scroll-list mt-2 max-h-64 space-y-2 overflow-y-auto overscroll-contain pr-1 md:max-h-96 lg:max-h-[28rem]">
         @for (item of (selectedView() === 'today' ? todayDeadlines() : futureDeadlines()); track item.id) {
         <li>
           <a [routerLink]="item.path" [queryParams]="{ highlight: item.highlightId, child: item.childId || null }"

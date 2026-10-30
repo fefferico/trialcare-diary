@@ -1226,7 +1226,7 @@ function toEvents(entries: SearchableDiaryItem[], month: Date): CalendarEvent[] 
           const date = dateKey(cursor);
           for (const slot of times) {
             const time = slot.start;
-            if (date === periodStart && period.start_time && time < period.start_time) continue;
+            if (date === periodStart && period.start_time && (slot.end ?? slot.start) < period.start_time) continue;
             if (date === periodEnd && period.end_time && time > period.end_time) continue;
             const dose = entries.find((item) => item.section === 'medication_doses' &&
               item.row['is_spot'] !== true &&

@@ -136,7 +136,7 @@ export class CalendarPreviewComponent implements OnInit {
             const date = dateKey(cursor);
             for (const slot of times) {
               const time = slot.start;
-              if (!medicationDoseWithinPeriod(period, date, time, periodStart, periodEnd)) continue;
+              if (!medicationDoseWithinPeriod(period, date, slot, periodStart, periodEnd)) continue;
               const dose = doses.find((candidate) => candidate.row['is_spot'] !== true && candidate.row['scheduled_date'] === date && String(candidate.row['scheduled_time'] ?? '').slice(0, 5) === time);
               const taken = !!dose;
               output.push({
@@ -192,7 +192,7 @@ export class CalendarPreviewComponent implements OnInit {
               const start = period.start_date || String(item.row['start_date'] ?? '');
               const end = period.end_date || (periods.length === 1 ? String(item.row['end_date'] ?? '') : '');
               return parseScheduleTimes(period.schedule_times)
-                .filter((slot) => medicationDoseWithinPeriod(period, this.today, slot.start, start, end))
+                .filter((slot) => medicationDoseWithinPeriod(period, this.today, slot, start, end))
                 .map((slot) => {
                   const dose = this.entries().find((entry) => entry.section === 'medication_doses' &&
                     entry.row['is_spot'] !== true &&
@@ -555,12 +555,14 @@ function parseScheduleTimes(value: string): Array<{ start: string; end?: string 
 function medicationDoseWithinPeriod(
   period: MedicationSchedulePeriod,
   date: string,
-  time: string,
+  slot: { start: string; end?: string },
   periodStart: string,
   periodEnd: string,
 ): boolean {
-  return !(date === periodStart && period.start_time && time < period.start_time) &&
-    !(date === periodEnd && period.end_time && time > period.end_time);
+  const startsWithinWindow = date !== periodStart || !period.start_time ||
+    (slot.end ?? slot.start) >= period.start_time;
+  const endsWithinWindow = date !== periodEnd || !period.end_time || slot.start <= period.end_time;
+  return startsWithinWindow && endsWithinWindow;
 }
 function normalizeTime(value: string): string | null {
   const [hour, minute] = value.split(':').map(Number);
