@@ -704,7 +704,24 @@ textarea:focus-visible {
   }
 
   .document-scanner-modal > header {
-    padding: max(8px, env(safe-area-inset-top)) 12px 8px;
+    align-items: center;
+    padding: max(4px, env(safe-area-inset-top)) 8px 4px;
+  }
+
+  .document-scanner-modal > header .eyebrow {
+    display: none;
+  }
+
+  .document-scanner-modal > header h2 {
+    margin-top: 0;
+    font-size: 0.95rem;
+    line-height: 1.2;
+  }
+
+  .document-scanner-modal > header .icon-button {
+    min-width: 30px;
+    min-height: 30px;
+    border-radius: 8px;
   }
 
   .document-scanner-modal tc-document-scanner > section > header {
@@ -717,8 +734,8 @@ textarea:focus-visible {
     flex-direction: column;
     min-height: 0;
     overflow: hidden;
-    gap: 8px;
-    padding: 8px 12px max(12px, env(safe-area-inset-bottom));
+    gap: 0;
+    padding: 0;
   }
 
   .document-scanner-modal > form > * + * {
@@ -726,20 +743,56 @@ textarea:focus-visible {
   }
 
   .document-scanner-modal .scanner-modal-body {
+    display: flex;
     flex: 1 1 auto;
+    flex-direction: column;
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
   }
 
   .document-scanner-modal tc-document-scanner {
-    display: block;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 100%;
+  }
+
+  .document-scanner-modal tc-document-scanner > section {
+    border: 0;
+    border-radius: 0;
   }
 
   .document-scanner-modal tc-document-scanner > section.scanner-camera-mode {
-    padding: 6px !important;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 4px;
+    min-height: 100%;
+    padding: 4px 6px max(4px, env(safe-area-inset-bottom)) !important;
     border: 0;
     border-radius: 0;
+  }
+
+  .document-scanner-modal tc-document-scanner > section.scanner-camera-mode > * + * {
+    margin-top: 0;
+  }
+
+  .document-scanner-modal tc-document-scanner > section.scanner-camera-mode > .scanner-camera-frame:not([hidden]) {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    width: 100%;
+    min-height: 58dvh;
+    max-height: none;
+  }
+
+  .document-scanner-modal tc-document-scanner > section.scanner-camera-mode > .scanner-camera-frame > video {
+    flex: 1 1 auto;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    max-height: none;
   }
 }
 

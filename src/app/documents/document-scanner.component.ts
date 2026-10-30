@@ -54,49 +54,49 @@ const MAX_IMAGE_EDGE = 2800;
         <button type="button" class="icon-button !h-11 !w-11 shrink-0" aria-label="Chiudi scanner" (click)="dismiss.emit()"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
       </header>
 
-      <div class="flex items-center gap-2">
-        <button type="button" class="button-secondary inline-flex flex-1 items-center justify-center gap-2 !px-2.5 sm:flex-none sm:!px-3" [disabled]="busy() || cameraStarting()" (click)="cameraActive() ? stopCamera() : startCamera()">
-          <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l1.5-2h7L17 7h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+      <div class="flex items-center gap-1.5 sm:gap-2">
+        <button type="button" class="button-secondary inline-flex flex-1 items-center justify-center gap-1.5 !min-h-7 !px-2 !py-0.5 text-xs sm:flex-none sm:!min-h-9 sm:!px-3 sm:text-[13px]" [disabled]="busy() || cameraStarting()" (click)="cameraActive() ? stopCamera() : startCamera()">
+          <svg class="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h3l1.5-2h7L17 7h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
           {{ cameraStarting() ? 'Apertura fotocamera…' : cameraActive() ? 'Spegni fotocamera' : 'Apri fotocamera' }}
         </button>
-        <label class="button-secondary inline-flex flex-1 cursor-pointer items-center justify-center gap-2 !px-2.5 sm:flex-none sm:!px-3">
-          <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4m0 0L7 9m5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>
+        <label class="button-secondary inline-flex flex-1 cursor-pointer items-center justify-center gap-1.5 !min-h-7 !px-2 !py-0.5 text-xs sm:flex-none sm:!min-h-9 sm:!px-3 sm:text-[13px]">
+          <svg class="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4m0 0L7 9m5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>
           Aggiungi foto
           <input class="sr-only" type="file" accept="image/*" multiple (change)="importImages($event)" [disabled]="busy()" />
         </label>
-        <span class="ml-auto whitespace-nowrap text-xs font-medium text-slate-500" aria-live="polite">{{ pages().length }}/{{ maxPages }}</span>
+        <span class="ml-auto whitespace-nowrap text-[11px] font-medium text-slate-500 sm:text-xs" aria-live="polite">{{ pages().length }}/{{ maxPages }}</span>
       </div>
 
-      <div #cameraFrame class="relative mx-auto max-h-[66dvh] overflow-hidden rounded-xl bg-slate-950 sm:max-h-[55vh]" [hidden]="!cameraActive()">
+      <div #cameraFrame class="scanner-camera-frame relative mx-auto w-full max-h-[66dvh] overflow-hidden rounded-lg bg-slate-950 sm:max-h-[55vh] sm:rounded-xl" [hidden]="!cameraActive()">
         <video #cameraVideo class="block h-[58dvh] max-h-[66dvh] w-full object-contain sm:h-auto sm:max-h-[55vh]" autoplay playsinline muted aria-label="Inquadratura della fotocamera"></video>
         @if (cameraDetection(); as box) {
           <div class="pointer-events-none absolute border-2 border-teal-300 shadow-[0_0_0_999px_rgba(15,23,42,0.22)]" [style.left.px]="cameraOverlay()?.left" [style.top.px]="cameraOverlay()?.top" [style.width.px]="cameraOverlay()?.width" [style.height.px]="cameraOverlay()?.height" aria-hidden="true"></div>
         }
         @if (cameraActive() && !cameraDetection()) {
-          <div class="pointer-events-none absolute inset-[10%] rounded-lg border-2 border-dashed border-white/70" aria-hidden="true"></div>
+          <div class="pointer-events-none absolute inset-[6%] rounded-lg border-2 border-dashed border-white/70 sm:inset-[10%]" aria-hidden="true"></div>
         }
       </div>
       @if (cameraActive()) {
-        <div class="space-y-1.5">
+        <div class="space-y-1">
           @if (previewNeedsTap()) {
-            <p class="text-sm text-amber-800 dark:text-amber-200" role="status">La fotocamera è attiva, ma Chrome non ha avviato l’anteprima.</p>
-            <button type="button" class="button-primary" (click)="resumeCameraPreview()">Avvia anteprima</button>
+            <p class="text-xs text-amber-800 dark:text-amber-200 sm:text-sm" role="status">La fotocamera è attiva, ma Chrome non ha avviato l’anteprima.</p>
+            <button type="button" class="button-primary !min-h-8 !px-3 !py-1 text-xs sm:!min-h-10 sm:text-sm" (click)="resumeCameraPreview()">Avvia anteprima</button>
           } @else {
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <p class="min-w-0 flex-1 text-xs text-slate-500 dark:text-slate-400" role="status" aria-live="polite">
-                @if (cameraDetection()) { Foglio rilevato · mantieni fermo il telefono } @else { Inquadra il foglio; puoi scattare manualmente }
-              </p>
-              <div class="flex shrink-0 items-center gap-2">
+            <p class="truncate text-[11px] leading-tight text-slate-500 dark:text-slate-400 sm:text-xs" role="status" aria-live="polite">
+              @if (cameraDetection()) { Foglio rilevato · mantieni fermo il telefono } @else { Inquadra il foglio; puoi scattare manualmente }
+            </p>
+            <div class="flex items-center justify-between gap-2">
+              <label class="inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-2 py-0.5 dark:border-slate-700 sm:min-h-9 sm:gap-2 sm:px-2.5">
+                <input type="checkbox" class="accent-teal-700" [checked]="autoCapture()" (change)="setAutoCapture($any($event.target).checked)" />
+                <span class="text-xs sm:text-sm">Scatto automatico</span>
+              </label>
+              <div class="flex shrink-0 items-center gap-1.5 sm:gap-2">
                 @if (manualRefocusSupported()) {
-                  <button type="button" class="button-secondary !min-h-10 !px-2.5" aria-label="Rimetti a fuoco" title="Rimetti a fuoco" (click)="refocusCamera()"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-7-7m7 7a7 7 0 0 1-7 7m-7-7a7 7 0 0 0 7 7m-7-7a7 7 0 0 1 7-7"/></svg></button>
+                  <button type="button" class="button-secondary !min-h-8 !px-2 !py-1 sm:!min-h-10 sm:!px-2.5" aria-label="Rimetti a fuoco" title="Rimetti a fuoco" (click)="refocusCamera()"><svg class="h-3.5 w-3.5 sm:h-4 sm:w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-7-7m7 7a7 7 0 0 1-7 7m-7-7a7 7 0 0 0 7 7m-7-7a7 7 0 0 1 7-7"/></svg></button>
                 }
-                <button type="button" class="button-primary inline-flex items-center gap-2 !px-3" [disabled]="busy()" (click)="capturePage()"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg>Scatta</button>
+                <button type="button" class="button-primary inline-flex items-center gap-1.5 !min-h-8 !px-3 !py-1 text-xs sm:!min-h-10 sm:gap-2 sm:text-[13px]" [disabled]="busy()" (click)="capturePage()"><svg class="h-3.5 w-3.5 sm:h-4 sm:w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg>Scatta</button>
               </div>
             </div>
-            <label class="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-2.5 dark:border-slate-700">
-              <input type="checkbox" class="accent-teal-700" [checked]="autoCapture()" (change)="setAutoCapture($any($event.target).checked)" />
-              <span class="text-xs sm:text-sm">Scatto automatico</span>
-            </label>
           }
         </div>
       }
