@@ -1,6 +1,6 @@
 # API Catalog
 
-> Generato da `npm run update-context` il 30/10/2026, 21:45:00.
+> Generato da `npm run update-context` il 30/10/2026, 23:06:34.
 
 ## Servizi
 
@@ -90,6 +90,7 @@ File: [src/app/core/diary-data.service.ts](../src/app/core/diary-data.service.ts
     value: Record<string, unknown>,
     childId?: string,
   )`: `Promise<string | null>`
+- `saveDocumentBatch(childId: string, documents: Record<string, unknown>[])`: `Promise<boolean>`
 - `searchDocuments(childId: string, search: string, limit = 30)`: `Promise<DiaryRow[]>`
 - `loadDocumentsByIds(childId: string, ids: string[])`: `Promise<DiaryRow[]>`
 - `loadDocumentLinks(
@@ -111,6 +112,11 @@ File: [src/app/core/diary-data.service.ts](../src/app/core/diary-data.service.ts
 - `remove(section: SectionId, row: DiaryRow)`: `Promise<void>`
 - `update(section: SectionId, id: string, value: Record<string, unknown>)`: `Promise<boolean>`
 - `loadDocumentFolders(childId: string)`: `Promise<DiaryRow[]>`
+- `moveDocumentsToFolder(
+    childId: string,
+    documentIds: string[],
+    folderId: string | null,
+  )`: `Promise<boolean>`
 - `createDocumentFolder(
     childId: string,
     name: string,

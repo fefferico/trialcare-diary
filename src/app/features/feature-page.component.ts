@@ -491,6 +491,28 @@ function applyMedicationScheduleScope(
                 </button>
               </div>
             }
+            @if (selectedDocumentIds().length) {
+              <div class="flex flex-col gap-3 rounded-xl border border-teal-200 bg-teal-50/60 p-3 dark:border-teal-900/70 dark:bg-teal-950/20 sm:flex-row sm:items-end sm:justify-between" aria-label="Spostamento multiplo documenti">
+                <div>
+                  <p class="text-sm font-semibold">{{ selectedDocumentIds().length }} {{ selectedDocumentIds().length === 1 ? 'documento selezionato' : 'documenti selezionati' }}</p>
+                  <p class="mt-1 text-xs text-slate-600 dark:text-slate-300">Trascina una scheda selezionata per spostare il gruppo; oppure scegli una destinazione.</p>
+                  <button type="button" class="mt-2 text-xs font-semibold text-teal-700 underline dark:text-teal-300" (click)="selectAllDisplayedDocuments()">Seleziona tutti i documenti visibili</button>
+                </div>
+                <div class="flex flex-col gap-2 sm:min-w-72 sm:flex-row sm:flex-wrap">
+                  <label class="form-field min-w-0 flex-1">
+                    <span class="sr-only">Cartella di destinazione per i documenti selezionati</span>
+                    <app-dropdown
+                      [options]="documentFolderPathOptions"
+                      [value]="bulkMoveFolderPath()"
+                      placeholder="Scegli la cartella"
+                      (selection)="bulkMoveFolderPath.set($event)"
+                    />
+                  </label>
+                  <button type="button" class="button-primary shrink-0" [disabled]="!bulkMoveFolderPath() || !!movingDocumentId()" (click)="moveSelectedDocumentsToFolder()">Sposta</button>
+                  <button type="button" class="button-secondary shrink-0" [disabled]="!!movingDocumentId()" (click)="clearDocumentSelection()">Deseleziona</button>
+                </div>
+              </div>
+            }
           </section>
         }
         @if (supportsFuzzySearch && data.rows().length) {
@@ -507,6 +529,44 @@ function applyMedicationScheduleScope(
               [attr.aria-label]="'Cerca in ' + section.label"
             />
           </label>
+        }
+        @if (section.id === 'documents' && (draggingDocumentId() || externalFilesDragging() || uploadingExternalFiles())) {
+          <section class="panel fixed inset-x-4 bottom-4 z-40 mx-auto max-w-4xl space-y-3 border-teal-200 shadow-2xl dark:border-teal-900" aria-label="Destinazioni documenti" aria-live="polite">
+            @if (uploadingExternalFiles()) {
+              <p class="text-sm font-semibold text-teal-900 dark:text-teal-100">Caricamento file: {{ externalFileUploadProgress() }}</p>
+            } @else if (draggingDocumentId()) {
+              <p class="text-sm font-semibold text-teal-900 dark:text-teal-100">Rilascia {{ draggingDocumentIds().length === 1 ? 'il documento' : draggingDocumentIds().length + ' documenti' }} su una destinazione</p>
+            } @else {
+              <p class="text-sm font-semibold text-teal-900 dark:text-teal-100">Rilascia i file da caricare su una cartella</p>
+              <p class="text-xs text-slate-600 dark:text-slate-300">PDF o immagini JPEG, PNG, WebP e HEIC fino a 20 MB per file.</p>
+            }
+            @if (!uploadingExternalFiles()) {
+              <div class="flex flex-wrap gap-2">
+                @for (folder of documentFolders(); track folder.id) {
+                  <button
+                    type="button"
+                    class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium transition dark:border-slate-700 dark:bg-slate-900"
+                    [class.border-teal-600]="dragOverDocumentFolderId() === folder.id"
+                    [class.bg-teal-100]="dragOverDocumentFolderId() === folder.id"
+                    [class.dark:bg-teal-950]="dragOverDocumentFolderId() === folder.id"
+                    (dragover)="allowDocumentDrop($event, folder.id)"
+                    (dragleave)="clearDocumentDropTarget($event, folder.id)"
+                    (drop)="dropDocumentInFolder($event, folder.id)"
+                  >{{ documentFolderPathForId(folder.id) }}</button>
+                }
+                <button
+                  type="button"
+                  class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium transition dark:border-slate-700 dark:bg-slate-900"
+                  [class.border-teal-600]="dragOverDocumentFolderId() === ''"
+                  [class.bg-teal-100]="dragOverDocumentFolderId() === ''"
+                  [class.dark:bg-teal-950]="dragOverDocumentFolderId() === ''"
+                  (dragover)="allowDocumentDrop($event, null)"
+                  (dragleave)="clearDocumentDropTarget($event, null)"
+                  (drop)="dropDocumentInFolder($event, null)"
+                >Senza cartella</button>
+              </div>
+            }
+          </section>
         }
         @if (section.id === 'documents' && documentViewMode() === 'folders') {
           <section class="panel space-y-4" aria-label="Navigazione cartelle documenti">
@@ -542,7 +602,15 @@ function applyMedicationScheduleScope(
               @if (visibleDocumentFolders.length) {
                 <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-label="Sottocartelle">
                   @for (folder of visibleDocumentFolders; track folder.id) {
-                    <article class="panel space-y-3">
+                    <article
+                      class="panel space-y-3 transition"
+                      [class.border-teal-500]="dragOverDocumentFolderId() === folder.id"
+                      [class.bg-teal-50]="dragOverDocumentFolderId() === folder.id"
+                      [class.dark:bg-teal-950]="dragOverDocumentFolderId() === folder.id"
+                      (dragover)="allowDocumentDrop($event, folder.id)"
+                      (dragleave)="clearDocumentDropTarget($event, folder.id)"
+                      (drop)="dropDocumentInFolder($event, folder.id)"
+                    >
                       <button type="button" class="flex w-full items-center gap-3 text-left" [attr.aria-label]="'Apri cartella ' + folder['name']" (click)="openDocumentFolder(folder.id)">
                         <span class="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-200" aria-hidden="true">
                           <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 9h18"/></svg>
@@ -574,7 +642,7 @@ function applyMedicationScheduleScope(
                 </div>
               }
               @if (!activeDocumentFolderId() && unassignedDocumentRows.length) {
-                <button type="button" class="flex w-full items-center gap-3 rounded-xl border border-dashed border-slate-300 p-4 text-left transition hover:border-teal-500 dark:border-slate-700 dark:hover:border-teal-500" (click)="openUnassignedDocuments()">
+                <button type="button" class="flex w-full items-center gap-3 rounded-xl border border-dashed border-slate-300 p-4 text-left transition hover:border-teal-500 dark:border-slate-700 dark:hover:border-teal-500" [class.border-teal-500]="dragOverDocumentFolderId() === ''" [class.bg-teal-50]="dragOverDocumentFolderId() === ''" [class.dark:bg-teal-950]="dragOverDocumentFolderId() === ''" (click)="openUnassignedDocuments()" (dragover)="allowDocumentDrop($event, null)" (dragleave)="clearDocumentDropTarget($event, null)" (drop)="dropDocumentInFolder($event, null)">
                   <span class="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300" aria-hidden="true"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/></svg></span>
                   <span class="min-w-0 flex-1"><span class="block font-semibold">Senza cartella</span><span class="mt-1 block text-sm text-slate-500 dark:text-slate-400">{{ unassignedDocumentRows.length }} {{ unassignedDocumentRows.length === 1 ? 'documento' : 'documenti' }}</span></span>
                 </button>
@@ -599,7 +667,7 @@ function applyMedicationScheduleScope(
             }
           </div>
         } @else if (noSearchResults && section.id !== 'reports') {
-          <div class="panel flex flex-col items-center px-6 py-10 text-center">
+          <div class="panel flex flex-col items-center px-6 py-10 text-center" (dragover)="allowDocumentDrop($event, currentDocumentDropFolderId)" (dragleave)="clearDocumentDropTarget($event, currentDocumentDropFolderId)" (drop)="dropDocumentInFolder($event, currentDocumentDropFolderId)">
             <h2 class="text-lg font-semibold">Nessun risultato</h2>
             <p class="mt-2 text-sm text-slate-500">
               @if (section.id === 'documents') {
@@ -613,7 +681,7 @@ function applyMedicationScheduleScope(
             </button>
           </div>
         } @else if (!hasDocumentFolderContents && section.id !== 'reports') {
-          <div class="panel flex flex-col items-center px-6 py-14 text-center">
+          <div class="panel flex flex-col items-center px-6 py-14 text-center transition" [class.border-teal-500]="dragOverDocumentFolderId() === (currentDocumentDropFolderId ?? '')" [class.bg-teal-50]="externalFilesDragging() || (!!draggingDocumentId() && dragOverDocumentFolderId() === (currentDocumentDropFolderId ?? ''))" [class.dark:bg-teal-950]="externalFilesDragging() || (!!draggingDocumentId() && dragOverDocumentFolderId() === (currentDocumentDropFolderId ?? ''))" (dragover)="allowDocumentDrop($event, currentDocumentDropFolderId)" (dragleave)="clearDocumentDropTarget($event, currentDocumentDropFolderId)" (drop)="dropDocumentInFolder($event, currentDocumentDropFolderId)">
             <div
               class="mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-teal-50 text-2xl text-teal-700 dark:bg-teal-900/30 dark:text-teal-200"
             >
@@ -628,6 +696,9 @@ function applyMedicationScheduleScope(
                     ? 'Crea un profilo per iniziare a organizzare il diario.'
                     : 'Aggiungi la prima voce: potrai aggiornarla e condividerla durante la visita.'
               }}
+              @if (section.id === 'documents') {
+                <span class="mt-2 block">Oppure trascina qui PDF o immagini supportate per caricarli in questa destinazione.</span>
+              }
             </p>
             <div class="mt-5 flex flex-wrap justify-center gap-2">
               @if (section.id === 'documents' && (activeDocumentFolderId() !== null || viewingUnassignedDocuments())) {
@@ -830,11 +901,26 @@ function applyMedicationScheduleScope(
             @for (row of displayedDocumentRows; track row['id']) {
               <article
                 class="panel group cursor-pointer transition hover:border-teal-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-teal-600"
+                [attr.draggable]="section.id === 'documents' ? 'true' : null"
+                [class.cursor-grab]="section.id === 'documents' && !movingDocumentId()"
+                [class.opacity-60]="draggingDocumentId() === row['id']"
+                [class.ring-2]="draggingDocumentId() === row['id']"
+                [class.ring-teal-500]="draggingDocumentId() === row['id']"
+                [class.border-teal-400]="section.id === 'documents' && selectedDocumentIds().includes(row.id)"
+                [class.border-teal-500]="section.id === 'documents' && dragOverDocumentFolderId() === (row['folder_id'] ? value(row, 'folder_id') : '')"
                 role="button"
                 tabindex="0"
                 [attr.aria-label]="'Apri ' + (value(row, 'title') || value(row, 'name') || 'voce')"
                 (click)="openDetailsFromCard($event, row)"
                 (keydown)="openDetailsFromKeyboard($event, row)"
+                (dragstart)="startDocumentDrag($event, row)"
+                (dragend)="endDocumentDrag()"
+                (dragover)="allowDocumentDrop($event, row['folder_id'] ? value(row, 'folder_id') : null)"
+                (dragleave)="clearDocumentDropTarget($event, row['folder_id'] ? value(row, 'folder_id') : null)"
+                (drop)="dropDocumentInFolder($event, row['folder_id'] ? value(row, 'folder_id') : null)"
+                (dragover)="allowDocumentDrop($event, row['folder_id'] ? value(row, 'folder_id') : null)"
+                (dragleave)="clearDocumentDropTarget($event, row['folder_id'] ? value(row, 'folder_id') : null)"
+                (drop)="dropDocumentInFolder($event, row['folder_id'] ? value(row, 'folder_id') : null)"
                 [id]="'diary-row-' + row['id']"
                 [class.search-result-highlight]="highlightedId() === row['id']"
                 [attr.tabindex]="highlightedId() === row['id'] ? -1 : null"
@@ -888,6 +974,15 @@ function applyMedicationScheduleScope(
                   </div>
                   <div class="flex gap-3">
                     @if (section.id === 'documents') {
+                      <label class="inline-flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-slate-200 bg-white text-teal-700 hover:border-teal-500 dark:border-slate-700 dark:bg-slate-900 dark:text-teal-300" (click)="$event.stopPropagation()">
+                        <input
+                          type="checkbox"
+                          class="h-4 w-4 accent-teal-700"
+                          [checked]="selectedDocumentIds().includes(row.id)"
+                          [attr.aria-label]="'Seleziona ' + (value(row, 'title') || value(row, 'name') || 'documento')"
+                          (change)="toggleDocumentSelection(row, $event)"
+                        />
+                      </label>
                       <button
                         type="button"
                         class="record-action record-icon-action text-teal-700 dark:text-teal-300"
@@ -2022,6 +2117,15 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   readonly documentFolderNameValue = signal('');
   readonly renamingDocumentFolderId = signal('');
   readonly documentFolderRenameValue = signal('');
+  readonly draggingDocumentId = signal('');
+  readonly draggingDocumentIds = signal<string[]>([]);
+  readonly dragOverDocumentFolderId = signal<string | null>(null);
+  readonly externalFilesDragging = signal(false);
+  readonly uploadingExternalFiles = signal(false);
+  readonly externalFileUploadProgress = signal('');
+  readonly movingDocumentId = signal('');
+  readonly selectedDocumentIds = signal<string[]>([]);
+  readonly bulkMoveFolderPath = signal('');
   readonly isDocumentDuplicate = signal(false);
   private readonly documentSearchPreviewCache = new Map<string, { query: string; source: string; preview: string }>();
   get supportsFuzzySearch(): boolean {
@@ -2062,6 +2166,13 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   }
   get unassignedDocumentRows(): DiaryRow[] {
     return this.filteredRows.filter((row) => !row['folder_id']);
+  }
+  get currentDocumentDropFolderId(): string | null {
+    return this.sectionId === 'documents' &&
+      this.documentViewMode() === 'folders' &&
+      !this.viewingUnassignedDocuments()
+      ? this.activeDocumentFolderId()
+      : null;
   }
   get displayedDocumentRows(): DiaryRow[] {
     if (this.sectionId !== 'documents' || this.documentViewMode() !== 'folders') {
@@ -2189,6 +2300,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   form: Record<string, string> = {};
   associatedFiles: File[] = [];
   private documentSearchTimer?: ReturnType<typeof setTimeout>;
+  private externalFileDragTimer?: ReturnType<typeof setTimeout>;
   private documentSearchRequest = 0;
   readonly additionalMedicationSchedules = signal<MedicationScheduleDraft[]>([]);
   readonly removingMedicationScheduleIndex = signal<number | null>(null);
@@ -2654,6 +2766,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
           ? this.children.find((item) => item.id === this.requestedChildId)
           : undefined;
         if (child) {
+          this.clearDocumentSelection();
           this.selectedChildId.set(child.id);
           this.selectedChildName.set(String(child['name']));
           void this.refresh().then(() => {
@@ -2679,6 +2792,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.routeSubscription?.unsubscribe();
     if (this.documentSearchTimer) clearTimeout(this.documentSearchTimer);
+    if (this.externalFileDragTimer) clearTimeout(this.externalFileDragTimer);
     if (this.isFormOpen()) this.closeForm();
     else this.ui.resetBodyScroll();
     this.clearContactAvatarUrls();
@@ -2758,25 +2872,300 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.clearDocumentFilters();
   }
   setDocumentViewMode(mode: 'folders' | 'list'): void {
+    this.clearDocumentSelection();
     this.documentViewMode.set(mode);
     this.activeDocumentFolderId.set(null);
     this.viewingUnassignedDocuments.set(false);
     this.cancelRenameDocumentFolder();
     this.cancelCreateDocumentFolder();
   }
+  startDocumentDrag(event: DragEvent, row: DiaryRow): void {
+    const documentId = String(row.id ?? '');
+    if (this.sectionId !== 'documents' || !documentId || !this.selectedChildId() || this.movingDocumentId()) {
+      event.preventDefault();
+      return;
+    }
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('application/x-trialcare-document-id', documentId);
+    }
+    this.resetExternalFileDrag();
+    const selectedIds = this.selectedDocumentIds();
+    this.draggingDocumentIds.set(selectedIds.includes(documentId) ? [...selectedIds] : [documentId]);
+    this.draggingDocumentId.set(documentId);
+  }
+  endDocumentDrag(): void {
+    this.draggingDocumentId.set('');
+    this.draggingDocumentIds.set([]);
+    this.dragOverDocumentFolderId.set(null);
+  }
+  private hasExternalDocumentFiles(event: DragEvent): boolean {
+    return !this.draggingDocumentId() &&
+      Array.from(event.dataTransfer?.types ?? []).includes('Files');
+  }
+  private showExternalFileDropTargets(): void {
+    this.externalFilesDragging.set(true);
+    if (this.externalFileDragTimer) clearTimeout(this.externalFileDragTimer);
+    this.externalFileDragTimer = setTimeout(() => {
+      this.externalFilesDragging.set(false);
+      this.dragOverDocumentFolderId.set(null);
+      this.externalFileDragTimer = undefined;
+    }, 2500);
+  }
+  private resetExternalFileDrag(): void {
+    if (this.externalFileDragTimer) clearTimeout(this.externalFileDragTimer);
+    this.externalFileDragTimer = undefined;
+    this.externalFilesDragging.set(false);
+  }
+  allowDocumentDrop(event: DragEvent, folderId: string | null): void {
+    if (this.sectionId !== 'documents' || this.uploadingExternalFiles()) return;
+    const internalDocumentDrag = !!this.draggingDocumentId();
+    const externalFileDrag = this.hasExternalDocumentFiles(event);
+    if (!internalDocumentDrag && !externalFileDrag) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = internalDocumentDrag ? 'move' : 'copy';
+    if (externalFileDrag) this.showExternalFileDropTargets();
+    this.dragOverDocumentFolderId.set(folderId ?? '');
+  }
+  clearDocumentDropTarget(event: DragEvent, folderId: string | null): void {
+    const currentTarget = event.currentTarget;
+    const nextTarget = event.relatedTarget;
+    if (currentTarget instanceof HTMLElement && nextTarget instanceof Node && currentTarget.contains(nextTarget)) return;
+    if (this.dragOverDocumentFolderId() === (folderId ?? '')) {
+      this.dragOverDocumentFolderId.set(null);
+    }
+  }
+  async dropDocumentInFolder(event: DragEvent, folderId: string | null): Promise<void> {
+    event.preventDefault();
+    event.stopPropagation();
+    const documentId = this.draggingDocumentId();
+    const documentIds = this.draggingDocumentIds();
+    this.dragOverDocumentFolderId.set(null);
+    if (documentId) {
+      this.draggingDocumentId.set('');
+      this.draggingDocumentIds.set([]);
+      await this.moveDocumentsToFolder(documentIds, folderId);
+      return;
+    }
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    this.resetExternalFileDrag();
+    if (files.length) await this.uploadExternalDocuments(files, folderId);
+  }
+  private normalizeExternalDocumentFile(file: File): File | null {
+    const extension = file.name.split('.').pop()?.toLocaleLowerCase() ?? '';
+    const mimeByExtension: Record<string, string> = {
+      pdf: 'application/pdf',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      webp: 'image/webp',
+      heic: 'image/heic',
+    };
+    const mimeType = mimeByExtension[extension];
+    const fileType = file.type.toLocaleLowerCase();
+    if (!mimeType || (fileType && fileType !== mimeType && fileType !== 'application/octet-stream')) return null;
+    return file.type === mimeType
+      ? file
+      : new File([file], file.name, { type: mimeType, lastModified: file.lastModified });
+  }
+  private async uploadExternalDocuments(files: File[], folderId: string | null): Promise<void> {
+    const childId = this.selectedChildId();
+    if (!childId) {
+      this.data.error.set('Seleziona un profilo prima di caricare i documenti.');
+      return;
+    }
+    if (folderId && !this.documentFolders().some((folder) => folder.id === folderId)) {
+      this.data.error.set('La cartella di destinazione non è disponibile per questo profilo.');
+      return;
+    }
+
+    const normalizedFiles = files.map((file) => this.normalizeExternalDocumentFile(file));
+    const maxFileSize = 20 * 1024 * 1024;
+    if (normalizedFiles.some((file) => !file)) {
+      this.data.error.set('Puoi caricare PDF o immagini JPEG, PNG, WebP e HEIC.');
+      return;
+    }
+    const validFiles = normalizedFiles as File[];
+    if (validFiles.some((file) => file.size > maxFileSize)) {
+      this.data.error.set('Ogni file deve avere una dimensione massima di 20 MB.');
+      return;
+    }
+
+    const destination = folderId ? this.documentFolderPathForId(folderId) : 'Senza cartella';
+    const documentRows: Record<string, unknown>[] = [];
+    const uploadedStoragePaths: string[] = [];
+    const savedLocalFileIds: string[] = [];
+    let failureMessage = '';
+    let pdfTextUnavailableCount = 0;
+    const date = new Date().toISOString().slice(0, 10);
+    this.data.error.set('');
+    this.uploadingExternalFiles.set(true);
+    try {
+      for (const [index, file] of validFiles.entries()) {
+        this.externalFileUploadProgress.set(`${index + 1} di ${validFiles.length}`);
+        let storagePath = '';
+        let localFileId = '';
+        if (this.supabase.configured && this.auth.user()) {
+          try {
+            storagePath = await this.storage.upload(file, childId) ?? '';
+          } catch {
+            storagePath = '';
+          }
+          if (!storagePath) {
+            failureMessage = 'Non è stato possibile caricare i file nel deposito privato. Verifica la connessione e riprova.';
+            break;
+          }
+          uploadedStoragePaths.push(storagePath);
+        } else {
+          try {
+            localFileId = await this.storage.saveLocalFile(file);
+            savedLocalFileIds.push(localFileId);
+          } catch {
+            failureMessage = 'Il browser non ha potuto conservare localmente uno dei file. Riprova.';
+            break;
+          }
+        }
+
+        let extractedText = '';
+        if (file.type === 'application/pdf') {
+          try {
+            extractedText = await this.extractPdfText(file);
+          } catch {
+            pdfTextUnavailableCount++;
+          }
+        }
+        documentRows.push({
+          id: crypto.randomUUID(),
+          title: file.name,
+          category: 'Altro',
+          date,
+          folder_id: folderId,
+          extracted_text: extractedText,
+          ...(storagePath ? { storage_path: storagePath } : { local_file_id: localFileId }),
+        });
+      }
+
+      if (!failureMessage && documentRows.length === validFiles.length) {
+        let saved = false;
+        try {
+          saved = await this.data.saveDocumentBatch(childId, documentRows);
+        } catch {
+          saved = false;
+        }
+        if (!saved) {
+          failureMessage = this.data.error() || 'Non è stato possibile registrare i documenti.';
+        }
+      }
+
+      if (failureMessage) {
+        let cleanupFailed = false;
+        for (const path of uploadedStoragePaths) {
+          try {
+            if (!(await this.storage.removeDocument(path))) cleanupFailed = true;
+          } catch {
+            cleanupFailed = true;
+          }
+        }
+        for (const localFileId of savedLocalFileIds) {
+          try {
+            await this.storage.removeLocalFile(localFileId);
+          } catch {
+            cleanupFailed = true;
+          }
+        }
+        this.data.error.set(cleanupFailed
+          ? `${failureMessage} Non è stato possibile eliminare un file temporaneo dal deposito.`
+          : failureMessage);
+        return;
+      }
+
+      this.toast.showSuccess(
+        validFiles.length === 1 ? 'Documento caricato' : 'Documenti caricati',
+        `${validFiles.length} ${validFiles.length === 1 ? 'file aggiunto' : 'file aggiunti'} in ${destination} con il nome originale e tipo “Altro”.` +
+          (pdfTextUnavailableCount ? ` Testo non estratto da ${pdfTextUnavailableCount} PDF.` : ''),
+      );
+      await this.refresh();
+    } finally {
+      this.uploadingExternalFiles.set(false);
+      this.externalFileUploadProgress.set('');
+    }
+  }
+  toggleDocumentSelection(row: DiaryRow, event: Event): void {
+    const documentId = String(row.id ?? '');
+    if (!documentId) return;
+    const checked = (event.target as HTMLInputElement | null)?.checked ?? false;
+    this.selectedDocumentIds.update((ids) => checked
+      ? [...new Set([...ids, documentId])]
+      : ids.filter((id) => id !== documentId));
+  }
+  selectAllDisplayedDocuments(): void {
+    const visibleIds = this.displayedDocumentRows.map((row) => String(row.id ?? '')).filter(Boolean);
+    this.selectedDocumentIds.update((ids) => [...new Set([...ids, ...visibleIds])]);
+  }
+  clearDocumentSelection(): void {
+    this.selectedDocumentIds.set([]);
+    this.bulkMoveFolderPath.set('');
+    this.draggingDocumentId.set('');
+    this.draggingDocumentIds.set([]);
+    this.dragOverDocumentFolderId.set(null);
+  }
+  async moveSelectedDocumentsToFolder(): Promise<void> {
+    const path = this.bulkMoveFolderPath();
+    if (!path) return;
+    const folderId = path === 'Nessuna cartella'
+      ? null
+      : this.documentFolders().find((folder) => this.documentFolderPathForId(folder.id) === path)?.id ?? null;
+    if (path !== 'Nessuna cartella' && !folderId) {
+      this.data.error.set('La cartella di destinazione non è disponibile.');
+      return;
+    }
+    await this.moveDocumentsToFolder(this.selectedDocumentIds(), folderId);
+  }
+  private async moveDocumentsToFolder(documentIds: string[], folderId: string | null): Promise<void> {
+    const childId = this.selectedChildId();
+    const ids = [...new Set(documentIds.filter(Boolean))];
+    if (!childId || !ids.length) return;
+    const rows = this.data.rows().filter((item) => ids.includes(item.id) && item['child_id'] === childId);
+    if (rows.length !== ids.length) {
+      this.data.error.set('Uno o più documenti selezionati non sono più disponibili.');
+      return;
+    }
+    if (folderId && !this.documentFolders().some((folder) => folder.id === folderId)) {
+      this.data.error.set('La cartella di destinazione non è disponibile.');
+      return;
+    }
+    if (rows.every((row) => String(row['folder_id'] ?? '') === String(folderId ?? ''))) return;
+
+    this.movingDocumentId.set(ids[0]);
+    const moved = await this.data.moveDocumentsToFolder(childId, ids, folderId);
+    this.movingDocumentId.set('');
+    if (!moved) return;
+
+    const destination = folderId ? this.documentFolderPathForId(folderId) : 'Senza cartella';
+    this.selectedDocumentIds.update((selected) => selected.filter((id) => !ids.includes(id)));
+    if (!this.selectedDocumentIds().length) this.bulkMoveFolderPath.set('');
+    this.toast.showSuccess(
+      ids.length === 1 ? 'Documento spostato' : 'Documenti spostati',
+      `${ids.length} ${ids.length === 1 ? 'documento spostato' : 'documenti spostati'} in ${destination}.`,
+    );
+    await this.refresh();
+  }
   openDocumentFolder(folderId: string): void {
+    this.clearDocumentSelection();
     this.activeDocumentFolderId.set(folderId);
     this.viewingUnassignedDocuments.set(false);
     this.cancelRenameDocumentFolder();
     this.cancelCreateDocumentFolder();
   }
   openUnassignedDocuments(): void {
+    this.clearDocumentSelection();
     this.activeDocumentFolderId.set(null);
     this.viewingUnassignedDocuments.set(true);
     this.cancelRenameDocumentFolder();
     this.cancelCreateDocumentFolder();
   }
   navigateDocumentFolder(folderId: string | null): void {
+    this.clearDocumentSelection();
     this.activeDocumentFolderId.set(folderId);
     this.viewingUnassignedDocuments.set(false);
     this.cancelRenameDocumentFolder();
@@ -3220,6 +3609,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     if (value.file === this.attachedFile) this.documentTextProcessing.set(value.processing);
   }
   selectChild(name: string): void {
+    this.clearDocumentSelection();
     if (this.documentSearchTimer) clearTimeout(this.documentSearchTimer);
     this.documentSearchRequest++;
     this.documentSearchLoading.set(false);
@@ -4390,6 +4780,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     else this.data.error.set('Impossibile aprire il file. Accedi al tuo account e riprova.');
   }
   private async loadChildren(): Promise<void> {
+    this.clearDocumentSelection();
     this.children.splice(0);
     if (this.sectionId === 'children') return;
     const client = this.supabase.client;

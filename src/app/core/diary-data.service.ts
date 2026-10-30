@@ -730,6 +730,36 @@ export class DiaryDataService {
     return id;
   }
 
+  async saveDocumentBatch(childId: string, documents: Record<string, unknown>[]): Promise<boolean> {
+    this.error.set('');
+    if (!documents.length) return false;
+    const rows = documents.map((document) => ({ ...document, child_id: childId }));
+    const client = this.supabase.client;
+    if (client && this.auth.user()) {
+      const { error } = await client.from('documents').insert(rows);
+      if (error) {
+        this.error.set(databaseErrorMessage(error.message));
+        return false;
+      }
+    } else {
+      const previousDocuments = this.local.documents ?? [];
+      const createdAt = new Date().toISOString();
+      this.local.documents = [
+        ...rows.map((row) => ({ created_at: createdAt, ...row }) as DiaryRow),
+        ...previousDocuments,
+      ];
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.local));
+      } catch {
+        this.local.documents = previousDocuments;
+        this.error.set('Il browser non ha spazio sufficiente per salvare i documenti.');
+        return false;
+      }
+    }
+    await this.load('documents');
+    return true;
+  }
+
   async searchDocuments(childId: string, search: string, limit = 30): Promise<DiaryRow[]> {
     const query = search.trim();
     if (query.length < 2) return [];
@@ -973,6 +1003,53 @@ export class DiaryDataService {
     return (this.local.document_folders ?? [])
       .filter((folder) => folder['child_id'] === childId)
       .sort((left, right) => String(left['name'] ?? '').localeCompare(String(right['name'] ?? ''), 'it'));
+  }
+
+  async moveDocumentsToFolder(
+    childId: string,
+    documentIds: string[],
+    folderId: string | null,
+  ): Promise<boolean> {
+    this.error.set('');
+    const ids = [...new Set(documentIds.filter(Boolean))];
+    if (!ids.length) return false;
+    const client = this.supabase.client;
+    if (client && this.auth.user()) {
+      const { error } = await client
+        .from('documents')
+        .update({ folder_id: folderId })
+        .eq('child_id', childId)
+        .in('id', ids);
+      if (error) {
+        this.error.set(databaseErrorMessage(error.message));
+        return false;
+      }
+      return true;
+    }
+
+    const folderExists = folderId === null || (this.local.document_folders ?? []).some(
+      (folder) => folder.id === folderId && folder['child_id'] === childId,
+    );
+    if (!folderExists) {
+      this.error.set('La cartella selezionata non è disponibile per questo profilo.');
+      return false;
+    }
+
+    const documents = this.local.documents ?? [];
+    const availableIds = new Set(
+      documents.filter((row) => row['child_id'] === childId).map((row) => row.id),
+    );
+    if (ids.some((id) => !availableIds.has(id))) {
+      this.error.set('Uno o più documenti selezionati non sono più disponibili.');
+      return false;
+    }
+    this.local.documents = documents.map((row) =>
+      ids.includes(row.id) && row['child_id'] === childId
+        ? { ...row, folder_id: folderId }
+        : row,
+    );
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.local));
+    return true;
   }
 
   async createDocumentFolder(
