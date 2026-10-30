@@ -6,7 +6,9 @@ import { AuthService } from './auth.service';
 export class StorageService {
   private readonly avatarBucket = 'profile-avatars';
   private readonly contactAvatarBucket = 'contact-avatars';
+  private readonly medicineImageBucket = 'medicine-images';
   private readonly localContactAvatarPrefix = 'local-file:';
+  private readonly localMedicineImagePrefix = 'local-medicine-image:';
   private readonly localFileDatabase = 'trialcare-local-files-v1';
   constructor(
     private readonly supabase: SupabaseClientService,
@@ -183,6 +185,53 @@ export class StorageService {
     const client = this.supabase.client;
     if (!client || !this.auth.user()) return false;
     const { error } = await client.storage.from(this.contactAvatarBucket).remove([path]);
+    return !error;
+  }
+
+  async saveMedicineImage(file: File, childId: string, section: 'medications' | 'medicine_cabinet', recordId: string): Promise<string | null> {
+    const client = this.supabase.client;
+    const user = this.auth.user();
+    if (client && user) {
+      const extension = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
+      const path = `${user.id}/${childId}/${section}/${recordId}/${crypto.randomUUID()}.${extension}`;
+      const { error } = await client.storage.from(this.medicineImageBucket).upload(path, file, {
+        upsert: false,
+        contentType: file.type,
+        cacheControl: '3600',
+      });
+      return error ? null : path;
+    }
+    try {
+      const id = await this.saveLocalFile(file);
+      return `${this.localMedicineImagePrefix}${id}`;
+    } catch {
+      return null;
+    }
+  }
+
+  async loadMedicineImage(path: string): Promise<string | null> {
+    if (path.startsWith(this.localMedicineImagePrefix)) {
+      const file = await this.getLocalFile(path.slice(this.localMedicineImagePrefix.length));
+      return file ? URL.createObjectURL(file) : null;
+    }
+    const client = this.supabase.client;
+    if (!client || !this.auth.user()) return null;
+    const { data, error } = await client.storage.from(this.medicineImageBucket).download(path);
+    return error || !data ? null : URL.createObjectURL(data);
+  }
+
+  async removeMedicineImage(path: string): Promise<boolean> {
+    if (path.startsWith(this.localMedicineImagePrefix)) {
+      try {
+        await this.removeLocalFile(path.slice(this.localMedicineImagePrefix.length));
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    const client = this.supabase.client;
+    if (!client || !this.auth.user()) return false;
+    const { error } = await client.storage.from(this.medicineImageBucket).remove([path]);
     return !error;
   }
 

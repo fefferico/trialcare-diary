@@ -167,7 +167,7 @@ export const SECTIONS: SectionDefinition[] = [
     icon: 'accessibility',
     fields: [
       { key: 'name', label: 'Nome dell’ortesi o ausilio', kind: 'text', required: true, placeholder: 'Es. tutore caviglia-piede' },
-      { key: 'category', label: 'Tipologia', kind: 'select', required: true, options: ['Tutore', 'Scarpe ortopediche', 'Tutina', 'Pantaloncini', 'Plantare', 'Altro'] },
+      { key: 'category', label: 'Tipologia', kind: 'select', required: true, options: ['Tutore', 'Deambulatore', 'Scarpe ortopediche', 'Tutina', 'Pantaloncini', 'Plantare', 'Altro'] },
       { key: 'brand', label: 'Marca', kind: 'text' },
       { key: 'model', label: 'Modello', kind: 'text' },
       { key: 'size', label: 'Taglia o misura', kind: 'text', placeholder: 'Es. 28, 10 cm' },

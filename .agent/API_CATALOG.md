@@ -1,6 +1,6 @@
 # API Catalog
 
-> Generato da `npm run update-context` il 30/10/2026, 09:06:54.
+> Generato da `npm run update-context` il 30/10/2026, 09:49:48.
 
 ## Servizi
 
@@ -148,6 +148,9 @@ File: [src/app/core/storage.service.ts](../src/app/core/storage.service.ts)
 - `saveContactAvatar(file: File, childId: string, contactId: string)`: `Promise<string | null>`
 - `loadContactAvatar(path: string)`: `Promise<string | null>`
 - `removeContactAvatar(path: string)`: `Promise<boolean>`
+- `saveMedicineImage(file: File, childId: string, section: 'medications' | 'medicine_cabinet', recordId: string)`: `Promise<string | null>`
+- `loadMedicineImage(path: string)`: `Promise<string | null>`
+- `removeMedicineImage(path: string)`: `Promise<boolean>`
 - `saveAvatar(file: File)`: `Promise<string | null>`
 - `removeAvatar()`: `Promise<void>`
 - `loadAvatar()`: `Promise<string | null>`

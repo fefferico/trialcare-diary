@@ -697,6 +697,14 @@ function applyMedicationScheduleScope(
                           {{ contactAvatarInitials(value(row, 'name')) }}
                         }
                       </div>
+                    } @else if (section.id === 'medications' || section.id === 'medicine_cabinet') {
+                      <div class="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-200" aria-hidden="true">
+                        @if (medicineImageUrls()[row.id]) {
+                          <img class="h-full w-full object-contain" [src]="medicineImageUrls()[row.id]" alt="" />
+                        } @else {
+                          <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m10.5 3.5 10 10a4.24 4.24 0 0 1-6 6l-10-10a4.24 4.24 0 0 1 6-6Z"/><path d="m8 14 6-6"/></svg>
+                        }
+                      </div>
                     }
                     <div class="min-w-0">
                     <p
@@ -1040,6 +1048,30 @@ function applyMedicationScheduleScope(
                 <div class="rounded-2xl border border-teal-100 bg-teal-50/70 p-3 text-xs leading-5 text-slate-600 dark:border-teal-900/60 dark:bg-teal-950/20 dark:text-slate-300 sm:p-4">
                   <strong class="block text-sm text-teal-900 dark:text-teal-200">Scadenza dopo apertura</strong>
                   <span>Se il foglietto indica un numero di giorni dall’apertura, inserisci la durata e la data di apertura. Il promemoria considera la scadenza più vicina tra quella calcolata e quella riportata sulla confezione.</span>
+                </div>
+              }
+              @if (section.id === 'medications' || section.id === 'medicine_cabinet') {
+                <div class="flex flex-col gap-4 rounded-2xl border border-slate-200 p-3 dark:border-slate-700 sm:flex-row sm:items-center sm:p-4">
+                  <div class="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-200" aria-hidden="true">
+                    @if (medicineImagePreviewSource(); as imageSource) {
+                      <img class="h-full w-full object-contain" [src]="imageSource" alt="" />
+                    } @else {
+                      <svg class="h-9 w-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m10.5 3.5 10 10a4.24 4.24 0 0 1-6 6l-10-10a4.24 4.24 0 0 1 6-6Z"/><path d="m8 14 6-6"/></svg>
+                    }
+                  </div>
+                  <div class="min-w-0 flex-1 space-y-2" (paste)="onMedicineImagePaste($event)">
+                    <div class="flex flex-col gap-2 sm:flex-row sm:items-end">
+                      <label class="form-field min-w-0 flex-1">
+                        <span>Immagine del farmaco</span>
+                        <input class="field-control file:mr-3 file:rounded-lg file:border-0 file:bg-teal-50 file:px-3 file:py-2 file:font-medium file:text-teal-800" type="file" accept="image/jpeg,image/png,image/webp" (change)="selectMedicineImage($event)" />
+                      </label>
+                      <button type="button" class="button-secondary shrink-0" (click)="pasteMedicineImage()">Incolla immagine</button>
+                    </div>
+                    @if (medicineImagePreviewSource()) {
+                      <button class="text-xs font-semibold text-rose-700 underline dark:text-rose-300" type="button" (click)="clearMedicineImage()">Rimuovi immagine</button>
+                    }
+                    <p class="text-xs text-slate-500 dark:text-slate-400">JPEG, PNG o WebP, massimo 3 MB. Puoi usare Ctrl+V o Cmd+V nel riquadro dopo aver copiato un’immagine. La foto resta privata e associata al profilo del bambino.</p>
+                  </div>
                 </div>
               }
               <div class="grid gap-4 sm:grid-cols-2">
@@ -1506,6 +1538,11 @@ function applyMedicationScheduleScope(
                   </div>
                 </div>
               }
+              @if ((section.id === 'medications' || section.id === 'medicine_cabinet') && medicineImageUrls()[row.id]) {
+                <div class="flex justify-center rounded-2xl bg-slate-50 p-4 dark:bg-slate-800/50">
+                  <img class="max-h-64 max-w-full rounded-xl object-contain" [src]="medicineImageUrls()[row.id]" [alt]="'Immagine di ' + value(row, 'name')" />
+                </div>
+              }
               <dl class="grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-2">
                 @for (field of detailFields(row); track field.key) {
                   @if (value(row, field.key)) {
@@ -1768,6 +1805,8 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   readonly detailRow = signal<DiaryRow | null>(null);
   readonly contactAvatarUrls = signal<Record<string, string>>({});
   readonly selectedContactAvatarPreview = signal<string | null>(null);
+  readonly medicineImageUrls = signal<Record<string, string>>({});
+  readonly selectedMedicineImagePreview = signal<string | null>(null);
   readonly documentSearchResults = signal<DiaryRow[]>([]);
   readonly selectedDocuments = signal<DiaryRow[]>([]);
   readonly documentSearchLoading = signal(false);
@@ -1869,6 +1908,10 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
   private contactAvatarFile: File | null = null;
   private contactAvatarCleared = false;
   private contactAvatarLoadVersion = 0;
+  private medicineImageFile: File | null = null;
+  private medicineImageCleared = false;
+  private medicineImageLoadVersion = 0;
+  private editingMedicineRow: DiaryRow | null = null;
   private editingDocumentRow: DiaryRow | null = null;
   private requestedChildId = '';
   private loadedUserId: string | null = null;
@@ -2321,9 +2364,11 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     if (this.isFormOpen()) this.closeForm();
     else this.ui.resetBodyScroll();
     this.clearContactAvatarUrls();
+    this.clearMedicineImageUrls();
   }
   async refresh(): Promise<void> {
     if (this.sectionId === 'reports') {
+      this.clearMedicineImageUrls();
       await this.data.loadReport(this.selectedChildId() || undefined);
       return;
     }
@@ -2348,6 +2393,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         else this.data.error.set(error.message);
         this.data.syncing.set(false);
         await this.loadContactAvatars();
+        await this.loadMedicineImages();
         return;
       }
       await this.data.load(this.sectionId);
@@ -2355,10 +2401,12 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         this.data.rows().filter((row) => row['child_id'] === this.selectedChildId()),
       );
       await this.loadContactAvatars();
+      await this.loadMedicineImages();
       return;
     }
     await this.data.load(this.sectionId);
     await this.loadContactAvatars();
+    await this.loadMedicineImages();
   }
   searchDocuments(query: string): void {
     if (this.documentSearchTimer) clearTimeout(this.documentSearchTimer);
@@ -2598,6 +2646,71 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     if (preview) URL.revokeObjectURL(preview);
     this.selectedContactAvatarPreview.set(null);
   }
+  medicineImagePreviewSource(): string | null {
+    if (this.medicineImageCleared) return null;
+    return this.selectedMedicineImagePreview() ??
+      (this.editingId ? this.medicineImageUrls()[this.editingId] ?? null : null);
+  }
+  selectMedicineImage(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.setMedicineImageFile(input.files?.[0] ?? null);
+    if (this.data.error()) input.value = '';
+  }
+  async pasteMedicineImage(): Promise<void> {
+    this.data.error.set('');
+    if (!navigator.clipboard?.read) {
+      this.data.error.set('Il browser non consente l’accesso alla clipboard da questo pulsante. Puoi usare Ctrl+V o Cmd+V nel riquadro dopo aver copiato un’immagine.');
+      return;
+    }
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const type = item.types.find((candidate) => this.isSupportedMedicineImageType(candidate));
+        if (!type) continue;
+        const blob = await item.getType(type);
+        const extension = type === 'image/jpeg' ? 'jpg' : type.slice('image/'.length);
+        this.setMedicineImageFile(new File([blob], `farmaco.${extension}`, { type }));
+        return;
+      }
+      this.data.error.set('La clipboard non contiene un’immagine JPEG, PNG o WebP.');
+    } catch {
+      this.data.error.set('Non è stato possibile leggere la clipboard. Verifica il permesso del browser o usa Ctrl+V/Cmd+V nel riquadro immagine.');
+    }
+  }
+  onMedicineImagePaste(event: ClipboardEvent): void {
+    const items = Array.from(event.clipboardData?.items ?? []);
+    const image = items.find((item) => item.kind === 'file' && this.isSupportedMedicineImageType(item.type));
+    const file = image?.getAsFile();
+    if (!file) return;
+    event.preventDefault();
+    this.setMedicineImageFile(file);
+  }
+  private isSupportedMedicineImageType(type: string): boolean {
+    return ['image/jpeg', 'image/png', 'image/webp'].includes(type.toLocaleLowerCase());
+  }
+  private setMedicineImageFile(file: File | null): void {
+    this.releaseMedicineImagePreview();
+    this.medicineImageFile = null;
+    this.data.error.set('');
+    if (!file) return;
+    if (!this.isSupportedMedicineImageType(file.type) || file.size > 3 * 1024 * 1024) {
+      this.data.error.set('Scegli un’immagine JPEG, PNG o WebP fino a 3 MB.');
+      return;
+    }
+    this.medicineImageFile = file;
+    this.medicineImageCleared = false;
+    this.selectedMedicineImagePreview.set(URL.createObjectURL(file));
+  }
+  clearMedicineImage(): void {
+    this.releaseMedicineImagePreview();
+    this.medicineImageFile = null;
+    this.medicineImageCleared = true;
+  }
+  private releaseMedicineImagePreview(): void {
+    const preview = this.selectedMedicineImagePreview();
+    if (preview) URL.revokeObjectURL(preview);
+    this.selectedMedicineImagePreview.set(null);
+  }
   private async loadContactAvatars(): Promise<void> {
     if (this.sectionId !== 'contacts') return;
     const version = ++this.contactAvatarLoadVersion;
@@ -2620,6 +2733,31 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.contactAvatarLoadVersion++;
     for (const url of Object.values(this.contactAvatarUrls())) URL.revokeObjectURL(url);
     this.contactAvatarUrls.set({});
+  }
+  private async loadMedicineImages(): Promise<void> {
+    if (this.sectionId !== 'medications' && this.sectionId !== 'medicine_cabinet') {
+      this.clearMedicineImageUrls();
+      return;
+    }
+    const version = ++this.medicineImageLoadVersion;
+    const loaded = await Promise.all(this.data.rows().map(async (row) => {
+      const path = String(row['image_path'] ?? '');
+      return path ? [row.id, await this.storage.loadMedicineImage(path)] as const : [row.id, null] as const;
+    }));
+    const next: Record<string, string> = {};
+    for (const [id, url] of loaded) if (url) next[id] = url;
+    if (version !== this.medicineImageLoadVersion) {
+      for (const url of Object.values(next)) URL.revokeObjectURL(url);
+      return;
+    }
+    const previous = this.medicineImageUrls();
+    this.medicineImageUrls.set(next);
+    for (const url of Object.values(previous)) URL.revokeObjectURL(url);
+  }
+  private clearMedicineImageUrls(): void {
+    this.medicineImageLoadVersion++;
+    for (const url of Object.values(this.medicineImageUrls())) URL.revokeObjectURL(url);
+    this.medicineImageUrls.set({});
   }
   websiteHref(value: unknown): string {
     const raw = String(value ?? '').trim();
@@ -2801,8 +2939,12 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.releaseContactAvatarPreview();
     this.contactAvatarFile = null;
     this.contactAvatarCleared = false;
+    this.releaseMedicineImagePreview();
+    this.medicineImageFile = null;
+    this.medicineImageCleared = false;
     this.editingId = '';
     this.editingContactRow = null;
+    this.editingMedicineRow = null;
     this.editingDocumentRow = null;
     this.medicationScopePrompt.set(null);
     this.isFormOpen.set(true);
@@ -2962,6 +3104,10 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.releaseContactAvatarPreview();
     this.contactAvatarFile = null;
     this.contactAvatarCleared = false;
+    this.releaseMedicineImagePreview();
+    this.medicineImageFile = null;
+    this.medicineImageCleared = false;
+    this.editingMedicineRow = this.sectionId === 'medications' || this.sectionId === 'medicine_cabinet' ? row : null;
     this.editingDocumentRow = this.sectionId === 'documents' ? row : null;
     for (const field of this.section.fields) {
       const value = row[field.key];
@@ -3038,6 +3184,10 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     this.contactAvatarFile = null;
     this.contactAvatarCleared = false;
     this.releaseContactAvatarPreview();
+    this.medicineImageFile = null;
+    this.medicineImageCleared = false;
+    this.releaseMedicineImagePreview();
+    this.editingMedicineRow = null;
     this.medicationScopePrompt.set(null);
     this.isFormOpen.set(false);
     this.ui.setModal(false);
@@ -3439,6 +3589,39 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
     const isEditing = !!this.editingId;
     const targetId = medicationScopeTargetId ?? (this.editingId || crypto.randomUUID());
     const targetChildId = this.selectedChildId();
+    const hasMedicineImage = this.sectionId === 'medications' || this.sectionId === 'medicine_cabinet';
+    const previousMedicineImagePath = String(this.editingMedicineRow?.['image_path'] ?? '');
+    let uploadedMedicineImagePath = '';
+    let nextMedicineImagePath = previousMedicineImagePath;
+    if (hasMedicineImage && (this.medicineImageFile || this.medicineImageCleared)) {
+      const childId = targetChildId || String(this.editingMedicineRow?.['child_id'] ?? '');
+      if (!childId) {
+        this.data.error.set('Seleziona il profilo del bambino a cui associare l’immagine del farmaco.');
+        this.saving.set(false);
+        return;
+      }
+      if (this.medicineImageCleared) {
+        nextMedicineImagePath = '';
+        value['image_path'] = null;
+      } else if (this.medicineImageFile) {
+        const path = await this.storage.saveMedicineImage(
+          this.medicineImageFile,
+          childId,
+          this.sectionId as 'medications' | 'medicine_cabinet',
+          targetId,
+        );
+        if (!path) {
+          this.data.error.set(this.supabase.configured && this.auth.user()
+            ? 'Non è stato possibile caricare l’immagine. Applica la migrazione Storage delle immagini dei farmaci e riprova.'
+            : 'Il browser non ha potuto conservare localmente l’immagine. Riprova.');
+          this.saving.set(false);
+          return;
+        }
+        uploadedMedicineImagePath = path;
+        nextMedicineImagePath = path;
+        value['image_path'] = path;
+      }
+    }
     let uploadedContactAvatarPath = '';
     const previousContactAvatarPath = String(this.editingContactRow?.['avatar_path'] ?? '');
     let nextContactAvatarPath = previousContactAvatarPath;
@@ -3472,6 +3655,7 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         { ...value, id: targetId },
         this.sectionId === 'children' ? undefined : targetChildId || undefined,
       ));
+    const medicineRecordSaved = ok;
     if (ok && !isEditing && ['medications', 'orthoses', 'health_events'].includes(this.sectionId))
       this.editingId = targetId;
     if (ok && shouldBackfillMedicationDoses && targetChildId) {
@@ -3490,6 +3674,8 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         // The failed update must not replace the existing attachment.
       }
     }
+    if (!medicineRecordSaved && uploadedMedicineImagePath)
+      await this.storage.removeMedicineImage(uploadedMedicineImagePath);
     if (!ok && uploadedContactAvatarPath) await this.storage.removeContactAvatar(uploadedContactAvatarPath);
     if (ok && this.sectionId === 'documents' && this.editingDocumentRow && this.attachedFile && this.attachmentModified) {
       const oldStoragePath = this.editingDocumentRow['storage_path'];
@@ -3557,6 +3743,14 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         await this.storage.removeContactAvatar(previousContactAvatarPath);
       await this.refresh();
     }
+    if (medicineRecordSaved && hasMedicineImage) {
+      if (previousMedicineImagePath && previousMedicineImagePath !== nextMedicineImagePath) {
+        const removed = await this.storage.removeMedicineImage(previousMedicineImagePath);
+        if (!removed && !this.data.error())
+          this.data.error.set('Farmaco salvato, ma non è stato possibile rimuovere la vecchia immagine.');
+      }
+      await this.refresh();
+    }
     this.saving.set(false);
     if (ok) this.closeForm();
   }
@@ -3613,6 +3807,12 @@ export class FeaturePageComponent implements OnInit, OnDestroy {
         const avatarPath = String(row['avatar_path'] ?? '');
         if (avatarPath && !(await this.storage.removeContactAvatar(avatarPath)))
           this.data.error.set('Contatto eliminato, ma non è stato possibile rimuovere la foto dal deposito.');
+        await this.refresh();
+      }
+      if (this.sectionId === 'medications' || this.sectionId === 'medicine_cabinet') {
+        const imagePath = String(row['image_path'] ?? '');
+        if (imagePath && !(await this.storage.removeMedicineImage(imagePath)))
+          this.data.error.set('Farmaco eliminato, ma non è stato possibile rimuovere la sua immagine.');
         await this.refresh();
       }
       this.toast.showSuccess(toastInfo.title, toastInfo.message);
